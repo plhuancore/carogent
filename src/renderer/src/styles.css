@@ -156,6 +156,20 @@ button {
   grid-template-rows: 54px minmax(0, 1fr);
 }
 
+.workspace-full {
+  grid-column: 1 / -1;
+  grid-template-rows: 1fr;
+}
+
+.startup-message {
+  display: grid;
+  min-height: 100%;
+  place-items: center;
+  color: #94a3b8;
+  font-family: "Cascadia Mono", Consolas, monospace;
+  font-size: 13px;
+}
+
 .topbar {
   display: flex;
   align-items: center;

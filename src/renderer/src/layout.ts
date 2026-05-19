@@ -19,13 +19,13 @@ export type SplitNode = {
 
 export type LayoutNode = PaneNode | SplitNode;
 
-export function createPane(cwd?: string, shell = 'cmd.exe'): PaneNode {
+export function createPane(cwd?: string, shell?: string): PaneNode {
   return {
     type: 'pane',
     paneId: crypto.randomUUID(),
     cwd,
     shell,
-    title: shell.replace(/\.exe$/i, '')
+    title: shell?.replace(/\.exe$/i, '') || 'terminal'
   };
 }
 

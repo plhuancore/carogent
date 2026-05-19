@@ -11,6 +11,15 @@ type TerminalCreated = {
   shell: string;
 };
 
+type TerminalShellOption = {
+  shell: string;
+  label: string;
+  title: string;
+  icon: string;
+  shortcut?: string;
+  isDefault?: boolean;
+};
+
 type TerminalDataEvent = {
   id: string;
   data: string;
@@ -23,6 +32,8 @@ type TerminalExitEvent = {
 };
 
 const terminal = {
+  getShellOptions: (): Promise<TerminalShellOption[]> =>
+    ipcRenderer.invoke('terminal:get-shell-options'),
   create: (request?: TerminalCreateRequest): Promise<TerminalCreated> =>
     ipcRenderer.invoke('terminal:create', request),
   resize: (request: { id: string; cols: number; rows: number }): Promise<void> =>

@@ -1,6 +1,6 @@
 # Carogent Terminal
 
-Carogent Terminal is an Electron desktop app for working with multiple real terminal sessions in one workspace. It supports split panes, independent Command Prompt or PowerShell sessions, pane resizing, layout restore, and per-pane header customization.
+Carogent Terminal is an Electron desktop app for working with multiple real terminal sessions in one workspace. It supports split panes, independent shell sessions, pane resizing, layout restore, and per-pane header customization.
 
 ## Project Info
 
@@ -9,6 +9,7 @@ Carogent Terminal is an Electron desktop app for working with multiple real term
 - Terminal UI: xterm.js
 - Shell backend: node-pty
 - Default Windows shell: Command Prompt (`cmd.exe`)
+- Default macOS shell: zsh (`/bin/zsh`)
 - Package manager: npm
 
 ## Getting Started
@@ -44,19 +45,21 @@ npm run typecheck
 - Resize panes by dragging the divider.
 - Close panes.
 - Run independent terminal sessions in each pane.
-- Choose Command Prompt or Windows PowerShell per pane.
+- Choose the shell for each pane.
 - Restore the pane layout after restarting the app.
 - Customize each pane name and header color.
 
 ## Choose A Pane Shell
 
-Carogent is the terminal workspace. Command Prompt and Windows PowerShell are the shells that run inside each pane.
+Carogent is the terminal workspace. The selected shell runs inside each pane.
 
 1. Click the dropdown on the left side of a pane title bar.
-2. Choose `Command Prompt` or `Windows PowerShell`.
+2. Choose a shell from the platform-specific menu.
 3. The selected pane restarts with the chosen shell.
 
-New panes use Command Prompt by default. Split panes inherit the shell from the pane that was split.
+Windows shows Command Prompt and Windows PowerShell. macOS shows zsh and bash.
+
+New panes use the platform default shell. Split panes inherit the shell from the pane that was split.
 
 ## Rename A Pane
 
@@ -86,4 +89,4 @@ Header colors are saved per pane, so different split terminals can use different
 
 - Terminal command output and scrollback are not saved between app restarts.
 - Only the pane layout, pane shells, pane names, pane colors, and working directory metadata are restored.
-- The app is currently Windows-first and uses Command Prompt by default.
+- The app uses platform-specific shell defaults: Command Prompt on Windows and zsh on macOS.

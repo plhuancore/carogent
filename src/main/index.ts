@@ -9,6 +9,15 @@ type TerminalCreateRequest = {
   shell?: string;
 };
 
+type TerminalShellOption = {
+  shell: string;
+  label: string;
+  title: string;
+  icon: string;
+  shortcut?: string;
+  isDefault?: boolean;
+};
+
 type TerminalResizeRequest = {
   id: string;
   cols: number;
@@ -23,25 +32,71 @@ type TerminalWriteRequest = {
 const terminals = new Map<string, pty.IPty>();
 let mainWindow: BrowserWindow | null = null;
 
-const WINDOWS_SHELLS = new Set(['cmd.exe', 'powershell.exe']);
-
-function getDefaultShell(): string {
+function getShellOptions(): TerminalShellOption[] {
   if (process.platform === 'win32') {
-    return 'cmd.exe';
+    return [
+      {
+        shell: 'cmd.exe',
+        label: 'Command Prompt',
+        title: 'cmd',
+        icon: 'cmd',
+        shortcut: 'Ctrl+Shift+1',
+        isDefault: true
+      },
+      {
+        shell: 'powershell.exe',
+        label: 'Windows PowerShell',
+        title: 'powershell',
+        icon: 'powershell',
+        shortcut: 'Ctrl+Shift+2'
+      }
+    ];
   }
 
-  return process.env.SHELL || '/bin/bash';
+  if (process.platform === 'darwin') {
+    return [
+      {
+        shell: '/bin/zsh',
+        label: 'zsh',
+        title: 'zsh',
+        icon: 'terminal',
+        shortcut: 'Cmd+Shift+1',
+        isDefault: true
+      },
+      {
+        shell: '/bin/bash',
+        label: 'bash',
+        title: 'bash',
+        icon: 'terminal',
+        shortcut: 'Cmd+Shift+2'
+      }
+    ];
+  }
+
+  const defaultShell = process.env.SHELL || '/bin/bash';
+
+  return [
+    {
+      shell: defaultShell,
+      label: defaultShell.split('/').pop() || defaultShell,
+      title: defaultShell.split('/').pop() || defaultShell,
+      icon: 'terminal',
+      isDefault: true
+    }
+  ];
+}
+
+function getDefaultShell(): string {
+  return getShellOptions().find((option) => option.isDefault)?.shell || getShellOptions()[0].shell;
 }
 
 function getShell(requestedShell?: string): string {
-  if (process.platform !== 'win32') {
-    return requestedShell || getDefaultShell();
-  }
-
+  const shellOptions = getShellOptions();
   const normalizedShell = requestedShell?.toLowerCase();
+  const matchedShell = shellOptions.find((option) => option.shell.toLowerCase() === normalizedShell);
 
-  if (normalizedShell && WINDOWS_SHELLS.has(normalizedShell)) {
-    return normalizedShell;
+  if (matchedShell) {
+    return matchedShell.shell;
   }
 
   return getDefaultShell();
@@ -86,6 +141,8 @@ function killTerminal(id: string): void {
 }
 
 app.whenReady().then(() => {
+  ipcMain.handle('terminal:get-shell-options', () => getShellOptions());
+
   ipcMain.handle('terminal:create', (_event, request: TerminalCreateRequest = {}) => {
     const id = randomUUID();
     const shell = getShell(request.shell);

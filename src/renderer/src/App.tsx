@@ -43,35 +43,25 @@ const HEADER_COLOR_PRESETS = [
   '#2f343f'
 ];
 
-const DEFAULT_SHELL = 'cmd.exe';
-
-const SHELL_OPTIONS = [
-  {
-    shell: 'powershell.exe',
-    label: 'Windows PowerShell',
-    title: 'powershell',
-    shortcut: 'Ctrl+Shift+1',
-    icon: 'powershell'
-  },
-  {
-    shell: 'cmd.exe',
-    label: 'Command Prompt',
-    title: 'cmd',
-    shortcut: 'Ctrl+Shift+2',
-    icon: 'cmd'
-  }
-] as const;
-
-function getShellOption(shell?: string): (typeof SHELL_OPTIONS)[number] {
-  return SHELL_OPTIONS.find((option) => option.shell === shell?.toLowerCase()) || SHELL_OPTIONS[1];
+function getDefaultShellOption(shellOptions: TerminalShellOption[]): TerminalShellOption {
+  return shellOptions.find((option) => option.isDefault) || shellOptions[0];
 }
 
-function getPaneShell(pane: PaneNode): string {
-  return getShellOption(pane.shell).shell;
+function getShellOption(shellOptions: TerminalShellOption[], shell?: string): TerminalShellOption {
+  const normalizedShell = shell?.toLowerCase();
+
+  return (
+    shellOptions.find((option) => option.shell.toLowerCase() === normalizedShell) ||
+    getDefaultShellOption(shellOptions)
+  );
 }
 
-function getShellTitle(shell?: string): string {
-  return getShellOption(shell).title;
+function getPaneShell(shellOptions: TerminalShellOption[], pane: PaneNode): string {
+  return getShellOption(shellOptions, pane.shell).shell;
+}
+
+function getShellTitle(shellOptions: TerminalShellOption[], shell?: string): string {
+  return getShellOption(shellOptions, shell).title;
 }
 
 function createXterm(): Terminal {
@@ -110,6 +100,8 @@ function App(): JSX.Element {
   const initialLayout = useMemo(() => loadLayout(), []);
   const [layout, setLayout] = useState<LayoutNode>(() => initialLayout);
   const [activePaneId, setActivePaneId] = useState(() => getFirstPaneId(initialLayout));
+  const [shellOptions, setShellOptions] = useState<TerminalShellOption[] | null>(null);
+  const [shellOptionsError, setShellOptionsError] = useState<string | null>(null);
   const sessions = useRef<SessionRegistry>(new Map());
 
   const paneCount = useMemo(() => countPanes(layout), [layout]);
@@ -117,6 +109,18 @@ function App(): JSX.Element {
   useEffect(() => {
     saveLayout(layout);
   }, [layout]);
+
+  useEffect(() => {
+    window.terminalApi
+      .getShellOptions()
+      .then((options) => {
+        setShellOptions(options);
+        setShellOptionsError(null);
+      })
+      .catch((error: unknown) => {
+        setShellOptionsError(String(error));
+      });
+  }, []);
 
   useEffect(() => {
     const stopData = window.terminalApi.onData(({ id, data }) => {
@@ -162,6 +166,10 @@ function App(): JSX.Element {
       return existing;
     }
 
+    if (!shellOptions?.length) {
+      throw new Error('Shell options are not ready.');
+    }
+
     const terminal = createXterm();
     const fitAddon = new FitAddon();
     terminal.loadAddon(fitAddon);
@@ -179,7 +187,7 @@ function App(): JSX.Element {
 
     sessions.current.set(pane.paneId, session);
 
-    const requestedShell = getPaneShell(pane);
+    const requestedShell = getPaneShell(shellOptions, pane);
 
     window.terminalApi
       .create({ cwd: pane.cwd, shell: requestedShell })
@@ -193,7 +201,7 @@ function App(): JSX.Element {
             ...currentPane,
             cwd,
             shell,
-            title: currentPane.customTitle ? currentPane.title : getShellTitle(shell)
+            title: currentPane.customTitle ? currentPane.title : getShellTitle(shellOptions, shell)
           }))
         );
       })
@@ -203,7 +211,7 @@ function App(): JSX.Element {
       });
 
     return session;
-  }, []);
+  }, [shellOptions]);
 
   const killPaneSession = useCallback((paneId: string): void => {
     const session = sessions.current.get(paneId);
@@ -258,21 +266,48 @@ function App(): JSX.Element {
 
   const handleChangeShell = useCallback(
     (paneId: string, shell: string) => {
+      if (!shellOptions?.length) {
+        return;
+      }
+
       killPaneSession(paneId);
       setLayout((current) =>
         updatePane(current, paneId, (pane) => ({
           ...pane,
           shell,
-          title: pane.customTitle ? pane.title : getShellTitle(shell)
+          title: pane.customTitle ? pane.title : getShellTitle(shellOptions, shell)
         }))
       );
     },
-    [killPaneSession]
+    [killPaneSession, shellOptions]
   );
 
   const activePane = findPane(layout, activePaneId) || findPane(layout, getFirstPaneId(layout));
   const paneIds = listPaneIds(layout);
-  const activePaneTitle = activePane?.customTitle || activePane?.title || getShellTitle(DEFAULT_SHELL);
+  const activePaneTitle =
+    activePane?.customTitle ||
+    activePane?.title ||
+    (shellOptions?.length ? getDefaultShellOption(shellOptions).title : 'terminal');
+
+  if (shellOptionsError) {
+    return (
+      <main className="app-shell">
+        <section className="workspace workspace-full">
+          <div className="startup-message">Failed to load shell options: {shellOptionsError}</div>
+        </section>
+      </main>
+    );
+  }
+
+  if (!shellOptions?.length) {
+    return (
+      <main className="app-shell">
+        <section className="workspace workspace-full">
+          <div className="startup-message">Loading shell options...</div>
+        </section>
+      </main>
+    );
+  }
 
   return (
     <main className="app-shell">
@@ -329,6 +364,7 @@ function App(): JSX.Element {
             onResize={handleResize}
             onUpdatePane={handleUpdatePane}
             onChangeShell={handleChangeShell}
+            shellOptions={shellOptions}
           />
         </div>
       </section>
@@ -348,6 +384,7 @@ type NodeViewProps = {
   onResize: (path: string, firstSize: number) => void;
   onUpdatePane: (paneId: string, changes: Partial<PaneNode>) => void;
   onChangeShell: (paneId: string, shell: string) => void;
+  shellOptions: TerminalShellOption[];
 };
 
 function NodeView(props: NodeViewProps): JSX.Element {
@@ -363,6 +400,7 @@ function NodeView(props: NodeViewProps): JSX.Element {
         onClose={props.onClose}
         onUpdatePane={props.onUpdatePane}
         onChangeShell={props.onChangeShell}
+        shellOptions={props.shellOptions}
       />
     );
   }
@@ -390,7 +428,8 @@ function SplitView({
   onClose,
   onResize,
   onUpdatePane,
-  onChangeShell
+  onChangeShell,
+  shellOptions
 }: SplitViewProps): JSX.Element {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const directionClass = node.direction === 'row' ? 'split-row' : 'split-column';
@@ -444,6 +483,7 @@ function SplitView({
           onResize={onResize}
           onUpdatePane={onUpdatePane}
           onChangeShell={onChangeShell}
+          shellOptions={shellOptions}
         />
       </div>
       <div className="divider" role="separator" onPointerDown={beginResize} />
@@ -460,6 +500,7 @@ function SplitView({
           onResize={onResize}
           onUpdatePane={onUpdatePane}
           onChangeShell={onChangeShell}
+          shellOptions={shellOptions}
         />
       </div>
     </div>
@@ -476,6 +517,7 @@ type TerminalPaneProps = {
   onClose: (paneId: string) => void;
   onUpdatePane: (paneId: string, changes: Partial<PaneNode>) => void;
   onChangeShell: (paneId: string, shell: string) => void;
+  shellOptions: TerminalShellOption[];
 };
 
 function TerminalPane({
@@ -487,7 +529,8 @@ function TerminalPane({
   onSplit,
   onClose,
   onUpdatePane,
-  onChangeShell
+  onChangeShell,
+  shellOptions
 }: TerminalPaneProps): JSX.Element {
   const hostRef = useRef<HTMLDivElement | null>(null);
   const editorRef = useRef<HTMLDivElement | null>(null);
@@ -497,7 +540,7 @@ function TerminalPane({
   const [draftTitle, setDraftTitle] = useState(pane.customTitle || '');
   const displayTitle = pane.customTitle || pane.title;
   const headerColor = pane.headerColor || HEADER_COLOR_PRESETS[0];
-  const selectedShell = getShellOption(pane.shell);
+  const selectedShell = getShellOption(shellOptions, pane.shell);
 
   const commitTitle = useCallback(() => {
     const nextTitle = draftTitle.trim();
@@ -602,7 +645,7 @@ function TerminalPane({
   const handleShellSelect = (shell: string): void => {
     setShellMenuOpen(false);
 
-    if (shell !== getPaneShell(pane)) {
+    if (shell !== getPaneShell(shellOptions, pane)) {
       commitTitle();
       onChangeShell(pane.paneId, shell);
     }
@@ -628,7 +671,7 @@ function TerminalPane({
           </button>
           {shellMenuOpen && (
             <div className="shell-menu" role="menu">
-              {SHELL_OPTIONS.map((option) => (
+              {shellOptions.map((option) => (
                 <button
                   key={option.shell}
                   className={`shell-menu-item ${option.shell === selectedShell.shell ? 'is-selected' : ''}`}
@@ -638,7 +681,7 @@ function TerminalPane({
                 >
                   <ShellIcon name={option.icon} />
                   <span className="shell-menu-label">{option.label}</span>
-                  <span className="shell-menu-shortcut">{option.shortcut}</span>
+                  {option.shortcut && <span className="shell-menu-shortcut">{option.shortcut}</span>}
                 </button>
               ))}
             </div>
@@ -729,7 +772,7 @@ function SplitDownIcon(): JSX.Element {
   );
 }
 
-function ShellIcon({ name }: { name: 'powershell' | 'cmd' }): JSX.Element {
+function ShellIcon({ name }: { name: string }): JSX.Element {
   if (name === 'powershell') {
     return (
       <svg aria-hidden="true" viewBox="0 0 16 16">
