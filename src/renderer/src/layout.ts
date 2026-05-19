@@ -5,6 +5,8 @@ export type PaneNode = {
   paneId: string;
   cwd?: string;
   title: string;
+  customTitle?: string;
+  headerColor?: string;
 };
 
 export type SplitNode = {
@@ -168,7 +170,12 @@ export function isLayoutNode(value: unknown): value is LayoutNode {
   const node = value as LayoutNode;
 
   if (node.type === 'pane') {
-    return typeof node.paneId === 'string' && typeof node.title === 'string';
+    return (
+      typeof node.paneId === 'string' &&
+      typeof node.title === 'string' &&
+      (node.customTitle === undefined || typeof node.customTitle === 'string') &&
+      (node.headerColor === undefined || typeof node.headerColor === 'string')
+    );
   }
 
   return (

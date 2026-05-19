@@ -32,6 +32,17 @@ type TerminalSession = {
 
 type SessionRegistry = Map<string, TerminalSession>;
 
+const HEADER_COLOR_PRESETS = [
+  '#07090c',
+  '#102a43',
+  '#123235',
+  '#2b2545',
+  '#3b1f2b',
+  '#3a2f16',
+  '#163326',
+  '#2f343f'
+];
+
 function createXterm(): Terminal {
   return new Terminal({
     cursorBlink: true,
@@ -148,7 +159,7 @@ function App(): JSX.Element {
           updatePane(current, pane.paneId, (currentPane) => ({
             ...currentPane,
             cwd,
-            title: shell.replace(/\.exe$/i, '')
+            title: currentPane.customTitle ? currentPane.title : shell.replace(/\.exe$/i, '')
           }))
         );
       })
@@ -202,8 +213,18 @@ function App(): JSX.Element {
     setLayout((current) => resizeSplit(current, path, firstSize));
   }, []);
 
+  const handleUpdatePane = useCallback((paneId: string, changes: Partial<PaneNode>) => {
+    setLayout((current) =>
+      updatePane(current, paneId, (pane) => ({
+        ...pane,
+        ...changes
+      }))
+    );
+  }, []);
+
   const activePane = findPane(layout, activePaneId) || findPane(layout, getFirstPaneId(layout));
   const paneIds = listPaneIds(layout);
+  const activePaneTitle = activePane?.customTitle || activePane?.title || 'PowerShell';
 
   return (
     <main className="app-shell">
@@ -226,7 +247,7 @@ function App(): JSX.Element {
 
         <div className="sidebar-footer">
           <div className="footer-label">Active Pane</div>
-          <div className="footer-value">{activePane?.title || 'PowerShell'}</div>
+          <div className="footer-value">{activePaneTitle}</div>
           <div className="footer-path">{activePane?.cwd || 'Starting shell...'}</div>
         </div>
       </aside>
@@ -258,6 +279,7 @@ function App(): JSX.Element {
             onSplit={handleSplit}
             onClose={handleClose}
             onResize={handleResize}
+            onUpdatePane={handleUpdatePane}
           />
         </div>
       </section>
@@ -275,6 +297,7 @@ type NodeViewProps = {
   onSplit: (paneId: string, direction: SplitDirection) => void;
   onClose: (paneId: string) => void;
   onResize: (path: string, firstSize: number) => void;
+  onUpdatePane: (paneId: string, changes: Partial<PaneNode>) => void;
 };
 
 function NodeView(props: NodeViewProps): JSX.Element {
@@ -288,6 +311,7 @@ function NodeView(props: NodeViewProps): JSX.Element {
         onActivate={props.onActivate}
         onSplit={props.onSplit}
         onClose={props.onClose}
+        onUpdatePane={props.onUpdatePane}
       />
     );
   }
@@ -313,7 +337,8 @@ function SplitView({
   onActivate,
   onSplit,
   onClose,
-  onResize
+  onResize,
+  onUpdatePane
 }: SplitViewProps): JSX.Element {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const directionClass = node.direction === 'row' ? 'split-row' : 'split-column';
@@ -365,6 +390,7 @@ function SplitView({
           onSplit={onSplit}
           onClose={onClose}
           onResize={onResize}
+          onUpdatePane={onUpdatePane}
         />
       </div>
       <div className="divider" role="separator" onPointerDown={beginResize} />
@@ -379,6 +405,7 @@ function SplitView({
           onSplit={onSplit}
           onClose={onClose}
           onResize={onResize}
+          onUpdatePane={onUpdatePane}
         />
       </div>
     </div>
@@ -393,6 +420,7 @@ type TerminalPaneProps = {
   onActivate: (paneId: string) => void;
   onSplit: (paneId: string, direction: SplitDirection) => void;
   onClose: (paneId: string) => void;
+  onUpdatePane: (paneId: string, changes: Partial<PaneNode>) => void;
 };
 
 function TerminalPane({
@@ -402,9 +430,28 @@ function TerminalPane({
   ensureSession,
   onActivate,
   onSplit,
-  onClose
+  onClose,
+  onUpdatePane
 }: TerminalPaneProps): JSX.Element {
   const hostRef = useRef<HTMLDivElement | null>(null);
+  const editorRef = useRef<HTMLDivElement | null>(null);
+  const [editorOpen, setEditorOpen] = useState(false);
+  const [draftTitle, setDraftTitle] = useState(pane.customTitle || '');
+  const displayTitle = pane.customTitle || pane.title;
+  const headerColor = pane.headerColor || HEADER_COLOR_PRESETS[0];
+
+  const commitTitle = useCallback(() => {
+    const nextTitle = draftTitle.trim();
+
+    onUpdatePane(pane.paneId, {
+      customTitle: nextTitle.length > 0 ? nextTitle : undefined
+    });
+  }, [draftTitle, onUpdatePane, pane.paneId]);
+
+  const closeEditor = useCallback(() => {
+    commitTitle();
+    setEditorOpen(false);
+  }, [commitTitle]);
 
   useEffect(() => {
     const host = hostRef.current;
@@ -449,15 +496,86 @@ function TerminalPane({
     };
   }, [active, ensureSession, pane]);
 
+  useEffect(() => {
+    if (editorOpen) {
+      setDraftTitle(pane.customTitle || '');
+    }
+  }, [editorOpen, pane.customTitle]);
+
+  useEffect(() => {
+    if (!editorOpen) {
+      return;
+    }
+
+    const handlePointerDown = (event: MouseEvent): void => {
+      if (!editorRef.current?.contains(event.target as Node)) {
+        closeEditor();
+      }
+    };
+
+    document.addEventListener('mousedown', handlePointerDown);
+
+    return () => document.removeEventListener('mousedown', handlePointerDown);
+  }, [closeEditor, editorOpen]);
+
+  const handleColorSelect = (color: string): void => {
+    commitTitle();
+    onUpdatePane(pane.paneId, { headerColor: color === HEADER_COLOR_PRESETS[0] ? undefined : color });
+    setEditorOpen(false);
+  };
+
   return (
     <article
       className={`terminal-pane ${active ? 'is-active' : ''}`}
       onMouseDown={() => onActivate(pane.paneId)}
     >
-      <div className="pane-toolbar">
-        <div className="pane-title" title={pane.cwd}>
-          {pane.title}
+      <div className="pane-toolbar" style={{ backgroundColor: headerColor }}>
+        <div
+          className="pane-title"
+          title={pane.cwd}
+          onDoubleClick={(event) => {
+            event.preventDefault();
+            setEditorOpen(true);
+          }}
+        >
+          {displayTitle}
         </div>
+        {editorOpen && (
+          <div className="pane-editor" ref={editorRef} onMouseDown={(event) => event.stopPropagation()}>
+            <label className="pane-editor-label" htmlFor={`pane-title-${pane.paneId}`}>
+              Pane name
+            </label>
+            <input
+              id={`pane-title-${pane.paneId}`}
+              value={draftTitle}
+              placeholder={pane.title}
+              autoFocus
+              onChange={(event) => setDraftTitle(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter') {
+                  closeEditor();
+                }
+
+                if (event.key === 'Escape') {
+                  setDraftTitle(pane.customTitle || '');
+                  setEditorOpen(false);
+                }
+              }}
+            />
+            <div className="color-swatches" aria-label="Header color">
+              {HEADER_COLOR_PRESETS.map((color) => (
+                <button
+                  key={color}
+                  className={`color-swatch ${color === headerColor ? 'is-selected' : ''}`}
+                  type="button"
+                  title={color === HEADER_COLOR_PRESETS[0] ? 'Default' : color}
+                  style={{ backgroundColor: color }}
+                  onClick={() => handleColorSelect(color)}
+                />
+              ))}
+            </div>
+          </div>
+        )}
         <div className="pane-actions">
           <button type="button" title="Split right" onClick={() => onSplit(pane.paneId, 'row')}>
             <SplitRightIcon />

@@ -262,6 +262,7 @@ button {
   border-bottom: 1px solid #101820;
   background: #07090c;
   position: relative;
+  transition: background-color 120ms ease;
 }
 
 .pane-title {
@@ -277,6 +278,69 @@ button {
   padding: 0 16px;
   text-overflow: ellipsis;
   white-space: nowrap;
+  cursor: text;
+  user-select: none;
+}
+
+.pane-editor {
+  position: absolute;
+  z-index: 20;
+  top: 31px;
+  left: 50%;
+  width: min(240px, calc(100% - 24px));
+  transform: translateX(-50%);
+  border: 1px solid #263445;
+  border-radius: 8px;
+  background: #0b1118;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.45);
+  padding: 10px;
+}
+
+.pane-editor-label {
+  display: block;
+  margin-bottom: 6px;
+  color: #94a3b8;
+  font-size: 10px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.pane-editor input {
+  width: 100%;
+  height: 30px;
+  border: 1px solid #263445;
+  border-radius: 7px;
+  outline: 0;
+  background: #07090c;
+  color: #e5e7eb;
+  font-size: 12px;
+  padding: 0 9px;
+}
+
+.pane-editor input:focus {
+  border-color: #2dd4bf;
+  box-shadow: 0 0 0 1px rgba(45, 212, 191, 0.28);
+}
+
+.color-swatches {
+  display: grid;
+  grid-template-columns: repeat(8, 1fr);
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.color-swatch {
+  width: 20px;
+  height: 20px;
+  border: 1px solid rgba(203, 213, 225, 0.22);
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.color-swatch:hover,
+.color-swatch.is-selected {
+  border-color: #e5e7eb;
+  box-shadow: 0 0 0 2px rgba(226, 232, 240, 0.18);
 }
 
 .pane-actions {
