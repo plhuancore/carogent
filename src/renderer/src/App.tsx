@@ -43,6 +43,37 @@ const HEADER_COLOR_PRESETS = [
   '#2f343f'
 ];
 
+const DEFAULT_SHELL = 'cmd.exe';
+
+const SHELL_OPTIONS = [
+  {
+    shell: 'powershell.exe',
+    label: 'Windows PowerShell',
+    title: 'powershell',
+    shortcut: 'Ctrl+Shift+1',
+    icon: 'powershell'
+  },
+  {
+    shell: 'cmd.exe',
+    label: 'Command Prompt',
+    title: 'cmd',
+    shortcut: 'Ctrl+Shift+2',
+    icon: 'cmd'
+  }
+] as const;
+
+function getShellOption(shell?: string): (typeof SHELL_OPTIONS)[number] {
+  return SHELL_OPTIONS.find((option) => option.shell === shell?.toLowerCase()) || SHELL_OPTIONS[1];
+}
+
+function getPaneShell(pane: PaneNode): string {
+  return getShellOption(pane.shell).shell;
+}
+
+function getShellTitle(shell?: string): string {
+  return getShellOption(shell).title;
+}
+
 function createXterm(): Terminal {
   return new Terminal({
     cursorBlink: true,
@@ -148,8 +179,10 @@ function App(): JSX.Element {
 
     sessions.current.set(pane.paneId, session);
 
+    const requestedShell = getPaneShell(pane);
+
     window.terminalApi
-      .create({ cwd: pane.cwd })
+      .create({ cwd: pane.cwd, shell: requestedShell })
       .then(({ id, cwd, shell }) => {
         session.terminalId = id;
         session.cwd = cwd;
@@ -159,7 +192,8 @@ function App(): JSX.Element {
           updatePane(current, pane.paneId, (currentPane) => ({
             ...currentPane,
             cwd,
-            title: currentPane.customTitle ? currentPane.title : shell.replace(/\.exe$/i, '')
+            shell,
+            title: currentPane.customTitle ? currentPane.title : getShellTitle(shell)
           }))
         );
       })
@@ -222,9 +256,23 @@ function App(): JSX.Element {
     );
   }, []);
 
+  const handleChangeShell = useCallback(
+    (paneId: string, shell: string) => {
+      killPaneSession(paneId);
+      setLayout((current) =>
+        updatePane(current, paneId, (pane) => ({
+          ...pane,
+          shell,
+          title: pane.customTitle ? pane.title : getShellTitle(shell)
+        }))
+      );
+    },
+    [killPaneSession]
+  );
+
   const activePane = findPane(layout, activePaneId) || findPane(layout, getFirstPaneId(layout));
   const paneIds = listPaneIds(layout);
-  const activePaneTitle = activePane?.customTitle || activePane?.title || 'PowerShell';
+  const activePaneTitle = activePane?.customTitle || activePane?.title || getShellTitle(DEFAULT_SHELL);
 
   return (
     <main className="app-shell">
@@ -280,6 +328,7 @@ function App(): JSX.Element {
             onClose={handleClose}
             onResize={handleResize}
             onUpdatePane={handleUpdatePane}
+            onChangeShell={handleChangeShell}
           />
         </div>
       </section>
@@ -298,6 +347,7 @@ type NodeViewProps = {
   onClose: (paneId: string) => void;
   onResize: (path: string, firstSize: number) => void;
   onUpdatePane: (paneId: string, changes: Partial<PaneNode>) => void;
+  onChangeShell: (paneId: string, shell: string) => void;
 };
 
 function NodeView(props: NodeViewProps): JSX.Element {
@@ -312,6 +362,7 @@ function NodeView(props: NodeViewProps): JSX.Element {
         onSplit={props.onSplit}
         onClose={props.onClose}
         onUpdatePane={props.onUpdatePane}
+        onChangeShell={props.onChangeShell}
       />
     );
   }
@@ -338,7 +389,8 @@ function SplitView({
   onSplit,
   onClose,
   onResize,
-  onUpdatePane
+  onUpdatePane,
+  onChangeShell
 }: SplitViewProps): JSX.Element {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const directionClass = node.direction === 'row' ? 'split-row' : 'split-column';
@@ -391,6 +443,7 @@ function SplitView({
           onClose={onClose}
           onResize={onResize}
           onUpdatePane={onUpdatePane}
+          onChangeShell={onChangeShell}
         />
       </div>
       <div className="divider" role="separator" onPointerDown={beginResize} />
@@ -406,6 +459,7 @@ function SplitView({
           onClose={onClose}
           onResize={onResize}
           onUpdatePane={onUpdatePane}
+          onChangeShell={onChangeShell}
         />
       </div>
     </div>
@@ -421,6 +475,7 @@ type TerminalPaneProps = {
   onSplit: (paneId: string, direction: SplitDirection) => void;
   onClose: (paneId: string) => void;
   onUpdatePane: (paneId: string, changes: Partial<PaneNode>) => void;
+  onChangeShell: (paneId: string, shell: string) => void;
 };
 
 function TerminalPane({
@@ -431,14 +486,18 @@ function TerminalPane({
   onActivate,
   onSplit,
   onClose,
-  onUpdatePane
+  onUpdatePane,
+  onChangeShell
 }: TerminalPaneProps): JSX.Element {
   const hostRef = useRef<HTMLDivElement | null>(null);
   const editorRef = useRef<HTMLDivElement | null>(null);
+  const shellMenuRef = useRef<HTMLDivElement | null>(null);
   const [editorOpen, setEditorOpen] = useState(false);
+  const [shellMenuOpen, setShellMenuOpen] = useState(false);
   const [draftTitle, setDraftTitle] = useState(pane.customTitle || '');
   const displayTitle = pane.customTitle || pane.title;
   const headerColor = pane.headerColor || HEADER_COLOR_PRESETS[0];
+  const selectedShell = getShellOption(pane.shell);
 
   const commitTitle = useCallback(() => {
     const nextTitle = draftTitle.trim();
@@ -518,10 +577,35 @@ function TerminalPane({
     return () => document.removeEventListener('mousedown', handlePointerDown);
   }, [closeEditor, editorOpen]);
 
+  useEffect(() => {
+    if (!shellMenuOpen) {
+      return;
+    }
+
+    const handlePointerDown = (event: MouseEvent): void => {
+      if (!shellMenuRef.current?.contains(event.target as Node)) {
+        setShellMenuOpen(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handlePointerDown);
+
+    return () => document.removeEventListener('mousedown', handlePointerDown);
+  }, [shellMenuOpen]);
+
   const handleColorSelect = (color: string): void => {
     commitTitle();
     onUpdatePane(pane.paneId, { headerColor: color === HEADER_COLOR_PRESETS[0] ? undefined : color });
     setEditorOpen(false);
+  };
+
+  const handleShellSelect = (shell: string): void => {
+    setShellMenuOpen(false);
+
+    if (shell !== getPaneShell(pane)) {
+      commitTitle();
+      onChangeShell(pane.paneId, shell);
+    }
   };
 
   return (
@@ -530,6 +614,36 @@ function TerminalPane({
       onMouseDown={() => onActivate(pane.paneId)}
     >
       <div className="pane-toolbar" style={{ backgroundColor: headerColor }}>
+        <div className="shell-picker" ref={shellMenuRef} onMouseDown={(event) => event.stopPropagation()}>
+          <button
+            className="shell-picker-button"
+            type="button"
+            title="Select terminal"
+            aria-haspopup="menu"
+            aria-expanded={shellMenuOpen}
+            onClick={() => setShellMenuOpen((open) => !open)}
+          >
+            <ShellIcon name={selectedShell.icon} />
+            <ChevronDownIcon />
+          </button>
+          {shellMenuOpen && (
+            <div className="shell-menu" role="menu">
+              {SHELL_OPTIONS.map((option) => (
+                <button
+                  key={option.shell}
+                  className={`shell-menu-item ${option.shell === selectedShell.shell ? 'is-selected' : ''}`}
+                  type="button"
+                  role="menuitem"
+                  onClick={() => handleShellSelect(option.shell)}
+                >
+                  <ShellIcon name={option.icon} />
+                  <span className="shell-menu-label">{option.label}</span>
+                  <span className="shell-menu-shortcut">{option.shortcut}</span>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
         <div
           className="pane-title"
           title={pane.cwd}
@@ -611,6 +725,34 @@ function SplitDownIcon(): JSX.Element {
       <rect x="2.5" y="2.5" width="11" height="11" rx="2" />
       <path d="M3 8h10" />
       <path className="icon-accent" d="M6.25 10.5 8 12.25l1.75-1.75" />
+    </svg>
+  );
+}
+
+function ShellIcon({ name }: { name: 'powershell' | 'cmd' }): JSX.Element {
+  if (name === 'powershell') {
+    return (
+      <svg aria-hidden="true" viewBox="0 0 16 16">
+        <rect className="shell-icon-bg" x="1.75" y="3" width="12.5" height="10" rx="1.5" />
+        <path d="m5 6 2 2-2 2" />
+        <path d="M8.25 10h3" />
+      </svg>
+    );
+  }
+
+  return (
+    <svg aria-hidden="true" viewBox="0 0 16 16">
+      <rect x="2.25" y="3.25" width="11.5" height="9.5" rx="1" />
+      <path d="m4.75 6.5 1.65 1.5-1.65 1.5" />
+      <path d="M7.7 9.5h3.35" />
+    </svg>
+  );
+}
+
+function ChevronDownIcon(): JSX.Element {
+  return (
+    <svg aria-hidden="true" viewBox="0 0 16 16">
+      <path d="m4.5 6.25 3.5 3.5 3.5-3.5" />
     </svg>
   );
 }

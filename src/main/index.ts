@@ -23,12 +23,28 @@ type TerminalWriteRequest = {
 const terminals = new Map<string, pty.IPty>();
 let mainWindow: BrowserWindow | null = null;
 
+const WINDOWS_SHELLS = new Set(['cmd.exe', 'powershell.exe']);
+
 function getDefaultShell(): string {
   if (process.platform === 'win32') {
-    return 'powershell.exe';
+    return 'cmd.exe';
   }
 
   return process.env.SHELL || '/bin/bash';
+}
+
+function getShell(requestedShell?: string): string {
+  if (process.platform !== 'win32') {
+    return requestedShell || getDefaultShell();
+  }
+
+  const normalizedShell = requestedShell?.toLowerCase();
+
+  if (normalizedShell && WINDOWS_SHELLS.has(normalizedShell)) {
+    return normalizedShell;
+  }
+
+  return getDefaultShell();
 }
 
 function createWindow(): void {
@@ -72,7 +88,7 @@ function killTerminal(id: string): void {
 app.whenReady().then(() => {
   ipcMain.handle('terminal:create', (_event, request: TerminalCreateRequest = {}) => {
     const id = randomUUID();
-    const shell = request.shell || getDefaultShell();
+    const shell = getShell(request.shell);
     const cwd = request.cwd || os.homedir();
     const terminal = pty.spawn(shell, [], {
       name: 'xterm-256color',

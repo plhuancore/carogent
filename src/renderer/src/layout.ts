@@ -4,6 +4,7 @@ export type PaneNode = {
   type: 'pane';
   paneId: string;
   cwd?: string;
+  shell?: string;
   title: string;
   customTitle?: string;
   headerColor?: string;
@@ -18,12 +19,13 @@ export type SplitNode = {
 
 export type LayoutNode = PaneNode | SplitNode;
 
-export function createPane(cwd?: string): PaneNode {
+export function createPane(cwd?: string, shell = 'cmd.exe'): PaneNode {
   return {
     type: 'pane',
     paneId: crypto.randomUUID(),
     cwd,
-    title: 'PowerShell'
+    shell,
+    title: shell.replace(/\.exe$/i, '')
   };
 }
 
@@ -78,7 +80,8 @@ export function splitPane(
   paneId: string,
   direction: SplitDirection
 ): { layout: LayoutNode; newPaneId: string } {
-  const newPane = createPane(findPane(node, paneId)?.cwd);
+  const sourcePane = findPane(node, paneId);
+  const newPane = createPane(sourcePane?.cwd, sourcePane?.shell);
 
   function visit(current: LayoutNode): LayoutNode {
     if (current.type === 'pane' && current.paneId === paneId) {
@@ -173,6 +176,7 @@ export function isLayoutNode(value: unknown): value is LayoutNode {
     return (
       typeof node.paneId === 'string' &&
       typeof node.title === 'string' &&
+      (node.shell === undefined || typeof node.shell === 'string') &&
       (node.customTitle === undefined || typeof node.customTitle === 'string') &&
       (node.headerColor === undefined || typeof node.headerColor === 'string')
     );
