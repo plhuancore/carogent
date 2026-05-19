@@ -1,0 +1,134 @@
+import { app, BrowserWindow, ipcMain } from 'electron';
+import { randomUUID } from 'node:crypto';
+import { join } from 'node:path';
+import os from 'node:os';
+import * as pty from 'node-pty';
+
+type TerminalCreateRequest = {
+  cwd?: string;
+  shell?: string;
+};
+
+type TerminalResizeRequest = {
+  id: string;
+  cols: number;
+  rows: number;
+};
+
+type TerminalWriteRequest = {
+  id: string;
+  data: string;
+};
+
+const terminals = new Map<string, pty.IPty>();
+let mainWindow: BrowserWindow | null = null;
+
+function getDefaultShell(): string {
+  if (process.platform === 'win32') {
+    return 'powershell.exe';
+  }
+
+  return process.env.SHELL || '/bin/bash';
+}
+
+function createWindow(): void {
+  mainWindow = new BrowserWindow({
+    width: 1320,
+    height: 860,
+    minWidth: 900,
+    minHeight: 560,
+    title: 'Carogent Terminal',
+    backgroundColor: '#050607',
+    webPreferences: {
+      preload: join(__dirname, '../preload/index.mjs'),
+      sandbox: false,
+      contextIsolation: true,
+      nodeIntegration: false
+    }
+  });
+
+  if (process.env.ELECTRON_RENDERER_URL) {
+    mainWindow.loadURL(process.env.ELECTRON_RENDERER_URL);
+  } else {
+    mainWindow.loadFile(join(__dirname, '../renderer/index.html'));
+  }
+
+  mainWindow.on('closed', () => {
+    mainWindow = null;
+  });
+}
+
+function killTerminal(id: string): void {
+  const terminal = terminals.get(id);
+
+  if (!terminal) {
+    return;
+  }
+
+  terminal.kill();
+  terminals.delete(id);
+}
+
+app.whenReady().then(() => {
+  ipcMain.handle('terminal:create', (_event, request: TerminalCreateRequest = {}) => {
+    const id = randomUUID();
+    const shell = request.shell || getDefaultShell();
+    const cwd = request.cwd || os.homedir();
+    const terminal = pty.spawn(shell, [], {
+      name: 'xterm-256color',
+      cols: 100,
+      rows: 30,
+      cwd,
+      env: process.env
+    });
+
+    terminals.set(id, terminal);
+
+    terminal.onData((data) => {
+      mainWindow?.webContents.send('terminal:data', { id, data });
+    });
+
+    terminal.onExit(({ exitCode, signal }) => {
+      terminals.delete(id);
+      mainWindow?.webContents.send('terminal:exit', { id, exitCode, signal });
+    });
+
+    return { id, cwd, shell };
+  });
+
+  ipcMain.handle('terminal:resize', (_event, request: TerminalResizeRequest) => {
+    const terminal = terminals.get(request.id);
+
+    if (terminal) {
+      terminal.resize(Math.max(2, request.cols), Math.max(1, request.rows));
+    }
+  });
+
+  ipcMain.handle('terminal:write', (_event, request: TerminalWriteRequest) => {
+    terminals.get(request.id)?.write(request.data);
+  });
+
+  ipcMain.handle('terminal:kill', (_event, id: string) => {
+    killTerminal(id);
+  });
+
+  createWindow();
+
+  app.on('activate', () => {
+    if (BrowserWindow.getAllWindows().length === 0) {
+      createWindow();
+    }
+  });
+});
+
+app.on('before-quit', () => {
+  for (const id of terminals.keys()) {
+    killTerminal(id);
+  }
+});
+
+app.on('window-all-closed', () => {
+  if (process.platform !== 'darwin') {
+    app.quit();
+  }
+});
