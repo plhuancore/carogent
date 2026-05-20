@@ -37,6 +37,7 @@ interface Window {
     create: (request?: TerminalCreateRequest) => Promise<TerminalCreated>;
     resize: (request: { id: string; cols: number; rows: number }) => Promise<void>;
     write: (request: { id: string; data: string }) => Promise<void>;
+    getPathForFile: (file: File) => string;
     kill: (id: string) => Promise<void>;
     onData: (callback: (event: TerminalDataEvent) => void) => () => void;
     onExit: (callback: (event: TerminalExitEvent) => void) => () => void;

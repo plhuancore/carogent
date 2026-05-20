@@ -1,4 +1,4 @@
-import { contextBridge, ipcRenderer } from 'electron';
+import { contextBridge, ipcRenderer, webUtils } from 'electron';
 
 type TerminalCreateRequest = {
   cwd?: string;
@@ -40,6 +40,7 @@ const terminal = {
     ipcRenderer.invoke('terminal:resize', request),
   write: (request: { id: string; data: string }): Promise<void> =>
     ipcRenderer.invoke('terminal:write', request),
+  getPathForFile: (file: File): string => webUtils.getPathForFile(file),
   kill: (id: string): Promise<void> => ipcRenderer.invoke('terminal:kill', id),
   onData: (callback: (event: TerminalDataEvent) => void): (() => void) => {
     const listener = (_event: Electron.IpcRendererEvent, payload: TerminalDataEvent): void => {

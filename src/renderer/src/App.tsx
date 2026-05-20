@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { PointerEvent as ReactPointerEvent } from 'react';
+import type { DragEvent as ReactDragEvent, PointerEvent as ReactPointerEvent } from 'react';
 import { FitAddon } from '@xterm/addon-fit';
 import { Terminal } from '@xterm/xterm';
 import type { IDisposable } from '@xterm/xterm';
@@ -109,6 +109,14 @@ function getNextWorkspaceName(workspaces: WorkspaceState[]): string {
   }
 
   return `Project ${index}`;
+}
+
+function escapeTerminalPath(path: string): string {
+  if (/^[A-Za-z]:[\\/]/.test(path) || path.includes('\\')) {
+    return `"${path.replace(/"/g, '\\"')}"`;
+  }
+
+  return `'${path.replace(/'/g, "'\\''")}'`;
 }
 
 function App(): JSX.Element {
@@ -773,6 +781,7 @@ function TerminalPane({
   const shellMenuRef = useRef<HTMLDivElement | null>(null);
   const [editorOpen, setEditorOpen] = useState(false);
   const [shellMenuOpen, setShellMenuOpen] = useState(false);
+  const [dragActive, setDragActive] = useState(false);
   const [draftTitle, setDraftTitle] = useState(pane.customTitle || '');
   const displayTitle = pane.customTitle || pane.title;
   const headerColor = pane.headerColor || HEADER_COLOR_PRESETS[0];
@@ -887,10 +896,51 @@ function TerminalPane({
     }
   };
 
+  const handleDragOver = (event: ReactDragEvent<HTMLElement>): void => {
+    event.preventDefault();
+    event.dataTransfer.dropEffect = 'copy';
+    setDragActive(true);
+  };
+
+  const handleDragLeave = (event: ReactDragEvent<HTMLElement>): void => {
+    if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+      setDragActive(false);
+    }
+  };
+
+  const handleDrop = (event: ReactDragEvent<HTMLElement>): void => {
+    event.preventDefault();
+    setDragActive(false);
+    onActivate(pane.paneId);
+
+    const paths = Array.from(event.dataTransfer.files)
+      .map((file) => window.terminalApi.getPathForFile(file))
+      .filter((path) => path.length > 0);
+
+    if (paths.length === 0) {
+      return;
+    }
+
+    const session = ensureSession(pane);
+    const input = `${paths.map(escapeTerminalPath).join(' ')} `;
+
+    if (session.terminalId && session.status !== 'exited') {
+      window.terminalApi.write({ id: session.terminalId, data: input });
+      window.setTimeout(() => session.terminal.focus(), 0);
+      return;
+    }
+
+    session.terminal.writeln('');
+    session.terminal.writeln('Dropped file path will be available after the shell starts.');
+  };
+
   return (
     <article
-      className={`terminal-pane ${active ? 'is-active' : ''}`}
+      className={`terminal-pane ${active ? 'is-active' : ''} ${dragActive ? 'is-drag-over' : ''}`}
       onMouseDown={() => onActivate(pane.paneId)}
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}
     >
       <div className="pane-toolbar" style={{ backgroundColor: headerColor }}>
         <div className="shell-picker" ref={shellMenuRef} onMouseDown={(event) => event.stopPropagation()}>
