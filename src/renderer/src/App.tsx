@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { DragEvent as ReactDragEvent, PointerEvent as ReactPointerEvent } from 'react';
+import type { CSSProperties, DragEvent as ReactDragEvent, PointerEvent as ReactPointerEvent } from 'react';
 import { FitAddon } from '@xterm/addon-fit';
 import { SearchAddon } from '@xterm/addon-search';
 import type { ISearchOptions } from '@xterm/addon-search';
@@ -37,13 +37,13 @@ type SessionRegistry = Map<string, TerminalSession>;
 
 const HEADER_COLOR_PRESETS = [
   '#07090c',
-  '#102a43',
-  '#123235',
-  '#2b2545',
-  '#3b1f2b',
-  '#3a2f16',
-  '#163326',
-  '#2f343f'
+  '#0b2440',
+  '#073638',
+  '#241b4d',
+  '#431629',
+  '#44330d',
+  '#0c3a25',
+  '#1f2937'
 ];
 
 function getDefaultShellOption(shellOptions: TerminalShellOption[]): TerminalShellOption {
@@ -511,6 +511,7 @@ function App(): JSX.Element {
             node={layout}
             path=""
             activePaneId={activePaneId}
+            workspaceFocusColor={activeWorkspace.color}
             paneCount={paneCount}
             ensureSession={ensureSession}
             onActivate={handleActivatePane}
@@ -631,6 +632,7 @@ type NodeViewProps = {
   node: LayoutNode;
   path: string;
   activePaneId: string;
+  workspaceFocusColor?: string;
   paneCount: number;
   ensureSession: (pane: PaneNode) => TerminalSession;
   onActivate: (paneId: string) => void;
@@ -649,6 +651,7 @@ function NodeView(props: NodeViewProps): JSX.Element {
         key={props.node.paneId}
         pane={props.node}
         active={props.node.paneId === props.activePaneId}
+        workspaceFocusColor={props.workspaceFocusColor}
         canClose={props.paneCount > 1}
         ensureSession={props.ensureSession}
         onActivate={props.onActivate}
@@ -677,6 +680,7 @@ function SplitView({
   node,
   path,
   activePaneId,
+  workspaceFocusColor,
   paneCount,
   ensureSession,
   onActivate,
@@ -731,6 +735,7 @@ function SplitView({
           node={node.children[0]}
           path={`${path}0`}
           activePaneId={activePaneId}
+          workspaceFocusColor={workspaceFocusColor}
           paneCount={paneCount}
           ensureSession={ensureSession}
           onActivate={onActivate}
@@ -748,6 +753,7 @@ function SplitView({
           node={node.children[1]}
           path={`${path}1`}
           activePaneId={activePaneId}
+          workspaceFocusColor={workspaceFocusColor}
           paneCount={paneCount}
           ensureSession={ensureSession}
           onActivate={onActivate}
@@ -766,6 +772,7 @@ function SplitView({
 type TerminalPaneProps = {
   pane: PaneNode;
   active: boolean;
+  workspaceFocusColor?: string;
   canClose: boolean;
   ensureSession: (pane: PaneNode) => TerminalSession;
   onActivate: (paneId: string) => void;
@@ -779,6 +786,7 @@ type TerminalPaneProps = {
 function TerminalPane({
   pane,
   active,
+  workspaceFocusColor,
   canClose,
   ensureSession,
   onActivate,
@@ -807,6 +815,13 @@ function TerminalPane({
   const displayTitle = pane.customTitle || pane.title;
   const headerColor = pane.headerColor || HEADER_COLOR_PRESETS[0];
   const selectedShell = getShellOption(shellOptions, pane.shell);
+  const paneStyle = useMemo(
+    () =>
+      ({
+        '--pane-active-color': workspaceFocusColor || undefined
+      }) as CSSProperties,
+    [workspaceFocusColor]
+  );
 
   const commitTitle = useCallback(() => {
     const nextTitle = draftTitle.trim();
@@ -1121,6 +1136,7 @@ function TerminalPane({
   return (
     <article
       className={`terminal-pane ${active ? 'is-active' : ''} ${dragActive ? 'is-drag-over' : ''}`}
+      style={paneStyle}
       onMouseDown={() => onActivate(pane.paneId)}
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}

@@ -387,8 +387,8 @@ button {
 }
 
 .terminal-pane.is-active {
-  border-color: #d1d5db;
-  box-shadow: 0 0 0 1px #d1d5db inset;
+  border-color: var(--pane-active-color, #d1d5db);
+  box-shadow: 0 0 0 1px var(--pane-active-color, #d1d5db) inset;
 }
 
 .terminal-pane.is-drag-over {
