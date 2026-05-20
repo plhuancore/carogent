@@ -67,6 +67,9 @@ function getShellTitle(shellOptions: TerminalShellOption[], shell?: string): str
 function createXterm(): Terminal {
   return new Terminal({
     cursorBlink: true,
+    cursorInactiveStyle: 'bar',
+    cursorStyle: 'bar',
+    cursorWidth: 2,
     fontFamily: '"SF Mono", "SFMono-Regular", Menlo, Monaco, "Cascadia Mono", "Consolas", monospace',
     fontSize: 14,
     fontWeight: 500,
