@@ -45,11 +45,17 @@ type DirectoryListResult = {
   entries: DirectoryEntry[];
 };
 
+type ImagePreviewResult = {
+  dataUrl: string;
+};
+
 const terminal = {
   getShellOptions: (): Promise<TerminalShellOption[]> =>
     ipcRenderer.invoke('terminal:get-shell-options'),
   listDirectory: (request: { path: string }): Promise<DirectoryListResult> =>
     ipcRenderer.invoke('filesystem:list-directory', request),
+  getImagePreview: (request: { path: string }): Promise<ImagePreviewResult> =>
+    ipcRenderer.invoke('filesystem:get-image-preview', request),
   create: (request?: TerminalCreateRequest): Promise<TerminalCreated> =>
     ipcRenderer.invoke('terminal:create', request),
   resize: (request: { id: string; cols: number; rows: number }): Promise<void> =>

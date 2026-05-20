@@ -45,10 +45,15 @@ type DirectoryListResult = {
   entries: DirectoryEntry[];
 };
 
+type ImagePreviewResult = {
+  dataUrl: string;
+};
+
 interface Window {
   terminalApi: {
     getShellOptions: () => Promise<TerminalShellOption[]>;
     listDirectory: (request: { path: string }) => Promise<DirectoryListResult>;
+    getImagePreview: (request: { path: string }) => Promise<ImagePreviewResult>;
     create: (request?: TerminalCreateRequest) => Promise<TerminalCreated>;
     resize: (request: { id: string; cols: number; rows: number }) => Promise<void>;
     write: (request: { id: string; data: string }) => Promise<void>;

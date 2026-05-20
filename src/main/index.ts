@@ -1,7 +1,7 @@
 import { app, BrowserWindow, ipcMain } from 'electron';
 import { randomUUID } from 'node:crypto';
-import { delimiter, dirname, join } from 'node:path';
-import { readdir, stat } from 'node:fs/promises';
+import { delimiter, dirname, extname, join } from 'node:path';
+import { readFile, readdir, stat } from 'node:fs/promises';
 import os from 'node:os';
 import * as pty from 'node-pty';
 
@@ -42,8 +42,24 @@ type DirectoryEntry = {
   modifiedAt?: number;
 };
 
+type ImagePreviewRequest = {
+  path: string;
+};
+
 const terminals = new Map<string, pty.IPty>();
 let mainWindow: BrowserWindow | null = null;
+
+const IMAGE_MIME_TYPES = new Map([
+  ['.png', 'image/png'],
+  ['.jpg', 'image/jpeg'],
+  ['.jpeg', 'image/jpeg'],
+  ['.gif', 'image/gif'],
+  ['.webp', 'image/webp'],
+  ['.bmp', 'image/bmp'],
+  ['.svg', 'image/svg+xml']
+]);
+
+const MAX_PREVIEW_BYTES = 10 * 1024 * 1024;
 
 function getShellOptions(): TerminalShellOption[] {
   if (process.platform === 'win32') {
@@ -254,10 +270,33 @@ async function listDirectory(request: DirectoryListRequest): Promise<{
   };
 }
 
+async function getImagePreview(request: ImagePreviewRequest): Promise<{ dataUrl: string }> {
+  const imagePath = request.path.trim();
+  const extension = extname(imagePath).toLowerCase();
+  const mimeType = IMAGE_MIME_TYPES.get(extension);
+
+  if (!imagePath || !mimeType) {
+    throw new Error('Preview unavailable.');
+  }
+
+  const imageStat = await stat(imagePath);
+
+  if (!imageStat.isFile() || imageStat.size > MAX_PREVIEW_BYTES) {
+    throw new Error('Preview unavailable.');
+  }
+
+  const data = await readFile(imagePath);
+
+  return {
+    dataUrl: `data:${mimeType};base64,${data.toString('base64')}`
+  };
+}
+
 app.whenReady().then(() => {
   ipcMain.handle('terminal:get-shell-options', () => getShellOptions());
 
   ipcMain.handle('filesystem:list-directory', (_event, request: DirectoryListRequest) => listDirectory(request));
+  ipcMain.handle('filesystem:get-image-preview', (_event, request: ImagePreviewRequest) => getImagePreview(request));
 
   ipcMain.handle('terminal:create', (_event, request: TerminalCreateRequest = {}) => {
     const id = randomUUID();
