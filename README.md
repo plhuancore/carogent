@@ -14,7 +14,6 @@ Carogent Terminal is an Electron desktop app for working with multiple real term
 
 ## Getting Started
 
-
 Install dependencies:
 
 ```powershell
