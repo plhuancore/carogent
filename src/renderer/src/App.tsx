@@ -826,10 +826,11 @@ function PinnedFolderPanel({
           ) : preview.status === 'error' ? (
             <span>Preview unavailable</span>
           ) : (
-            <img
-              src={preview.dataUrl}
-              alt={preview.entry.name}
-              onError={() => setPreview((current) => (current ? { ...current, status: 'error' } : null))}
+            <div
+              className="pinned-image-preview-media"
+              role="img"
+              aria-label={preview.entry.name}
+              style={{ backgroundImage: `url("${preview.dataUrl}")` }}
             />
           )}
         </div>

@@ -39,6 +39,7 @@ type DirectoryEntry = {
   path: string;
   type: 'file' | 'directory';
   size?: number;
+  createdAt?: number;
   modifiedAt?: number;
 };
 
@@ -262,6 +263,7 @@ async function listDirectory(request: DirectoryListRequest): Promise<{
           path: entryPath,
           type: dirent.isDirectory() ? 'directory' : 'file',
           size: entryStat.size,
+          createdAt: entryStat.birthtimeMs,
           modifiedAt: entryStat.mtimeMs
         };
       })
@@ -270,6 +272,13 @@ async function listDirectory(request: DirectoryListRequest): Promise<{
   entries.sort((first, second) => {
     if (first.type !== second.type) {
       return first.type === 'directory' ? -1 : 1;
+    }
+
+    const firstTime = first.createdAt || first.modifiedAt || 0;
+    const secondTime = second.createdAt || second.modifiedAt || 0;
+
+    if (firstTime !== secondTime) {
+      return secondTime - firstTime;
     }
 
     return first.name.localeCompare(second.name, undefined, { sensitivity: 'base' });

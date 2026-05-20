@@ -36,6 +36,7 @@ type DirectoryEntry = {
   path: string;
   type: 'file' | 'directory';
   size?: number;
+  createdAt?: number;
   modifiedAt?: number;
 };
 
