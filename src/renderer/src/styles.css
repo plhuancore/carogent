@@ -410,7 +410,7 @@ button {
 }
 
 .pane-title {
-  max-width: calc(100% - 172px);
+  max-width: calc(100% - 208px);
   overflow: hidden;
   border: 1px solid #202a36;
   border-radius: 999px;
@@ -581,6 +581,96 @@ button {
 .color-swatch.is-selected {
   border-color: #e5e7eb;
   box-shadow: 0 0 0 2px rgba(226, 232, 240, 0.18);
+}
+
+.pane-search {
+  position: absolute;
+  z-index: 22;
+  top: 31px;
+  right: 8px;
+  display: grid;
+  grid-template-columns: minmax(110px, 220px) repeat(2, auto) minmax(56px, auto) repeat(3, auto);
+  align-items: center;
+  gap: 5px;
+  max-width: calc(100% - 16px);
+  border: 1px solid #263445;
+  border-radius: 8px;
+  background: #0b1118;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.45);
+  padding: 7px;
+}
+
+.pane-search-input {
+  min-width: 0;
+  height: 28px;
+  border: 1px solid #263445;
+  border-radius: 6px;
+  outline: 0;
+  background: #07090c;
+  color: #e5e7eb;
+  font-family: "Cascadia Mono", Consolas, monospace;
+  font-size: 12px;
+  padding: 0 8px;
+}
+
+.pane-search-input:focus {
+  border-color: #2dd4bf;
+  box-shadow: 0 0 0 1px rgba(45, 212, 191, 0.24);
+}
+
+.pane-search button {
+  display: grid;
+  min-width: 28px;
+  height: 28px;
+  place-items: center;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: #94a3b8;
+  font-family: "Cascadia Mono", Consolas, monospace;
+  font-size: 12px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.pane-search button:hover,
+.pane-search-toggle.is-active {
+  background: #16202b;
+  color: #ffffff;
+}
+
+.pane-search .pane-search-nav {
+  min-width: 34px;
+  height: 32px;
+  border: 1px solid #334155;
+  background: #111827;
+  color: #e5e7eb;
+  font-size: 18px;
+  font-weight: 900;
+  line-height: 1;
+}
+
+.pane-search .pane-search-nav:hover {
+  border-color: #2dd4bf;
+  background: #1f2937;
+  color: #ffffff;
+}
+
+.pane-search-count {
+  min-width: 56px;
+  color: #cbd5e1;
+  font-family: "Cascadia Mono", Consolas, monospace;
+  font-size: 12px;
+  line-height: 28px;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.pane-search-status {
+  grid-column: 1 / -1;
+  color: #fb7185;
+  font-size: 11px;
+  line-height: 14px;
 }
 
 .pane-actions {

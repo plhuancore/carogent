@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { DragEvent as ReactDragEvent, PointerEvent as ReactPointerEvent } from 'react';
 import { FitAddon } from '@xterm/addon-fit';
+import { SearchAddon } from '@xterm/addon-search';
+import type { ISearchOptions } from '@xterm/addon-search';
 import { Terminal } from '@xterm/xterm';
 import type { IDisposable } from '@xterm/xterm';
 import '@xterm/xterm/css/xterm.css';
@@ -23,6 +25,7 @@ import './styles.css';
 type TerminalSession = {
   terminal: Terminal;
   fitAddon: FitAddon;
+  searchAddon: SearchAddon;
   input: IDisposable;
   terminalId?: string;
   cwd?: string;
@@ -66,6 +69,7 @@ function getShellTitle(shellOptions: TerminalShellOption[], shell?: string): str
 
 function createXterm(): Terminal {
   return new Terminal({
+    allowProposedApi: true,
     cursorBlink: true,
     cursorInactiveStyle: 'bar',
     cursorStyle: 'bar',
@@ -231,11 +235,14 @@ function App(): JSX.Element {
 
     const terminal = createXterm();
     const fitAddon = new FitAddon();
+    const searchAddon = new SearchAddon();
     terminal.loadAddon(fitAddon);
+    terminal.loadAddon(searchAddon);
 
     const session: TerminalSession = {
       terminal,
       fitAddon,
+      searchAddon,
       status: 'starting',
       input: terminal.onData((data) => {
         if (session.terminalId && session.status !== 'exited') {
@@ -783,8 +790,17 @@ function TerminalPane({
 }: TerminalPaneProps): JSX.Element {
   const hostRef = useRef<HTMLDivElement | null>(null);
   const editorRef = useRef<HTMLDivElement | null>(null);
+  const searchRef = useRef<HTMLDivElement | null>(null);
+  const searchInputRef = useRef<HTMLInputElement | null>(null);
   const shellMenuRef = useRef<HTMLDivElement | null>(null);
   const [editorOpen, setEditorOpen] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchCaseSensitive, setSearchCaseSensitive] = useState(false);
+  const [searchRegex, setSearchRegex] = useState(false);
+  const [searchError, setSearchError] = useState<string | null>(null);
+  const [searchResultCount, setSearchResultCount] = useState(0);
+  const [searchResultIndex, setSearchResultIndex] = useState<number | null>(null);
   const [shellMenuOpen, setShellMenuOpen] = useState(false);
   const [dragActive, setDragActive] = useState(false);
   const [draftTitle, setDraftTitle] = useState(pane.customTitle || '');
@@ -804,6 +820,98 @@ function TerminalPane({
     commitTitle();
     setEditorOpen(false);
   }, [commitTitle]);
+
+  const getSearchOptions = useCallback(
+    (incremental = false): ISearchOptions | null => {
+      if (searchRegex) {
+        try {
+          new RegExp(searchQuery);
+        } catch {
+          setSearchError('Invalid regex');
+          return null;
+        }
+      }
+
+      setSearchError(null);
+
+      return {
+        caseSensitive: searchCaseSensitive,
+        regex: searchRegex,
+        incremental,
+        decorations: {
+          matchBackground: '#facc15',
+          matchOverviewRuler: '#facc15',
+          activeMatchBackground: '#f97316',
+          activeMatchBorder: '#ffffff',
+          activeMatchColorOverviewRuler: '#f97316'
+        }
+      };
+    },
+    [searchCaseSensitive, searchQuery, searchRegex]
+  );
+
+  const focusTerminal = useCallback(() => {
+    const session = ensureSession(pane);
+
+    window.setTimeout(() => session.terminal.focus(), 0);
+  }, [ensureSession, pane]);
+
+  const closeSearch = useCallback(() => {
+    const session = ensureSession(pane);
+
+    session.searchAddon.clearDecorations();
+    setSearchResultCount(0);
+    setSearchResultIndex(null);
+    setSearchOpen(false);
+    focusTerminal();
+  }, [ensureSession, focusTerminal, pane]);
+
+  const openSearch = useCallback(() => {
+    onActivate(pane.paneId);
+    setSearchOpen(true);
+    window.setTimeout(() => searchInputRef.current?.focus(), 0);
+  }, [onActivate, pane.paneId]);
+
+  const runSearch = useCallback(
+    (direction: 'next' | 'previous', incremental = false) => {
+      const query = searchQuery.trim();
+
+      if (!query) {
+        setSearchError(null);
+        setSearchResultCount(0);
+        setSearchResultIndex(null);
+        return;
+      }
+
+      const searchOptions = getSearchOptions(incremental);
+
+      if (!searchOptions) {
+        return;
+      }
+
+      try {
+        const session = ensureSession(pane);
+        const found =
+          direction === 'next'
+            ? session.searchAddon.findNext(query, searchOptions)
+            : session.searchAddon.findPrevious(query, searchOptions);
+
+        setSearchError(found ? null : 'No match');
+      } catch (error) {
+        setSearchError(error instanceof Error ? error.message : String(error));
+      }
+    },
+    [ensureSession, getSearchOptions, pane, searchQuery]
+  );
+
+  const searchCountLabel =
+    searchResultIndex === -1
+      ? 'Many matches'
+      : searchResultIndex !== null && searchResultCount > 0
+        ? `${searchResultIndex + 1} of ${searchResultCount}`
+        : searchError === 'No match'
+          ? '0 of 0'
+          : '';
 
   useEffect(() => {
     const host = hostRef.current;
@@ -853,10 +961,61 @@ function TerminalPane({
   }, [active, ensureSession, pane]);
 
   useEffect(() => {
+    const session = ensureSession(pane);
+    const disposable = session.searchAddon.onDidChangeResults(({ resultIndex, resultCount }) => {
+      setSearchResultIndex(resultIndex);
+      setSearchResultCount(resultCount);
+    });
+
+    return () => disposable.dispose();
+  }, [ensureSession, pane]);
+
+  useEffect(() => {
     if (editorOpen) {
       setDraftTitle(pane.customTitle || '');
     }
   }, [editorOpen, pane.customTitle]);
+
+  useEffect(() => {
+    if (searchOpen) {
+      window.setTimeout(() => searchInputRef.current?.focus(), 0);
+    }
+  }, [searchOpen]);
+
+  useEffect(() => {
+    if (!searchOpen) {
+      return;
+    }
+
+    if (!searchQuery.trim()) {
+      const session = ensureSession(pane);
+
+      session.searchAddon.clearDecorations();
+      setSearchError(null);
+      setSearchResultCount(0);
+      setSearchResultIndex(null);
+      return;
+    }
+
+    runSearch('next', true);
+  }, [ensureSession, pane, runSearch, searchCaseSensitive, searchOpen, searchQuery, searchRegex]);
+
+  useEffect(() => {
+    if (!active) {
+      return;
+    }
+
+    const handleKeyDown = (event: KeyboardEvent): void => {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'f') {
+        event.preventDefault();
+        openSearch();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [active, openSearch]);
 
   useEffect(() => {
     if (!editorOpen) {
@@ -873,6 +1032,22 @@ function TerminalPane({
 
     return () => document.removeEventListener('mousedown', handlePointerDown);
   }, [closeEditor, editorOpen]);
+
+  useEffect(() => {
+    if (!searchOpen) {
+      return;
+    }
+
+    const handlePointerDown = (event: MouseEvent): void => {
+      if (!searchRef.current?.contains(event.target as Node)) {
+        closeSearch();
+      }
+    };
+
+    document.addEventListener('mousedown', handlePointerDown);
+
+    return () => document.removeEventListener('mousedown', handlePointerDown);
+  }, [closeSearch, searchOpen]);
 
   useEffect(() => {
     if (!shellMenuOpen) {
@@ -1028,7 +1203,74 @@ function TerminalPane({
             </div>
           </div>
         )}
+        {searchOpen && (
+          <div className="pane-search" ref={searchRef} onMouseDown={(event) => event.stopPropagation()}>
+            <input
+              ref={searchInputRef}
+              className="pane-search-input"
+              value={searchQuery}
+              placeholder="Search"
+              onChange={(event) => {
+                setSearchQuery(event.target.value);
+                setSearchError(null);
+                setSearchResultCount(0);
+                setSearchResultIndex(null);
+              }}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter') {
+                  event.preventDefault();
+                  runSearch(event.shiftKey ? 'previous' : 'next');
+                }
+
+                if (event.key === 'Escape') {
+                  event.preventDefault();
+                  closeSearch();
+                }
+              }}
+            />
+            <button
+              className={`pane-search-toggle ${searchCaseSensitive ? 'is-active' : ''}`}
+              type="button"
+              title="Match case"
+              onClick={() => setSearchCaseSensitive((value) => !value)}
+            >
+              Aa
+            </button>
+            <button
+              className={`pane-search-toggle ${searchRegex ? 'is-active' : ''}`}
+              type="button"
+              title="Use regex"
+              onClick={() => setSearchRegex((value) => !value)}
+            >
+              .*
+            </button>
+            <span className="pane-search-count">{searchCountLabel}</span>
+            <button
+              className="pane-search-nav"
+              type="button"
+              title="Previous match"
+              onClick={() => runSearch('previous')}
+            >
+              ↑
+            </button>
+            <button
+              className="pane-search-nav"
+              type="button"
+              title="Next match"
+              onClick={() => runSearch('next')}
+            >
+              ↓
+            </button>
+            <button type="button" title="Close search" onClick={closeSearch}>
+              x
+            </button>
+            {searchError && <span className="pane-search-status">{searchError}</span>}
+          </div>
+        )}
         <div className="pane-actions">
+          <button type="button" title="Search" onClick={openSearch}>
+            <SearchIcon />
+          </button>
           <button type="button" title="Split right" onClick={() => onSplit(pane.paneId, 'row')}>
             <SplitRightIcon />
           </button>
@@ -1044,6 +1286,15 @@ function TerminalPane({
         <div className="terminal-viewport" ref={hostRef} />
       </div>
     </article>
+  );
+}
+
+function SearchIcon(): JSX.Element {
+  return (
+    <svg aria-hidden="true" viewBox="0 0 16 16">
+      <circle cx="7" cy="7" r="4.5" />
+      <path d="m10.5 10.5 3 3" />
+    </svg>
   );
 }
 
