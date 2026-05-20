@@ -1,6 +1,6 @@
 import { app, BrowserWindow, ipcMain } from 'electron';
 import { randomUUID } from 'node:crypto';
-import { join } from 'node:path';
+import { delimiter, join } from 'node:path';
 import os from 'node:os';
 import * as pty from 'node-pty';
 
@@ -102,6 +102,57 @@ function getShell(requestedShell?: string): string {
   return getDefaultShell();
 }
 
+function getShellArgs(shell: string): string[] {
+  if (process.platform !== 'darwin') {
+    return [];
+  }
+
+  const shellName = shell.split('/').pop()?.toLowerCase();
+
+  if (shellName === 'zsh') {
+    return ['-l'];
+  }
+
+  if (shellName === 'bash') {
+    return ['--login'];
+  }
+
+  return [];
+}
+
+function getTerminalEnv(): NodeJS.ProcessEnv {
+  const env: NodeJS.ProcessEnv = { ...process.env };
+
+  for (const key of Object.keys(env)) {
+    if (key.toLowerCase().startsWith('npm_')) {
+      delete env[key];
+    }
+  }
+
+  delete env.INIT_CWD;
+  delete env.NODE;
+  delete env.NODE_ENV;
+  delete env.NODE_ENV_ELECTRON_VITE;
+  delete env.ELECTRON_RENDERER_URL;
+  delete env.ELECTRON_ENTRY;
+  delete env.ELECTRON_CLI_ARGS;
+  delete env.ELECTRON_EXEC_PATH;
+  delete env.ELECTRON_MAJOR_VER;
+  delete env.NO_SANDBOX;
+
+  if (env.PATH) {
+    env.PATH = env.PATH.split(delimiter)
+      .filter((segment) => {
+        const normalized = segment.replace(/\\/g, '/');
+
+        return !normalized.endsWith('/node_modules/.bin') && !normalized.includes('/@npmcli/run-script/lib/node-gyp-bin');
+      })
+      .join(delimiter);
+  }
+
+  return env;
+}
+
 function createWindow(): void {
   mainWindow = new BrowserWindow({
     width: 1320,
@@ -146,13 +197,14 @@ app.whenReady().then(() => {
   ipcMain.handle('terminal:create', (_event, request: TerminalCreateRequest = {}) => {
     const id = randomUUID();
     const shell = getShell(request.shell);
+    const shellArgs = getShellArgs(shell);
     const cwd = request.cwd || os.homedir();
-    const terminal = pty.spawn(shell, [], {
+    const terminal = pty.spawn(shell, shellArgs, {
       name: 'xterm-256color',
       cols: 100,
       rows: 30,
       cwd,
-      env: process.env
+      env: getTerminalEnv()
     });
 
     terminals.set(id, terminal);
