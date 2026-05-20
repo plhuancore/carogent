@@ -500,6 +500,7 @@ function App(): JSX.Element {
 
         <div className="terminal-canvas">
           <NodeView
+            key={activeWorkspace.id}
             node={layout}
             path=""
             activePaneId={activePaneId}
@@ -638,6 +639,7 @@ function NodeView(props: NodeViewProps): JSX.Element {
   if (props.node.type === 'pane') {
     return (
       <TerminalPane
+        key={props.node.paneId}
         pane={props.node}
         active={props.node.paneId === props.activePaneId}
         canClose={props.paneCount > 1}
@@ -843,6 +845,10 @@ function TerminalPane({
 
     return () => {
       observer.disconnect();
+
+      if (session.terminal.element?.parentElement === host) {
+        host.removeChild(session.terminal.element);
+      }
     };
   }, [active, ensureSession, pane]);
 
