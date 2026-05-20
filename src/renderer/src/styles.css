@@ -36,6 +36,7 @@ button {
 .sidebar {
   display: flex;
   min-width: 0;
+  min-height: 0;
   flex-direction: column;
   border-right: 1px solid #1b222b;
   background: #080a0d;
@@ -76,8 +77,12 @@ button {
 
 .workspace-list {
   display: flex;
+  min-height: 88px;
+  max-height: 34%;
   flex-direction: column;
   gap: 8px;
+  overflow-y: auto;
+  padding-right: 2px;
 }
 
 .workspace-list-header {
@@ -221,6 +226,197 @@ button {
 .workspace-color-swatch.is-selected {
   border-color: #e5e7eb;
   box-shadow: 0 0 0 2px rgba(226, 232, 240, 0.18);
+}
+
+.pinned-folder {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 14px;
+  border-top: 1px solid #151c24;
+  padding: 12px 8px 0;
+}
+
+.pinned-folder-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  color: #64748b;
+  font-size: 10px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.pinned-folder-header button {
+  height: 22px;
+  border: 1px solid #243244;
+  border-radius: 6px;
+  background: #10151d;
+  color: #94a3b8;
+  font-size: 10px;
+  font-weight: 700;
+  padding: 0 7px;
+  text-transform: none;
+  cursor: pointer;
+}
+
+.pinned-folder-header button:hover:not(:disabled) {
+  border-color: #2dd4bf;
+  color: #ffffff;
+}
+
+.pinned-folder-header button:disabled {
+  color: #475569;
+  cursor: not-allowed;
+}
+
+.pinned-folder-form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 6px;
+}
+
+.pinned-folder-form input {
+  min-width: 0;
+  height: 28px;
+  border: 1px solid #263445;
+  border-radius: 6px;
+  outline: 0;
+  background: #07090c;
+  color: #e5e7eb;
+  font-family: "Cascadia Mono", Consolas, monospace;
+  font-size: 11px;
+  padding: 0 8px;
+}
+
+.pinned-folder-form input:focus {
+  border-color: #2dd4bf;
+  box-shadow: 0 0 0 1px rgba(45, 212, 191, 0.24);
+}
+
+.pinned-folder-form button {
+  height: 28px;
+  border: 1px solid #263445;
+  border-radius: 6px;
+  background: #0d141d;
+  color: #dbeafe;
+  font-size: 11px;
+  padding: 0 9px;
+  cursor: pointer;
+}
+
+.pinned-folder-form button:hover:not(:disabled) {
+  border-color: #2dd4bf;
+}
+
+.pinned-folder-form button:disabled {
+  color: #475569;
+  cursor: not-allowed;
+}
+
+.pinned-folder-current,
+.pinned-folder-error,
+.pinned-folder-empty {
+  overflow: hidden;
+  color: #7c8797;
+  font-family: "Cascadia Mono", Consolas, monospace;
+  font-size: 10px;
+  line-height: 15px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pinned-folder-error {
+  color: #fb7185;
+  white-space: normal;
+}
+
+.pinned-folder-list {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 3px;
+  overflow: auto;
+  margin-left: -8px;
+  margin-right: -16px;
+  padding-right: 4px;
+}
+
+.pinned-folder-row {
+  display: grid;
+  grid-template-columns: 14px minmax(0, 1fr);
+  align-items: center;
+  gap: 4px;
+  width: 100%;
+  min-height: 28px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: #cbd5e1;
+  padding: 0 3px;
+  text-align: left;
+  cursor: grab;
+}
+
+.pinned-folder-row:hover {
+  background: #121a24;
+  color: #ffffff;
+}
+
+.pinned-folder-row:active {
+  cursor: grabbing;
+}
+
+.pinned-folder-icon {
+  display: grid;
+  width: 14px;
+  height: 14px;
+  place-items: center;
+  color: #67e8f9;
+}
+
+.pinned-folder-icon svg {
+  width: 13px;
+  height: 13px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.35;
+}
+
+.pinned-folder-name {
+  overflow: hidden;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.workspace-list,
+.pinned-folder-list {
+  scrollbar-color: rgba(148, 163, 184, 0.42) transparent;
+  scrollbar-width: thin;
+}
+
+.workspace-list::-webkit-scrollbar,
+.pinned-folder-list::-webkit-scrollbar {
+  width: 8px;
+}
+
+.workspace-list::-webkit-scrollbar-track,
+.pinned-folder-list::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.workspace-list::-webkit-scrollbar-thumb,
+.pinned-folder-list::-webkit-scrollbar-thumb {
+  border: 2px solid transparent;
+  border-radius: 8px;
+  background: rgba(148, 163, 184, 0.42);
+  background-clip: content-box;
 }
 
 .status-dot {

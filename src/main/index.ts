@@ -1,6 +1,7 @@
 import { app, BrowserWindow, ipcMain } from 'electron';
 import { randomUUID } from 'node:crypto';
-import { delimiter, join } from 'node:path';
+import { delimiter, dirname, join } from 'node:path';
+import { readdir, stat } from 'node:fs/promises';
 import os from 'node:os';
 import * as pty from 'node-pty';
 
@@ -27,6 +28,18 @@ type TerminalResizeRequest = {
 type TerminalWriteRequest = {
   id: string;
   data: string;
+};
+
+type DirectoryListRequest = {
+  path: string;
+};
+
+type DirectoryEntry = {
+  name: string;
+  path: string;
+  type: 'file' | 'directory';
+  size?: number;
+  modifiedAt?: number;
 };
 
 const terminals = new Map<string, pty.IPty>();
@@ -191,8 +204,60 @@ function killTerminal(id: string): void {
   terminals.delete(id);
 }
 
+async function listDirectory(request: DirectoryListRequest): Promise<{
+  path: string;
+  parentPath?: string;
+  entries: DirectoryEntry[];
+}> {
+  const directoryPath = request.path.trim();
+
+  if (!directoryPath) {
+    throw new Error('Enter a folder path.');
+  }
+
+  const directoryStat = await stat(directoryPath);
+
+  if (!directoryStat.isDirectory()) {
+    throw new Error('Path is not a folder.');
+  }
+
+  const dirents = await readdir(directoryPath, { withFileTypes: true });
+  const entries = await Promise.all(
+    dirents
+      .filter((dirent) => dirent.isDirectory() || dirent.isFile())
+      .map(async (dirent): Promise<DirectoryEntry> => {
+        const entryPath = join(directoryPath, dirent.name);
+        const entryStat = await stat(entryPath);
+
+        return {
+          name: dirent.name,
+          path: entryPath,
+          type: dirent.isDirectory() ? 'directory' : 'file',
+          size: entryStat.size,
+          modifiedAt: entryStat.mtimeMs
+        };
+      })
+  );
+
+  entries.sort((first, second) => {
+    if (first.type !== second.type) {
+      return first.type === 'directory' ? -1 : 1;
+    }
+
+    return first.name.localeCompare(second.name, undefined, { sensitivity: 'base' });
+  });
+
+  return {
+    path: directoryPath,
+    parentPath: dirname(directoryPath) !== directoryPath ? dirname(directoryPath) : undefined,
+    entries
+  };
+}
+
 app.whenReady().then(() => {
   ipcMain.handle('terminal:get-shell-options', () => getShellOptions());
+
+  ipcMain.handle('filesystem:list-directory', (_event, request: DirectoryListRequest) => listDirectory(request));
 
   ipcMain.handle('terminal:create', (_event, request: TerminalCreateRequest = {}) => {
     const id = randomUUID();

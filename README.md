@@ -46,6 +46,7 @@ npm run typecheck
 - Close panes.
 - Run independent terminal sessions in each pane.
 - Choose the shell for each pane.
+- Pin one folder in the sidebar and insert file paths into the active terminal.
 - Restore the pane layout after restarting the app.
 - Customize each pane name and header color.
 
@@ -60,6 +61,16 @@ Carogent is the terminal workspace. The selected shell runs inside each pane.
 Windows shows Command Prompt and Windows PowerShell. macOS shows zsh and bash.
 
 New panes use the platform default shell. Split panes inherit the shell from the pane that was split.
+
+## Pin A Folder
+
+The sidebar can keep one pinned folder across all workspaces.
+
+1. Enter a folder path under `Pinned Folder`.
+2. Click `Open`.
+3. Click a file to insert its path into the active terminal, or drag a file/folder row into a terminal pane.
+
+Folder rows open that folder in the sidebar. Inserted paths are quoted and followed by a space; Carogent does not press `Enter` or run a command.
 
 ## Rename A Pane
 
@@ -88,5 +99,5 @@ Header colors are saved per pane, so different split terminals can use different
 ## Notes
 
 - Terminal command output and scrollback are not saved between app restarts.
-- Only the pane layout, pane shells, pane names, pane colors, and working directory metadata are restored.
+- Only the pane layout, pinned folder, pane shells, pane names, pane colors, and working directory metadata are restored.
 - The app uses platform-specific shell defaults: Command Prompt on Windows and zsh on macOS.

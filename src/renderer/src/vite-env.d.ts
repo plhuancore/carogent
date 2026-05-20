@@ -31,9 +31,24 @@ type TerminalExitEvent = {
   signal?: number;
 };
 
+type DirectoryEntry = {
+  name: string;
+  path: string;
+  type: 'file' | 'directory';
+  size?: number;
+  modifiedAt?: number;
+};
+
+type DirectoryListResult = {
+  path: string;
+  parentPath?: string;
+  entries: DirectoryEntry[];
+};
+
 interface Window {
   terminalApi: {
     getShellOptions: () => Promise<TerminalShellOption[]>;
+    listDirectory: (request: { path: string }) => Promise<DirectoryListResult>;
     create: (request?: TerminalCreateRequest) => Promise<TerminalCreated>;
     resize: (request: { id: string; cols: number; rows: number }) => Promise<void>;
     write: (request: { id: string; data: string }) => Promise<void>;

@@ -14,6 +14,7 @@ export type WorkspaceState = {
 export type WorkspaceStore = {
   activeWorkspaceId: string;
   workspaces: WorkspaceState[];
+  pinnedDirectory?: string;
 };
 
 function createWorkspace(name = 'Workspace'): WorkspaceState {
@@ -32,7 +33,8 @@ function createInitialStore(): WorkspaceStore {
 
   return {
     activeWorkspaceId: workspace.id,
-    workspaces: [workspace]
+    workspaces: [workspace],
+    pinnedDirectory: ''
   };
 }
 
@@ -63,7 +65,8 @@ function isWorkspaceStore(value: unknown): value is WorkspaceStore {
     typeof store.activeWorkspaceId === 'string' &&
     Array.isArray(store.workspaces) &&
     store.workspaces.length > 0 &&
-    store.workspaces.every(isWorkspaceState)
+    store.workspaces.every(isWorkspaceState) &&
+    (store.pinnedDirectory === undefined || typeof store.pinnedDirectory === 'string')
   );
 }
 
@@ -90,7 +93,8 @@ function loadLegacyStore(): WorkspaceStore | null {
 
     return {
       activeWorkspaceId: workspace.id,
-      workspaces: [workspace]
+      workspaces: [workspace],
+      pinnedDirectory: ''
     };
   } catch {
     return null;

@@ -31,9 +31,25 @@ type TerminalExitEvent = {
   signal?: number;
 };
 
+type DirectoryEntry = {
+  name: string;
+  path: string;
+  type: 'file' | 'directory';
+  size?: number;
+  modifiedAt?: number;
+};
+
+type DirectoryListResult = {
+  path: string;
+  parentPath?: string;
+  entries: DirectoryEntry[];
+};
+
 const terminal = {
   getShellOptions: (): Promise<TerminalShellOption[]> =>
     ipcRenderer.invoke('terminal:get-shell-options'),
+  listDirectory: (request: { path: string }): Promise<DirectoryListResult> =>
+    ipcRenderer.invoke('filesystem:list-directory', request),
   create: (request?: TerminalCreateRequest): Promise<TerminalCreated> =>
     ipcRenderer.invoke('terminal:create', request),
   resize: (request: { id: string; cols: number; rows: number }): Promise<void> =>

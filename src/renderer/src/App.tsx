@@ -1,5 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { CSSProperties, DragEvent as ReactDragEvent, PointerEvent as ReactPointerEvent } from 'react';
+import type {
+  CSSProperties,
+  DragEvent as ReactDragEvent,
+  FormEvent as ReactFormEvent,
+  PointerEvent as ReactPointerEvent
+} from 'react';
 import { FitAddon } from '@xterm/addon-fit';
 import { SearchAddon } from '@xterm/addon-search';
 import type { ISearchOptions } from '@xterm/addon-search';
@@ -130,6 +135,7 @@ function App(): JSX.Element {
   const initialStore = useMemo(() => loadWorkspaceStore(), []);
   const [workspaces, setWorkspaces] = useState<WorkspaceState[]>(() => initialStore.workspaces);
   const [activeWorkspaceId, setActiveWorkspaceId] = useState(() => initialStore.activeWorkspaceId);
+  const [pinnedDirectory, setPinnedDirectory] = useState(() => initialStore.pinnedDirectory || '');
   const [shellOptions, setShellOptions] = useState<TerminalShellOption[] | null>(null);
   const [shellOptionsError, setShellOptionsError] = useState<string | null>(null);
   const sessions = useRef<SessionRegistry>(new Map());
@@ -143,8 +149,8 @@ function App(): JSX.Element {
   const paneCount = useMemo(() => countPanes(layout), [layout]);
 
   useEffect(() => {
-    saveWorkspaceStore({ activeWorkspaceId: activeWorkspace.id, workspaces });
-  }, [activeWorkspace.id, activeWorkspaceId, workspaces]);
+    saveWorkspaceStore({ activeWorkspaceId: activeWorkspace.id, workspaces, pinnedDirectory });
+  }, [activeWorkspace.id, pinnedDirectory, workspaces]);
 
   const updateActiveWorkspace = useCallback(
     (updater: (workspace: WorkspaceState) => WorkspaceState) => {
@@ -430,6 +436,27 @@ function App(): JSX.Element {
     activePane?.title ||
     (shellOptions?.length ? getDefaultShellOption(shellOptions).title : 'terminal');
 
+  const handleInsertPath = useCallback(
+    (path: string) => {
+      if (!activePane) {
+        return;
+      }
+
+      const session = ensureSession(activePane);
+      const input = `${escapeTerminalPath(path)} `;
+
+      if (session.terminalId && session.status !== 'exited') {
+        window.terminalApi.write({ id: session.terminalId, data: input });
+        window.setTimeout(() => session.terminal.focus(), 0);
+        return;
+      }
+
+      session.terminal.writeln('');
+      session.terminal.writeln('Path will be available after the shell starts.');
+    },
+    [activePane, ensureSession]
+  );
+
   if (shellOptionsError) {
     return (
       <main className="app-shell">
@@ -481,6 +508,12 @@ function App(): JSX.Element {
             />
           ))}
         </section>
+
+        <PinnedFolderPanel
+          pinnedDirectory={pinnedDirectory}
+          onPinnedDirectoryChange={setPinnedDirectory}
+          onInsertPath={handleInsertPath}
+        />
 
         <div className="sidebar-footer">
           <div className="footer-label">Active Pane</div>
@@ -537,6 +570,141 @@ type WorkspaceItemProps = {
   onColorChange: (workspaceId: string, color: string) => void;
   onDelete: (workspaceId: string) => void;
 };
+
+type PinnedFolderPanelProps = {
+  pinnedDirectory: string;
+  onPinnedDirectoryChange: (path: string) => void;
+  onInsertPath: (path: string) => void;
+};
+
+function PinnedFolderPanel({
+  pinnedDirectory,
+  onPinnedDirectoryChange,
+  onInsertPath
+}: PinnedFolderPanelProps): JSX.Element {
+  const [draftPath, setDraftPath] = useState(pinnedDirectory);
+  const [directory, setDirectory] = useState<DirectoryListResult | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const loadDirectory = useCallback((path: string): void => {
+    const nextPath = path.trim();
+
+    setDraftPath(nextPath);
+
+    if (!nextPath) {
+      setDirectory(null);
+      setError(null);
+      setLoading(false);
+      return;
+    }
+
+    setLoading(true);
+    window.terminalApi
+      .listDirectory({ path: nextPath })
+      .then((result) => {
+        setDirectory(result);
+        setDraftPath(result.path);
+        setError(null);
+        onPinnedDirectoryChange(result.path);
+      })
+      .catch((loadError: unknown) => {
+        setDirectory(null);
+        setError(loadError instanceof Error ? loadError.message : String(loadError));
+      })
+      .finally(() => setLoading(false));
+  }, [onPinnedDirectoryChange]);
+
+  useEffect(() => {
+    setDraftPath(pinnedDirectory);
+    loadDirectory(pinnedDirectory);
+  }, [loadDirectory, pinnedDirectory]);
+
+  const handleSubmit = (event: ReactFormEvent<HTMLFormElement>): void => {
+    event.preventDefault();
+    loadDirectory(draftPath);
+  };
+
+  const handleDragStart = (event: ReactDragEvent<HTMLButtonElement>, path: string): void => {
+    event.dataTransfer.effectAllowed = 'copy';
+    event.dataTransfer.setData('application/x-carogent-path', path);
+    event.dataTransfer.setData('text/plain', path);
+  };
+
+  return (
+    <section className="pinned-folder">
+      <div className="pinned-folder-header">
+        <span>Pinned Folder</span>
+        <button
+          type="button"
+          title="Refresh pinned folder"
+          onClick={() => loadDirectory(draftPath)}
+          disabled={!draftPath.trim() || loading}
+        >
+          refresh
+        </button>
+      </div>
+      <form className="pinned-folder-form" onSubmit={handleSubmit}>
+        <input
+          value={draftPath}
+          placeholder="Folder path"
+          onChange={(event) => setDraftPath(event.target.value)}
+        />
+        <button type="submit" disabled={!draftPath.trim() || loading}>
+          Open
+        </button>
+      </form>
+      {directory && (
+        <div className="pinned-folder-current" title={directory.path}>
+          {directory.path}
+        </div>
+      )}
+      {error && <div className="pinned-folder-error">{error}</div>}
+      <div className="pinned-folder-list">
+        {directory?.parentPath && (
+          <button
+            className="pinned-folder-row"
+            type="button"
+            onClick={() => loadDirectory(directory.parentPath || '')}
+          >
+            <span className="pinned-folder-icon">
+              <ParentFolderIcon />
+            </span>
+            <span className="pinned-folder-name">Parent folder</span>
+          </button>
+        )}
+        {directory?.entries.map((entry) => (
+          <button
+            key={entry.path}
+            className="pinned-folder-row"
+            type="button"
+            draggable
+            title={entry.path}
+            onClick={() => {
+              if (entry.type === 'directory') {
+                loadDirectory(entry.path);
+                return;
+              }
+
+              onInsertPath(entry.path);
+            }}
+            onDragStart={(event) => handleDragStart(event, entry.path)}
+          >
+            <span className="pinned-folder-icon">
+              <FileTreeIcon type={entry.type} />
+            </span>
+            <span className="pinned-folder-name">{entry.name}</span>
+          </button>
+        ))}
+        {loading && <div className="pinned-folder-empty">Loading...</div>}
+        {!loading && !directory && !error && <div className="pinned-folder-empty">Enter folder path</div>}
+        {!loading && directory && directory.entries.length === 0 && (
+          <div className="pinned-folder-empty">Empty folder</div>
+        )}
+      </div>
+    </section>
+  );
+}
 
 function WorkspaceItem({
   workspace,
@@ -1112,9 +1280,12 @@ function TerminalPane({
     setDragActive(false);
     onActivate(pane.paneId);
 
-    const paths = Array.from(event.dataTransfer.files)
+    const filePaths = Array.from(event.dataTransfer.files)
       .map((file) => window.terminalApi.getPathForFile(file))
       .filter((path) => path.length > 0);
+    const internalPath =
+      event.dataTransfer.getData('application/x-carogent-path') || event.dataTransfer.getData('text/plain');
+    const paths = filePaths.length > 0 ? filePaths : [internalPath].filter((path) => path.length > 0);
 
     if (paths.length === 0) {
       return;
@@ -1310,6 +1481,34 @@ function SearchIcon(): JSX.Element {
     <svg aria-hidden="true" viewBox="0 0 16 16">
       <circle cx="7" cy="7" r="4.5" />
       <path d="m10.5 10.5 3 3" />
+    </svg>
+  );
+}
+
+function ParentFolderIcon(): JSX.Element {
+  return (
+    <svg aria-hidden="true" viewBox="0 0 16 16">
+      <path d="m6.25 5.75-3 3 3 3" />
+      <path d="M3.5 8.75h9" />
+      <path d="M12.5 8.75V4.5H7.25" />
+    </svg>
+  );
+}
+
+function FileTreeIcon({ type }: { type: 'file' | 'directory' }): JSX.Element {
+  if (type === 'directory') {
+    return (
+      <svg aria-hidden="true" viewBox="0 0 16 16">
+        <path d="M1.75 5.25h12.5v7.25a1.25 1.25 0 0 1-1.25 1.25H3a1.25 1.25 0 0 1-1.25-1.25z" />
+        <path d="M1.75 5.25V3.75A1.25 1.25 0 0 1 3 2.5h3l1.25 1.5H13a1.25 1.25 0 0 1 1.25 1.25" />
+      </svg>
+    );
+  }
+
+  return (
+    <svg aria-hidden="true" viewBox="0 0 16 16">
+      <path d="M4 2.25h5.25L12.5 5.5v8.25H4z" />
+      <path d="M9.25 2.25V5.5h3.25" />
     </svg>
   );
 }
