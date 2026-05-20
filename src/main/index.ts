@@ -182,6 +182,18 @@ function getTerminalEnv(): NodeJS.ProcessEnv {
   return env;
 }
 
+function expandHomePath(path: string): string {
+  if (path === '~') {
+    return os.homedir();
+  }
+
+  if (path.startsWith(`~${process.platform === 'win32' ? '\\' : '/'}`)) {
+    return join(os.homedir(), path.slice(2));
+  }
+
+  return path;
+}
+
 function createWindow(): void {
   mainWindow = new BrowserWindow({
     width: 1320,
@@ -225,7 +237,7 @@ async function listDirectory(request: DirectoryListRequest): Promise<{
   parentPath?: string;
   entries: DirectoryEntry[];
 }> {
-  const directoryPath = request.path.trim();
+  const directoryPath = expandHomePath(request.path.trim());
 
   if (!directoryPath) {
     throw new Error('Enter a folder path.');
@@ -271,7 +283,7 @@ async function listDirectory(request: DirectoryListRequest): Promise<{
 }
 
 async function getImagePreview(request: ImagePreviewRequest): Promise<{ dataUrl: string }> {
-  const imagePath = request.path.trim();
+  const imagePath = expandHomePath(request.path.trim());
   const extension = extname(imagePath).toLowerCase();
   const mimeType = IMAGE_MIME_TYPES.get(extension);
 
