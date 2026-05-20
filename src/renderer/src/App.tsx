@@ -43,13 +43,13 @@ type SessionRegistry = Map<string, TerminalSession>;
 
 const HEADER_COLOR_PRESETS = [
   '#07090c',
-  '#0b2440',
-  '#073638',
-  '#241b4d',
-  '#431629',
-  '#44330d',
-  '#0c3a25',
-  '#1f2937'
+  '#2563eb',
+  '#0f766e',
+  '#7c3aed',
+  '#db2777',
+  '#d97706',
+  '#16a34a',
+  '#475569'
 ];
 
 function getDefaultShellOption(shellOptions: TerminalShellOption[]): TerminalShellOption {
@@ -850,6 +850,12 @@ function WorkspaceItem({
   const [editing, setEditing] = useState(false);
   const [draftName, setDraftName] = useState(workspace.name);
   const workspaceColor = workspace.color || HEADER_COLOR_PRESETS[0];
+  const dotStyle = {
+    backgroundColor: workspaceColor,
+    boxShadow: active
+      ? `0 0 0 2px rgba(255, 255, 255, 0.58), 0 0 12px ${workspaceColor}, 0 0 24px ${workspaceColor}, 0 0 38px ${workspaceColor}`
+      : `0 0 0 1px rgba(255, 255, 255, 0.38), 0 0 12px ${workspaceColor}, 0 0 24px ${workspaceColor}`
+  };
 
   const commitName = (): void => {
     onRename(workspace.id, draftName);
@@ -864,9 +870,9 @@ function WorkspaceItem({
 
   if (editing) {
     return (
-      <div className={`workspace-item is-editing ${active ? 'active' : ''}`} style={{ backgroundColor: workspaceColor }}>
+      <div className={`workspace-item is-editing ${active ? 'active' : ''}`}>
         <div className="workspace-edit-row">
-          <span className="status-dot" />
+          <span className="status-dot" style={dotStyle} />
           <input
             className="workspace-name-input"
             value={draftName}
@@ -904,14 +910,14 @@ function WorkspaceItem({
   }
 
   return (
-    <div className={`workspace-item ${active ? 'active' : ''}`} style={{ backgroundColor: workspaceColor }}>
+    <div className={`workspace-item ${active ? 'active' : ''}`}>
       <button
         className="workspace-select-button"
         type="button"
         onClick={() => onSelect(workspace.id)}
         onDoubleClick={() => setEditing(true)}
       >
-        <span className="status-dot" />
+        <span className="status-dot" style={dotStyle} />
         <span className="workspace-name">{workspace.name}</span>
       </button>
       <span className="badge">{countPanes(workspace.layout)}</span>
@@ -922,7 +928,7 @@ function WorkspaceItem({
         onClick={() => onDelete(workspace.id)}
         disabled={!canDelete}
       >
-        x
+        <CloseIcon />
       </button>
     </div>
   );
@@ -1613,6 +1619,15 @@ function SearchIcon(): JSX.Element {
     <svg aria-hidden="true" viewBox="0 0 16 16">
       <circle cx="7" cy="7" r="4.5" />
       <path d="m10.5 10.5 3 3" />
+    </svg>
+  );
+}
+
+function CloseIcon(): JSX.Element {
+  return (
+    <svg aria-hidden="true" viewBox="0 0 16 16">
+      <path d="m4.75 4.75 6.5 6.5" />
+      <path d="m11.25 4.75-6.5 6.5" />
     </svg>
   );
 }
