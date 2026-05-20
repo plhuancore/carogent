@@ -17,7 +17,7 @@ import {
   splitPane,
   updatePane
 } from './layout';
-import { loadLayout, saveLayout } from './storage';
+import { createEmptyWorkspace, loadWorkspaceStore, saveWorkspaceStore, WorkspaceState } from './storage';
 import './styles.css';
 
 type TerminalSession = {
@@ -100,19 +100,63 @@ function createXterm(): Terminal {
   });
 }
 
+function getNextWorkspaceName(workspaces: WorkspaceState[]): string {
+  let index = workspaces.length + 1;
+  const names = new Set(workspaces.map((workspace) => workspace.name));
+
+  while (names.has(`Project ${index}`)) {
+    index += 1;
+  }
+
+  return `Project ${index}`;
+}
+
 function App(): JSX.Element {
-  const initialLayout = useMemo(() => loadLayout(), []);
-  const [layout, setLayout] = useState<LayoutNode>(() => initialLayout);
-  const [activePaneId, setActivePaneId] = useState(() => getFirstPaneId(initialLayout));
+  const initialStore = useMemo(() => loadWorkspaceStore(), []);
+  const [workspaces, setWorkspaces] = useState<WorkspaceState[]>(() => initialStore.workspaces);
+  const [activeWorkspaceId, setActiveWorkspaceId] = useState(() => initialStore.activeWorkspaceId);
   const [shellOptions, setShellOptions] = useState<TerminalShellOption[] | null>(null);
   const [shellOptionsError, setShellOptionsError] = useState<string | null>(null);
   const sessions = useRef<SessionRegistry>(new Map());
 
+  const activeWorkspace =
+    workspaces.find((workspace) => workspace.id === activeWorkspaceId) || workspaces[0];
+  const layout = activeWorkspace.layout;
+  const activePaneId = findPane(layout, activeWorkspace.activePaneId)
+    ? activeWorkspace.activePaneId
+    : getFirstPaneId(layout);
   const paneCount = useMemo(() => countPanes(layout), [layout]);
 
   useEffect(() => {
-    saveLayout(layout);
-  }, [layout]);
+    saveWorkspaceStore({ activeWorkspaceId: activeWorkspace.id, workspaces });
+  }, [activeWorkspace.id, activeWorkspaceId, workspaces]);
+
+  const updateActiveWorkspace = useCallback(
+    (updater: (workspace: WorkspaceState) => WorkspaceState) => {
+      setWorkspaces((current) =>
+        current.map((workspace) => (workspace.id === activeWorkspaceId ? updater(workspace) : workspace))
+      );
+    },
+    [activeWorkspaceId]
+  );
+
+  const updatePaneInAnyWorkspace = useCallback(
+    (paneId: string, updater: (pane: PaneNode, workspace: WorkspaceState) => PaneNode) => {
+      setWorkspaces((current) =>
+        current.map((workspace) => {
+          if (!findPane(workspace.layout, paneId)) {
+            return workspace;
+          }
+
+          return {
+            ...workspace,
+            layout: updatePane(workspace.layout, paneId, (pane) => updater(pane, workspace))
+          };
+        })
+      );
+    },
+    []
+  );
 
   useEffect(() => {
     window.terminalApi
@@ -200,14 +244,12 @@ function App(): JSX.Element {
         session.cwd = cwd;
         session.shell = shell;
         session.status = 'running';
-        setLayout((current) =>
-          updatePane(current, pane.paneId, (currentPane) => ({
-            ...currentPane,
-            cwd,
-            shell,
-            title: currentPane.customTitle ? currentPane.title : getShellTitle(shellOptions, shell)
-          }))
-        );
+        updatePaneInAnyWorkspace(pane.paneId, (currentPane) => ({
+          ...currentPane,
+          cwd,
+          shell,
+          title: currentPane.customTitle ? currentPane.title : getShellTitle(shellOptions, shell)
+        }));
       })
       .catch((error: unknown) => {
         session.status = 'exited';
@@ -215,7 +257,7 @@ function App(): JSX.Element {
       });
 
     return session;
-  }, [shellOptions]);
+  }, [shellOptions, updatePaneInAnyWorkspace]);
 
   const killPaneSession = useCallback((paneId: string): void => {
     const session = sessions.current.get(paneId);
@@ -234,12 +276,16 @@ function App(): JSX.Element {
   }, []);
 
   const handleSplit = useCallback((paneId: string, direction: SplitDirection) => {
-    setLayout((current) => {
-      const result = splitPane(current, paneId, direction);
-      setActivePaneId(result.newPaneId);
-      return result.layout;
+    updateActiveWorkspace((workspace) => {
+      const result = splitPane(workspace.layout, paneId, direction);
+
+      return {
+        ...workspace,
+        layout: result.layout,
+        activePaneId: result.newPaneId
+      };
     });
-  }, []);
+  }, [updateActiveWorkspace]);
 
   const handleClose = useCallback(
     (paneId: string) => {
@@ -249,24 +295,31 @@ function App(): JSX.Element {
 
       const nextLayout = closePane(layout, paneId);
       killPaneSession(paneId);
-      setLayout(nextLayout);
-      setActivePaneId(getFirstPaneId(nextLayout));
+      updateActiveWorkspace((workspace) => ({
+        ...workspace,
+        layout: nextLayout,
+        activePaneId: getFirstPaneId(nextLayout)
+      }));
     },
-    [killPaneSession, layout]
+    [killPaneSession, layout, updateActiveWorkspace]
   );
 
   const handleResize = useCallback((path: string, firstSize: number) => {
-    setLayout((current) => resizeSplit(current, path, firstSize));
-  }, []);
+    updateActiveWorkspace((workspace) => ({
+      ...workspace,
+      layout: resizeSplit(workspace.layout, path, firstSize)
+    }));
+  }, [updateActiveWorkspace]);
 
   const handleUpdatePane = useCallback((paneId: string, changes: Partial<PaneNode>) => {
-    setLayout((current) =>
-      updatePane(current, paneId, (pane) => ({
+    updateActiveWorkspace((workspace) => ({
+      ...workspace,
+      layout: updatePane(workspace.layout, paneId, (pane) => ({
         ...pane,
         ...changes
       }))
-    );
-  }, []);
+    }));
+  }, [updateActiveWorkspace]);
 
   const handleChangeShell = useCallback(
     (paneId: string, shell: string) => {
@@ -275,15 +328,81 @@ function App(): JSX.Element {
       }
 
       killPaneSession(paneId);
-      setLayout((current) =>
-        updatePane(current, paneId, (pane) => ({
+      updateActiveWorkspace((workspace) => ({
+        ...workspace,
+        layout: updatePane(workspace.layout, paneId, (pane) => ({
           ...pane,
           shell,
           title: pane.customTitle ? pane.title : getShellTitle(shellOptions, shell)
         }))
-      );
+      }));
     },
-    [killPaneSession, shellOptions]
+    [killPaneSession, shellOptions, updateActiveWorkspace]
+  );
+
+  const handleActivatePane = useCallback((paneId: string) => {
+    updateActiveWorkspace((workspace) => ({
+      ...workspace,
+      activePaneId: paneId
+    }));
+  }, [updateActiveWorkspace]);
+
+  const handleAddWorkspace = useCallback(() => {
+    const workspace = createEmptyWorkspace(getNextWorkspaceName(workspaces));
+
+    setWorkspaces((current) => [...current, workspace]);
+    setActiveWorkspaceId(workspace.id);
+  }, [workspaces]);
+
+  const handleRenameWorkspace = useCallback((workspaceId: string, name: string) => {
+    const nextName = name.trim();
+
+    if (!nextName) {
+      return;
+    }
+
+    setWorkspaces((current) =>
+      current.map((workspace) => (workspace.id === workspaceId ? { ...workspace, name: nextName } : workspace))
+    );
+  }, []);
+
+  const handleUpdateWorkspaceColor = useCallback((workspaceId: string, color: string) => {
+    setWorkspaces((current) =>
+      current.map((workspace) =>
+        workspace.id === workspaceId
+          ? { ...workspace, color: color === HEADER_COLOR_PRESETS[0] ? undefined : color }
+          : workspace
+      )
+    );
+  }, []);
+
+  const handleDeleteWorkspace = useCallback(
+    (workspaceId: string) => {
+      if (workspaces.length <= 1) {
+        return;
+      }
+
+      const workspace = workspaces.find((item) => item.id === workspaceId);
+
+      if (!workspace) {
+        return;
+      }
+
+      for (const paneId of listPaneIds(workspace.layout)) {
+        killPaneSession(paneId);
+      }
+
+      const deleteIndex = workspaces.findIndex((item) => item.id === workspaceId);
+      const nextWorkspaces = workspaces.filter((item) => item.id !== workspaceId);
+
+      setWorkspaces(nextWorkspaces);
+
+      if (workspaceId === activeWorkspaceId) {
+        const nextActiveIndex = Math.min(deleteIndex, nextWorkspaces.length - 1);
+        setActiveWorkspaceId(nextWorkspaces[nextActiveIndex].id);
+      }
+    },
+    [activeWorkspaceId, killPaneSession, workspaces]
   );
 
   const activePane = findPane(layout, activePaneId) || findPane(layout, getFirstPaneId(layout));
@@ -325,11 +444,24 @@ function App(): JSX.Element {
         </div>
 
         <section className="workspace-list">
-          <button className="workspace-item active" type="button">
-            <span className="status-dot" />
-            <span>Workspace</span>
-            <span className="badge">{paneCount}</span>
-          </button>
+          <div className="workspace-list-header">
+            <span>Workspaces</span>
+            <button className="workspace-add-button" type="button" title="Add workspace" onClick={handleAddWorkspace}>
+              +
+            </button>
+          </div>
+          {workspaces.map((workspace) => (
+            <WorkspaceItem
+              key={workspace.id}
+              workspace={workspace}
+              active={workspace.id === activeWorkspaceId}
+              canDelete={workspaces.length > 1}
+              onSelect={setActiveWorkspaceId}
+              onRename={handleRenameWorkspace}
+              onColorChange={handleUpdateWorkspaceColor}
+              onDelete={handleDeleteWorkspace}
+            />
+          ))}
         </section>
 
         <div className="sidebar-footer">
@@ -342,7 +474,7 @@ function App(): JSX.Element {
       <section className="workspace">
         <header className="topbar">
           <div>
-            <div className="topbar-title">Terminal</div>
+            <div className="topbar-title">{activeWorkspace.name}</div>
             <div className="topbar-subtitle">{paneIds.length} shell session{paneIds.length === 1 ? '' : 's'}</div>
           </div>
           <button
@@ -362,7 +494,7 @@ function App(): JSX.Element {
             activePaneId={activePaneId}
             paneCount={paneCount}
             ensureSession={ensureSession}
-            onActivate={setActivePaneId}
+            onActivate={handleActivatePane}
             onSplit={handleSplit}
             onClose={handleClose}
             onResize={handleResize}
@@ -373,6 +505,106 @@ function App(): JSX.Element {
         </div>
       </section>
     </main>
+  );
+}
+
+type WorkspaceItemProps = {
+  workspace: WorkspaceState;
+  active: boolean;
+  canDelete: boolean;
+  onSelect: (workspaceId: string) => void;
+  onRename: (workspaceId: string, name: string) => void;
+  onColorChange: (workspaceId: string, color: string) => void;
+  onDelete: (workspaceId: string) => void;
+};
+
+function WorkspaceItem({
+  workspace,
+  active,
+  canDelete,
+  onSelect,
+  onRename,
+  onColorChange,
+  onDelete
+}: WorkspaceItemProps): JSX.Element {
+  const [editing, setEditing] = useState(false);
+  const [draftName, setDraftName] = useState(workspace.name);
+  const workspaceColor = workspace.color || HEADER_COLOR_PRESETS[0];
+
+  const commitName = (): void => {
+    onRename(workspace.id, draftName);
+    setEditing(false);
+  };
+
+  useEffect(() => {
+    if (!editing) {
+      setDraftName(workspace.name);
+    }
+  }, [editing, workspace.name]);
+
+  if (editing) {
+    return (
+      <div className={`workspace-item is-editing ${active ? 'active' : ''}`} style={{ backgroundColor: workspaceColor }}>
+        <div className="workspace-edit-row">
+          <span className="status-dot" />
+          <input
+            className="workspace-name-input"
+            value={draftName}
+            autoFocus
+            onChange={(event) => setDraftName(event.target.value)}
+            onBlur={commitName}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter') {
+                commitName();
+              }
+
+              if (event.key === 'Escape') {
+                setDraftName(workspace.name);
+                setEditing(false);
+              }
+            }}
+          />
+          <span className="badge">{countPanes(workspace.layout)}</span>
+        </div>
+        <div className="workspace-color-swatches" aria-label="Workspace color">
+          {HEADER_COLOR_PRESETS.map((color) => (
+            <button
+              key={color}
+              className={`workspace-color-swatch ${color === workspaceColor ? 'is-selected' : ''}`}
+              type="button"
+              title={color === HEADER_COLOR_PRESETS[0] ? 'Default' : color}
+              style={{ backgroundColor: color }}
+              onMouseDown={(event) => event.preventDefault()}
+              onClick={() => onColorChange(workspace.id, color)}
+            />
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className={`workspace-item ${active ? 'active' : ''}`} style={{ backgroundColor: workspaceColor }}>
+      <button
+        className="workspace-select-button"
+        type="button"
+        onClick={() => onSelect(workspace.id)}
+        onDoubleClick={() => setEditing(true)}
+      >
+        <span className="status-dot" />
+        <span className="workspace-name">{workspace.name}</span>
+      </button>
+      <span className="badge">{countPanes(workspace.layout)}</span>
+      <button
+        className="workspace-delete-button"
+        type="button"
+        title={canDelete ? 'Delete workspace' : 'Cannot delete the last workspace'}
+        onClick={() => onDelete(workspace.id)}
+        disabled={!canDelete}
+      >
+        x
+      </button>
+    </div>
   );
 }
 
