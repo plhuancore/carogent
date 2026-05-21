@@ -257,6 +257,12 @@ button {
   padding: 12px 8px 0;
 }
 
+.pinned-folder.is-collapsed {
+  flex: 0 0 auto;
+  min-height: auto;
+  padding-bottom: 0;
+}
+
 .pinned-folder-header {
   display: flex;
   align-items: center;
@@ -265,6 +271,12 @@ button {
   font-size: 10px;
   font-weight: 800;
   text-transform: uppercase;
+}
+
+.pinned-folder-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
 
 .pinned-folder-header button {
@@ -288,6 +300,25 @@ button {
 .pinned-folder-header button:disabled {
   color: #475569;
   cursor: not-allowed;
+}
+
+.pinned-folder-header .pinned-folder-toggle-button {
+  display: grid;
+  width: 22px;
+  place-items: center;
+  line-height: 0;
+  padding: 0;
+}
+
+.pinned-folder-header .pinned-folder-toggle-button svg {
+  display: block;
+  width: 13px;
+  height: 13px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.7;
 }
 
 .pinned-folder-form {

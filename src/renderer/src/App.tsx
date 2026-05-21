@@ -141,6 +141,9 @@ function App(): JSX.Element {
   const [workspaces, setWorkspaces] = useState<WorkspaceState[]>(() => initialStore.workspaces);
   const [activeWorkspaceId, setActiveWorkspaceId] = useState(() => initialStore.activeWorkspaceId);
   const [pinnedDirectory, setPinnedDirectory] = useState(() => initialStore.pinnedDirectory || '');
+  const [pinnedFolderCollapsed, setPinnedFolderCollapsed] = useState(
+    () => initialStore.pinnedFolderCollapsed || false
+  );
   const [shellOptions, setShellOptions] = useState<TerminalShellOption[] | null>(null);
   const [shellOptionsError, setShellOptionsError] = useState<string | null>(null);
   const sessions = useRef<SessionRegistry>(new Map());
@@ -154,8 +157,13 @@ function App(): JSX.Element {
   const paneCount = useMemo(() => countPanes(layout), [layout]);
 
   useEffect(() => {
-    saveWorkspaceStore({ activeWorkspaceId: activeWorkspace.id, workspaces, pinnedDirectory });
-  }, [activeWorkspace.id, pinnedDirectory, workspaces]);
+    saveWorkspaceStore({
+      activeWorkspaceId: activeWorkspace.id,
+      workspaces,
+      pinnedDirectory,
+      pinnedFolderCollapsed
+    });
+  }, [activeWorkspace.id, pinnedDirectory, pinnedFolderCollapsed, workspaces]);
 
   const updateActiveWorkspace = useCallback(
     (updater: (workspace: WorkspaceState) => WorkspaceState) => {
@@ -516,7 +524,9 @@ function App(): JSX.Element {
 
         <PinnedFolderPanel
           pinnedDirectory={pinnedDirectory}
+          collapsed={pinnedFolderCollapsed}
           onPinnedDirectoryChange={setPinnedDirectory}
+          onCollapsedChange={setPinnedFolderCollapsed}
           onInsertPath={handleInsertPath}
         />
 
@@ -578,13 +588,17 @@ type WorkspaceItemProps = {
 
 type PinnedFolderPanelProps = {
   pinnedDirectory: string;
+  collapsed: boolean;
   onPinnedDirectoryChange: (path: string) => void;
+  onCollapsedChange: (collapsed: boolean) => void;
   onInsertPath: (path: string) => void;
 };
 
 function PinnedFolderPanel({
   pinnedDirectory,
+  collapsed,
   onPinnedDirectoryChange,
+  onCollapsedChange,
   onInsertPath
 }: PinnedFolderPanelProps): JSX.Element {
   const [draftPath, setDraftPath] = useState(pinnedDirectory);
@@ -656,6 +670,16 @@ function PinnedFolderPanel({
     event.dataTransfer.effectAllowed = 'copy';
     event.dataTransfer.setData('application/x-carogent-path', path);
     event.dataTransfer.setData('text/plain', path);
+  };
+
+  const handleToggleCollapsed = (): void => {
+    const nextCollapsed = !collapsed;
+
+    if (nextCollapsed) {
+      clearImagePreview();
+    }
+
+    onCollapsedChange(nextCollapsed);
   };
 
   const showImagePreviewAt = (entry: DirectoryEntry, x: number, y: number): void => {
@@ -739,18 +763,34 @@ function PinnedFolderPanel({
   useEffect(() => clearImagePreview, [clearImagePreview]);
 
   return (
-    <section className="pinned-folder">
+    <section className={`pinned-folder ${collapsed ? 'is-collapsed' : ''}`}>
       <div className="pinned-folder-header">
         <span>Pinned Folder</span>
-        <button
-          type="button"
-          title="Refresh pinned folder"
-          onClick={() => loadDirectory(draftPath)}
-          disabled={!draftPath.trim() || loading}
-        >
-          refresh
-        </button>
+        <div className="pinned-folder-header-actions">
+          {!collapsed && (
+            <button
+              type="button"
+              title="Refresh pinned folder"
+              onClick={() => loadDirectory(draftPath)}
+              disabled={!draftPath.trim() || loading}
+            >
+              refresh
+            </button>
+          )}
+          <button
+            className="pinned-folder-toggle-button"
+            type="button"
+            title={collapsed ? 'Expand pinned folder' : 'Collapse pinned folder'}
+            aria-label={collapsed ? 'Expand pinned folder' : 'Collapse pinned folder'}
+            aria-expanded={!collapsed}
+            onClick={handleToggleCollapsed}
+          >
+            {collapsed ? <ChevronDownIcon /> : <ChevronUpIcon />}
+          </button>
+        </div>
       </div>
+      {!collapsed && (
+        <>
       <form className="pinned-folder-form" onSubmit={handleSubmit}>
         <input
           value={draftPath}
@@ -834,6 +874,8 @@ function PinnedFolderPanel({
             />
           )}
         </div>
+      )}
+        </>
       )}
     </section>
   );
@@ -1705,6 +1747,14 @@ function ChevronDownIcon(): JSX.Element {
   return (
     <svg aria-hidden="true" viewBox="0 0 16 16">
       <path d="m4.5 6.25 3.5 3.5 3.5-3.5" />
+    </svg>
+  );
+}
+
+function ChevronUpIcon(): JSX.Element {
+  return (
+    <svg aria-hidden="true" viewBox="0 0 16 16">
+      <path d="m4.5 9.75 3.5-3.5 3.5 3.5" />
     </svg>
   );
 }
