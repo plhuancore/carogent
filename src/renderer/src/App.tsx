@@ -34,6 +34,8 @@ type TerminalSession = {
   fitAddon: FitAddon;
   searchAddon: SearchAddon;
   input: IDisposable;
+  fitFrame?: number;
+  fitTimer?: number;
   terminalId?: string;
   cwd?: string;
   shell?: string;
@@ -148,6 +150,56 @@ function copyTerminalSelection(terminal: Terminal): boolean {
   return true;
 }
 
+function fitTerminalSession(session: TerminalSession): void {
+  if (!session.terminal.element?.parentElement) {
+    return;
+  }
+
+  try {
+    session.fitAddon.fit();
+
+    if (session.terminalId) {
+      window.terminalApi.resize({
+        id: session.terminalId,
+        cols: session.terminal.cols,
+        rows: session.terminal.rows
+      });
+    }
+  } catch {
+    // xterm can briefly have zero dimensions while panes attach, split, or hide.
+  }
+}
+
+function scheduleTerminalFit(session: TerminalSession): void {
+  if (session.fitFrame === undefined) {
+    session.fitFrame = window.requestAnimationFrame(() => {
+      session.fitFrame = undefined;
+      fitTerminalSession(session);
+    });
+  }
+
+  if (session.fitTimer !== undefined) {
+    window.clearTimeout(session.fitTimer);
+  }
+
+  session.fitTimer = window.setTimeout(() => {
+    session.fitTimer = undefined;
+    fitTerminalSession(session);
+  }, 50);
+}
+
+function clearTerminalFitTimers(session: TerminalSession): void {
+  if (session.fitFrame !== undefined) {
+    window.cancelAnimationFrame(session.fitFrame);
+    session.fitFrame = undefined;
+  }
+
+  if (session.fitTimer !== undefined) {
+    window.clearTimeout(session.fitTimer);
+    session.fitTimer = undefined;
+  }
+}
+
 function getNextWorkspaceName(workspaces: WorkspaceState[]): string {
   let index = workspaces.length + 1;
   const names = new Set(workspaces.map((workspace) => workspace.name));
@@ -244,6 +296,7 @@ function App(): JSX.Element {
       for (const session of sessions.current.values()) {
         if (session.terminalId === id) {
           session.terminal.write(data);
+          scheduleTerminalFit(session);
           break;
         }
       }
@@ -283,6 +336,7 @@ function App(): JSX.Element {
           window.terminalApi.kill(session.terminalId);
         }
 
+        clearTerminalFitTimers(session);
         session.input.dispose();
         session.terminal.dispose();
         sessions.current.delete(paneId);
@@ -396,6 +450,7 @@ function App(): JSX.Element {
       window.terminalApi.kill(session.terminalId);
     }
 
+    clearTerminalFitTimers(session);
     session.input.dispose();
     session.terminal.dispose();
     sessions.current.delete(paneId);
@@ -1397,25 +1452,10 @@ function TerminalPane({
       session.terminal.open(host);
     }
 
-    const fit = (): void => {
-      try {
-        session.fitAddon.fit();
-
-        if (session.terminalId) {
-          window.terminalApi.resize({
-            id: session.terminalId,
-            cols: session.terminal.cols,
-            rows: session.terminal.rows
-          });
-        }
-      } catch {
-        // xterm may briefly have zero dimensions while a pane is being split.
-      }
-    };
-
-    const observer = new ResizeObserver(fit);
+    const observer = new ResizeObserver(() => scheduleTerminalFit(session));
     observer.observe(host);
-    window.setTimeout(fit, 0);
+    scheduleTerminalFit(session);
+    window.setTimeout(() => scheduleTerminalFit(session), 0);
 
     return () => {
       observer.disconnect();
@@ -1433,6 +1473,7 @@ function TerminalPane({
 
     const session = ensureSession(pane);
 
+    scheduleTerminalFit(session);
     window.setTimeout(() => session.terminal.focus(), 0);
   }, [active, ensureSession, pane.paneId, pane.shell]);
 
