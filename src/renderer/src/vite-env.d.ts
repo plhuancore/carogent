@@ -60,6 +60,7 @@ interface Window {
     getShellOptions: () => Promise<TerminalShellOption[]>;
     listDirectory: (request: { path: string }) => Promise<DirectoryListResult>;
     getImagePreview: (request: { path: string }) => Promise<ImagePreviewResult>;
+    openInVSCode: (request: { path?: string }) => Promise<void>;
     create: (request?: TerminalCreateRequest) => Promise<TerminalCreated>;
     resize: (request: { id: string; cols: number; rows: number }) => Promise<void>;
     write: (request: { id: string; data: string }) => Promise<void>;

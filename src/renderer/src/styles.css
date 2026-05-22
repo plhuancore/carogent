@@ -582,9 +582,17 @@ button {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 16px;
   border-bottom: 1px solid #151c24;
   background: #080a0d;
   padding: 0 16px;
+}
+
+.topbar-actions {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 8px;
 }
 
 .topbar-title {
@@ -599,16 +607,19 @@ button {
 }
 
 .topbar-button {
-  height: 30px;
-  border: 1px solid #263445;
-  border-radius: 7px;
-  background: #0d141d;
-  color: #dbeafe;
-  padding: 0 12px;
+  height: 28px;
+  border: 1px solid #2a2f36;
+  border-radius: 5px;
+  background: #101214;
+  color: #c9d1d9;
+  padding: 0 10px;
+  font-size: 12px;
+  white-space: nowrap;
 }
 
 .topbar-button:hover {
-  border-color: #2dd4bf;
+  border-color: #3d4652;
+  color: #f8fafc;
 }
 
 .terminal-canvas {

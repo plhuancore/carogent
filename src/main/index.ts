@@ -1,4 +1,5 @@
-import { app, BrowserWindow, ipcMain } from 'electron';
+import { app, BrowserWindow, ipcMain, shell as electronShell } from 'electron';
+import { spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { delimiter, dirname, extname, join } from 'node:path';
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
@@ -46,6 +47,10 @@ type DirectoryEntry = {
 
 type ImagePreviewRequest = {
   path: string;
+};
+
+type OpenVSCodeRequest = {
+  path?: string;
 };
 
 const terminals = new Map<string, pty.IPty>();
@@ -495,11 +500,73 @@ async function getImagePreview(request: ImagePreviewRequest): Promise<{ dataUrl:
   };
 }
 
+function openVSCodeProtocol(targetPath: string): Promise<void> {
+  const normalizedPath = targetPath.replace(/\\/g, '/');
+  const uriPath =
+    process.platform === 'win32' && /^[A-Za-z]:\//.test(normalizedPath)
+      ? `/${normalizedPath}`
+      : normalizedPath;
+
+  return electronShell.openExternal(`vscode://file${encodeURI(uriPath)}`);
+}
+
+function openVSCode(request: OpenVSCodeRequest): Promise<void> {
+  const targetPath = request.path?.trim() || os.homedir();
+
+  return new Promise((resolve) => {
+    let settled = false;
+    const child = spawn('code', [targetPath], {
+      shell: process.platform === 'win32',
+      stdio: 'ignore'
+    });
+
+    const finishWithProtocol = (): void => {
+      if (settled) {
+        return;
+      }
+
+      settled = true;
+      openVSCodeProtocol(targetPath).finally(resolve);
+    };
+
+    child.once('error', finishWithProtocol);
+
+    child.once('spawn', () => {
+      child.unref();
+    });
+
+    child.once('close', (code) => {
+      if (settled) {
+        return;
+      }
+
+      settled = true;
+
+      if (code === 0) {
+        resolve();
+        return;
+      }
+
+      openVSCodeProtocol(targetPath).finally(resolve);
+    });
+
+    setTimeout(() => {
+      if (settled) {
+        return;
+      }
+
+      settled = true;
+      resolve();
+    }, 3000);
+  });
+}
+
 app.whenReady().then(() => {
   ipcMain.handle('terminal:get-shell-options', () => getShellOptions());
 
   ipcMain.handle('filesystem:list-directory', (_event, request: DirectoryListRequest) => listDirectory(request));
   ipcMain.handle('filesystem:get-image-preview', (_event, request: ImagePreviewRequest) => getImagePreview(request));
+  ipcMain.handle('workspace:open-vscode', (_event, request: OpenVSCodeRequest = {}) => openVSCode(request));
 
   ipcMain.handle('terminal:create', (_event, request: TerminalCreateRequest = {}) => {
     const id = randomUUID();

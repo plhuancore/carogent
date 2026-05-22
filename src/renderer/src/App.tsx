@@ -566,6 +566,12 @@ function App(): JSX.Element {
     [activePane, ensureSession]
   );
 
+  const handleOpenInVSCode = useCallback(() => {
+    const path = sessions.current.get(activePaneId)?.cwd || activePane?.cwd;
+
+    window.terminalApi.openInVSCode({ path });
+  }, [activePane?.cwd, activePaneId]);
+
   if (shellOptionsError) {
     return (
       <main className="app-shell">
@@ -641,14 +647,16 @@ function App(): JSX.Element {
             <div className="topbar-title">{activeWorkspace.name}</div>
             <div className="topbar-subtitle">{paneIds.length} shell session{paneIds.length === 1 ? '' : 's'}</div>
           </div>
-          <button
-            className="topbar-button"
-            type="button"
-            onClick={() => handleSplit(activePaneId, 'row')}
-            title="Split active pane to the right"
-          >
-            Split
-          </button>
+          <div className="topbar-actions">
+            <button
+              className="topbar-button topbar-button-secondary"
+              type="button"
+              onClick={handleOpenInVSCode}
+              title="Open active pane folder in VS Code"
+            >
+              Open in VS Code
+            </button>
+          </div>
         </header>
 
         <div className="terminal-canvas">

@@ -62,6 +62,8 @@ const terminal = {
     ipcRenderer.invoke('filesystem:list-directory', request),
   getImagePreview: (request: { path: string }): Promise<ImagePreviewResult> =>
     ipcRenderer.invoke('filesystem:get-image-preview', request),
+  openInVSCode: (request: { path?: string }): Promise<void> =>
+    ipcRenderer.invoke('workspace:open-vscode', request),
   create: (request?: TerminalCreateRequest): Promise<TerminalCreated> =>
     ipcRenderer.invoke('terminal:create', request),
   resize: (request: { id: string; cols: number; rows: number }): Promise<void> =>
