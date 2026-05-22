@@ -5,6 +5,7 @@ Carogent Terminal is an Electron desktop app for working with multiple real term
 ## Project Info
 
 - App type: Electron desktop app
+- Runtime: Electron main process + browser renderer
 - Frontend: React + TypeScript + Vite
 - Terminal UI: xterm.js
 - Shell backend: node-pty

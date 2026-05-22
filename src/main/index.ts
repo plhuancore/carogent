@@ -278,6 +278,9 @@ function getTerminalEnv(shell: string): NodeJS.ProcessEnv {
       })
       .join(delimiter);
   }
+  env.TERM = 'xterm-256color';
+  env.COLORTERM = 'truecolor';
+  env.TERM_PROGRAM = 'Carogent';
 
   const shellName = shell.split(/[\\/]/).pop()?.toLowerCase();
 
