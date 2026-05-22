@@ -64,6 +64,7 @@ interface Window {
     resize: (request: { id: string; cols: number; rows: number }) => Promise<void>;
     write: (request: { id: string; data: string }) => Promise<void>;
     readClipboardText: () => string;
+    writeClipboardText: (text: string) => void;
     getPathForFile: (file: File) => string;
     kill: (id: string) => Promise<void>;
     onData: (callback: (event: TerminalDataEvent) => void) => () => void;

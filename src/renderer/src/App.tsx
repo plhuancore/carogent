@@ -97,7 +97,7 @@ function createXterm(): Terminal {
     minimumContrastRatio: 7,
     scrollback: 4000,
     theme: {
-      background: '#050607',
+      background: '#0c0c0c',
       foreground: '#eef2f7',
       cursor: '#ffffff',
       selectionBackground: '#3b82f680',
@@ -123,6 +123,28 @@ function createXterm(): Terminal {
 
 function isMacPlatform(): boolean {
   return navigator.platform.toLowerCase().includes('mac');
+}
+
+function normalizeClipboardText(text: string): string {
+  return text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+}
+
+function copyTerminalSelection(terminal: Terminal): boolean {
+  const selection = terminal.getSelection();
+
+  if (!selection) {
+    return false;
+  }
+
+  window.terminalApi.writeClipboardText(selection);
+
+  const copiedText = window.terminalApi.readClipboardText();
+
+  if (normalizeClipboardText(copiedText) !== normalizeClipboardText(selection) && navigator.clipboard?.writeText) {
+    void navigator.clipboard.writeText(selection);
+  }
+
+  return true;
 }
 
 function getNextWorkspaceName(workspaces: WorkspaceState[]): string {
@@ -298,11 +320,25 @@ function App(): JSX.Element {
 
     terminal.attachCustomKeyEventHandler((event) => {
       const key = event.key.toLowerCase();
+      const copyShortcut =
+        event.type === 'keydown' &&
+        ((isMacPlatform() && event.metaKey && !event.ctrlKey && key === 'c') ||
+          (!isMacPlatform() && event.ctrlKey && !event.metaKey && key === 'c'));
       const pasteShortcut =
         event.type === 'keydown' &&
         ((isMacPlatform() && event.metaKey && !event.ctrlKey && key === 'v') ||
           (!isMacPlatform() && event.ctrlKey && !event.metaKey && key === 'v') ||
           (event.shiftKey && key === 'insert'));
+
+      if (copyShortcut) {
+        if (!copyTerminalSelection(terminal)) {
+          return true;
+        }
+
+        event.preventDefault();
+
+        return false;
+      }
 
       if (!pasteShortcut) {
         return true;

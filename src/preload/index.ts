@@ -69,6 +69,7 @@ const terminal = {
   write: (request: { id: string; data: string }): Promise<void> =>
     ipcRenderer.invoke('terminal:write', request),
   readClipboardText: (): string => clipboard.readText(),
+  writeClipboardText: (text: string): void => clipboard.writeText(text),
   getPathForFile: (file: File): string => webUtils.getPathForFile(file),
   kill: (id: string): Promise<void> => ipcRenderer.invoke('terminal:kill', id),
   onData: (callback: (event: TerminalDataEvent) => void): (() => void) => {
