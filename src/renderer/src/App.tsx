@@ -73,6 +73,14 @@ function getShellTitle(shellOptions: TerminalShellOption[], shell?: string): str
   return getShellOption(shellOptions, shell).title;
 }
 
+function getTerminalFontFamily(): string {
+  if (navigator.platform.toLowerCase().includes('win')) {
+    return 'Consolas, "Courier New", monospace';
+  }
+
+  return '"SF Mono", "SFMono-Regular", Menlo, Monaco, "Cascadia Mono", "Consolas", monospace';
+}
+
 function createXterm(): Terminal {
   return new Terminal({
     allowProposedApi: true,
@@ -80,10 +88,10 @@ function createXterm(): Terminal {
     cursorInactiveStyle: 'bar',
     cursorStyle: 'bar',
     cursorWidth: 2,
-    fontFamily: '"SF Mono", "SFMono-Regular", Menlo, Monaco, "Cascadia Mono", "Consolas", monospace',
+    fontFamily: getTerminalFontFamily(),
     fontSize: 14,
-    fontWeight: 400,
-    fontWeightBold: 600,
+    fontWeight: 500,
+    fontWeightBold: 700,
     letterSpacing: 0,
     lineHeight: 1.28,
     minimumContrastRatio: 7,
