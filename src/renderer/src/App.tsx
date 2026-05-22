@@ -26,6 +26,7 @@ import {
   updatePane
 } from './layout';
 import { createEmptyWorkspace, loadWorkspaceStore, saveWorkspaceStore, WorkspaceState } from './storage';
+import carogentLogoUrl from './assets/carogent-logo.png';
 import './styles.css';
 
 type TerminalSession = {
@@ -589,7 +590,9 @@ function App(): JSX.Element {
     <main className="app-shell">
       <aside className="sidebar">
         <div className="brand">
-          <div className="brand-mark">C</div>
+          <div className="brand-mark">
+            <img className="brand-mark-logo" src={carogentLogoUrl} alt="" />
+          </div>
           <div>
             <div className="brand-title">Carogent</div>
             <div className="brand-subtitle">Terminal Workspace</div>

@@ -382,6 +382,7 @@ function createWindow(): void {
     minHeight: 560,
     title: 'Carogent Terminal',
     backgroundColor: '#050607',
+    icon: join(__dirname, '../../build/icon.png'),
     webPreferences: {
       preload: join(__dirname, '../preload/index.mjs'),
       sandbox: false,
