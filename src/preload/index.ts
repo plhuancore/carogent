@@ -55,6 +55,12 @@ type ImagePreviewResult = {
   dataUrl: string;
 };
 
+type BrowserBridgeStatusEvent = {
+  connected: boolean;
+  clientCount: number;
+  lastError?: string;
+};
+
 const terminal = {
   getShellOptions: (): Promise<TerminalShellOption[]> =>
     ipcRenderer.invoke('terminal:get-shell-options'),
@@ -64,6 +70,10 @@ const terminal = {
     ipcRenderer.invoke('filesystem:get-image-preview', request),
   openInVSCode: (request: { path?: string }): Promise<void> =>
     ipcRenderer.invoke('workspace:open-vscode', request),
+  openOrFocusBrowser: (request: { url?: string }): Promise<void> =>
+    ipcRenderer.invoke('browser:open-or-focus', request),
+  getBrowserBridgeStatus: (): Promise<BrowserBridgeStatusEvent> =>
+    ipcRenderer.invoke('browser:get-bridge-status'),
   create: (request?: TerminalCreateRequest): Promise<TerminalCreated> =>
     ipcRenderer.invoke('terminal:create', request),
   resize: (request: { id: string; cols: number; rows: number }): Promise<void> =>
@@ -91,6 +101,15 @@ const terminal = {
     ipcRenderer.on('terminal:cwd', listener);
 
     return () => ipcRenderer.removeListener('terminal:cwd', listener);
+  },
+  onBrowserBridgeStatus: (callback: (event: BrowserBridgeStatusEvent) => void): (() => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, payload: BrowserBridgeStatusEvent): void => {
+      callback(payload);
+    };
+
+    ipcRenderer.on('browser:bridge-status', listener);
+
+    return () => ipcRenderer.removeListener('browser:bridge-status', listener);
   },
   onExit: (callback: (event: TerminalExitEvent) => void): (() => void) => {
     const listener = (_event: Electron.IpcRendererEvent, payload: TerminalExitEvent): void => {

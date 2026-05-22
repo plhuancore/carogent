@@ -5,6 +5,7 @@ export type PaneNode = {
   paneId: string;
   cwd?: string;
   shell?: string;
+  browserUrl?: string;
   title: string;
   customTitle?: string;
   headerColor?: string;
@@ -19,12 +20,13 @@ export type SplitNode = {
 
 export type LayoutNode = PaneNode | SplitNode;
 
-export function createPane(cwd?: string, shell?: string): PaneNode {
+export function createPane(cwd?: string, shell?: string, browserUrl?: string): PaneNode {
   return {
     type: 'pane',
     paneId: crypto.randomUUID(),
     cwd,
     shell,
+    browserUrl,
     title: shell?.replace(/\.exe$/i, '') || 'terminal'
   };
 }
@@ -81,7 +83,7 @@ export function splitPane(
   direction: SplitDirection
 ): { layout: LayoutNode; newPaneId: string } {
   const sourcePane = findPane(node, paneId);
-  const newPane = createPane(sourcePane?.cwd, sourcePane?.shell);
+  const newPane = createPane(sourcePane?.cwd, sourcePane?.shell, sourcePane?.browserUrl);
 
   function visit(current: LayoutNode): LayoutNode {
     if (current.type === 'pane' && current.paneId === paneId) {
@@ -177,6 +179,7 @@ export function isLayoutNode(value: unknown): value is LayoutNode {
       typeof node.paneId === 'string' &&
       typeof node.title === 'string' &&
       (node.shell === undefined || typeof node.shell === 'string') &&
+      (node.browserUrl === undefined || typeof node.browserUrl === 'string') &&
       (node.customTitle === undefined || typeof node.customTitle === 'string') &&
       (node.headerColor === undefined || typeof node.headerColor === 'string')
     );

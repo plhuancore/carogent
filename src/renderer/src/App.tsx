@@ -132,6 +132,23 @@ function normalizeClipboardText(text: string): string {
   return text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
 }
 
+function formatBrowserUrlLabel(value?: string): string {
+  const rawValue = value?.trim();
+
+  if (!rawValue) {
+    return '';
+  }
+
+  try {
+    const url = new URL(/^[a-z][a-z\d+.-]*:\/\//i.test(rawValue) ? rawValue : `http://${rawValue}`);
+    const path = `${url.pathname}${url.search}${url.hash}`;
+
+    return path === '/' ? url.host : `${url.host}${path}`;
+  } catch {
+    return rawValue;
+  }
+}
+
 function copyTerminalSelection(terminal: Terminal): boolean {
   const selection = terminal.getSelection();
 
@@ -233,6 +250,10 @@ function App(): JSX.Element {
   );
   const [shellOptions, setShellOptions] = useState<TerminalShellOption[] | null>(null);
   const [shellOptionsError, setShellOptionsError] = useState<string | null>(null);
+  const [browserBridgeStatus, setBrowserBridgeStatus] = useState<BrowserBridgeStatusEvent>({
+    connected: false,
+    clientCount: 0
+  });
   const sessions = useRef<SessionRegistry>(new Map());
 
   const activeWorkspace =
@@ -289,6 +310,14 @@ function App(): JSX.Element {
       .catch((error: unknown) => {
         setShellOptionsError(String(error));
       });
+  }, []);
+
+  useEffect(() => {
+    window.terminalApi.getBrowserBridgeStatus().then(setBrowserBridgeStatus).catch(() => {
+      setBrowserBridgeStatus({ connected: false, clientCount: 0 });
+    });
+
+    return window.terminalApi.onBrowserBridgeStatus(setBrowserBridgeStatus);
   }, []);
 
   useEffect(() => {
@@ -599,6 +628,9 @@ function App(): JSX.Element {
     activePane?.customTitle ||
     activePane?.title ||
     (shellOptions?.length ? getDefaultShellOption(shellOptions).title : 'terminal');
+  const browserBridgeTitle = browserBridgeStatus.connected
+    ? `Browser bridge connected (${browserBridgeStatus.clientCount})`
+    : 'Browser bridge disconnected; URL will open normally';
 
   const handleInsertPath = useCallback(
     (path: string) => {
@@ -626,6 +658,10 @@ function App(): JSX.Element {
 
     window.terminalApi.openInVSCode({ path });
   }, [activePane?.cwd, activePaneId]);
+
+  const handleOpenBrowser = useCallback(() => {
+    window.terminalApi.openOrFocusBrowser({ url: activePane?.browserUrl });
+  }, [activePane?.browserUrl]);
 
   if (shellOptionsError) {
     return (
@@ -703,6 +739,18 @@ function App(): JSX.Element {
             <div className="topbar-subtitle">{paneIds.length} shell session{paneIds.length === 1 ? '' : 's'}</div>
           </div>
           <div className="topbar-actions">
+            <button
+              className="topbar-button topbar-button-secondary"
+              type="button"
+              onClick={handleOpenBrowser}
+              title={browserBridgeStatus.lastError ? `${browserBridgeTitle}: ${browserBridgeStatus.lastError}` : browserBridgeTitle}
+            >
+              <span
+                className={`topbar-status-dot ${browserBridgeStatus.connected ? 'is-connected' : ''}`}
+                aria-hidden="true"
+              />
+              Open in Browser
+            </button>
             <button
               className="topbar-button topbar-button-secondary"
               type="button"
@@ -1322,7 +1370,9 @@ function TerminalPane({
   const [shellMenuOpen, setShellMenuOpen] = useState(false);
   const [dragActive, setDragActive] = useState(false);
   const [draftTitle, setDraftTitle] = useState(pane.customTitle || '');
+  const [draftBrowserUrl, setDraftBrowserUrl] = useState(pane.browserUrl || '');
   const displayTitle = pane.customTitle || pane.title;
+  const browserUrlLabel = formatBrowserUrlLabel(pane.browserUrl);
   const headerColor = pane.headerColor || HEADER_COLOR_PRESETS[0];
   const selectedShell = getShellOption(shellOptions, pane.shell);
   const paneStyle = useMemo(
@@ -1335,11 +1385,13 @@ function TerminalPane({
 
   const commitTitle = useCallback(() => {
     const nextTitle = draftTitle.trim();
+    const nextBrowserUrl = draftBrowserUrl.trim();
 
     onUpdatePane(pane.paneId, {
-      customTitle: nextTitle.length > 0 ? nextTitle : undefined
+      customTitle: nextTitle.length > 0 ? nextTitle : undefined,
+      browserUrl: nextBrowserUrl.length > 0 ? nextBrowserUrl : undefined
     });
-  }, [draftTitle, onUpdatePane, pane.paneId]);
+  }, [draftBrowserUrl, draftTitle, onUpdatePane, pane.paneId]);
 
   const closeEditor = useCallback(() => {
     commitTitle();
@@ -1490,8 +1542,9 @@ function TerminalPane({
   useEffect(() => {
     if (editorOpen) {
       setDraftTitle(pane.customTitle || '');
+      setDraftBrowserUrl(pane.browserUrl || '');
     }
-  }, [editorOpen, pane.customTitle]);
+  }, [editorOpen, pane.browserUrl, pane.customTitle]);
 
   useEffect(() => {
     if (searchOpen) {
@@ -1679,14 +1732,20 @@ function TerminalPane({
           )}
         </div>
         <div
-          className="pane-title"
-          title={pane.cwd}
+          className="pane-title-group"
           onDoubleClick={(event) => {
             event.preventDefault();
             setEditorOpen(true);
           }}
         >
-          {displayTitle}
+          <div className="pane-title" title={pane.cwd}>
+            {displayTitle}
+          </div>
+          {browserUrlLabel && (
+            <div className="pane-domain" title={pane.browserUrl}>
+              {browserUrlLabel}
+            </div>
+          )}
         </div>
         {editorOpen && (
           <div className="pane-editor" ref={editorRef} onMouseDown={(event) => event.stopPropagation()}>
@@ -1706,6 +1765,27 @@ function TerminalPane({
 
                 if (event.key === 'Escape') {
                   setDraftTitle(pane.customTitle || '');
+                  setDraftBrowserUrl(pane.browserUrl || '');
+                  setEditorOpen(false);
+                }
+              }}
+            />
+            <label className="pane-editor-label pane-editor-label-secondary" htmlFor={`pane-browser-${pane.paneId}`}>
+              Domain
+            </label>
+            <input
+              id={`pane-browser-${pane.paneId}`}
+              value={draftBrowserUrl}
+              placeholder="localhost:3000"
+              onChange={(event) => setDraftBrowserUrl(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter') {
+                  closeEditor();
+                }
+
+                if (event.key === 'Escape') {
+                  setDraftTitle(pane.customTitle || '');
+                  setDraftBrowserUrl(pane.browserUrl || '');
                   setEditorOpen(false);
                 }
               }}

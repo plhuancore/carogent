@@ -607,6 +607,9 @@ button {
 }
 
 .topbar-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
   height: 28px;
   border: 1px solid #2a2f36;
   border-radius: 5px;
@@ -615,6 +618,21 @@ button {
   padding: 0 10px;
   font-size: 12px;
   white-space: nowrap;
+}
+
+.topbar-status-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: #64748b;
+  box-shadow: 0 0 0 1px rgba(15, 23, 42, 0.9);
+}
+
+.topbar-status-dot.is-connected {
+  background: #2dd4bf;
+  box-shadow:
+    0 0 0 1px rgba(15, 23, 42, 0.9),
+    0 0 10px rgba(45, 212, 191, 0.72);
 }
 
 .topbar-button:hover {
@@ -705,8 +723,18 @@ button {
   transition: background-color 120ms ease;
 }
 
-.pane-title {
+.pane-title-group {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
   max-width: calc(100% - 208px);
+  min-width: 0;
+}
+
+.pane-title {
+  min-width: 0;
+  max-width: 100%;
   overflow: hidden;
   border: 1px solid #202a36;
   border-radius: 999px;
@@ -719,6 +747,24 @@ button {
   text-overflow: ellipsis;
   white-space: nowrap;
   cursor: text;
+  user-select: none;
+}
+
+.pane-domain {
+  min-width: 0;
+  max-width: min(220px, 44vw);
+  overflow: hidden;
+  border: 1px solid #263445;
+  border-radius: 999px;
+  background: #0b1118;
+  color: #67e8f9;
+  font-family: "Cascadia Mono", Consolas, monospace;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 22px;
+  padding: 0 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   user-select: none;
 }
 
@@ -823,7 +869,7 @@ button {
   z-index: 20;
   top: 31px;
   left: 50%;
-  width: min(240px, calc(100% - 24px));
+  width: min(280px, calc(100% - 24px));
   transform: translateX(-50%);
   border: 1px solid #263445;
   border-radius: 8px;
@@ -839,6 +885,10 @@ button {
   font-size: 10px;
   font-weight: 800;
   text-transform: uppercase;
+}
+
+.pane-editor-label-secondary {
+  margin-top: 9px;
 }
 
 .pane-editor input {

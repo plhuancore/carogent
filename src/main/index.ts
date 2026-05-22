@@ -1,9 +1,12 @@
 import { app, BrowserWindow, ipcMain, shell as electronShell } from 'electron';
 import { spawn } from 'node:child_process';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { delimiter, dirname, extname, join } from 'node:path';
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { readFile, readdir, stat } from 'node:fs/promises';
+import { createServer } from 'node:http';
+import type { IncomingMessage } from 'node:http';
+import type { Socket } from 'node:net';
 import os from 'node:os';
 import * as pty from 'node-pty';
 
@@ -53,6 +56,34 @@ type OpenVSCodeRequest = {
   path?: string;
 };
 
+type OpenBrowserRequest = {
+  url?: string;
+};
+
+type BrowserDebugTarget = {
+  id?: string;
+  type?: string;
+  url?: string;
+};
+
+type BrowserBridgeClient = {
+  socket: Socket;
+  buffer: Buffer;
+};
+
+type BrowserBridgeResponse = {
+  id?: string;
+  type?: string;
+  handled?: boolean;
+  error?: string;
+};
+
+type BrowserBridgeStatusEvent = {
+  connected: boolean;
+  clientCount: number;
+  lastError?: string;
+};
+
 const terminals = new Map<string, pty.IPty>();
 const terminalCwds = new Map<string, string>();
 const terminalOscBuffers = new Map<string, string>();
@@ -72,6 +103,13 @@ const MAX_PREVIEW_BYTES = 10 * 1024 * 1024;
 const OSC_CWD_PREFIX = '\x1b]7;';
 const OSC_MAX_BUFFER_LENGTH = 4096;
 const BEL = '\x07';
+const DEFAULT_BROWSER_URL = 'http://localhost:3000';
+const DEFAULT_BROWSER_DEBUG_URL = 'http://127.0.0.1:9222';
+const BROWSER_BRIDGE_PORT = 17321;
+const BROWSER_BRIDGE_TIMEOUT_MS = 5000;
+const browserBridgeClients = new Set<BrowserBridgeClient>();
+const browserBridgePending = new Map<string, (handled: boolean) => void>();
+let browserBridgeLastError: string | undefined;
 
 function getShellOptions(): TerminalShellOption[] {
   if (process.platform === 'win32') {
@@ -561,12 +599,293 @@ function openVSCode(request: OpenVSCodeRequest): Promise<void> {
   });
 }
 
+function createWebSocketAcceptKey(key: string): string {
+  return createHash('sha1')
+    .update(`${key}258EAFA5-E914-47DA-95CA-C5AB0DC85B11`)
+    .digest('base64');
+}
+
+function createWebSocketTextFrame(data: string): Buffer {
+  const payload = Buffer.from(data, 'utf8');
+
+  if (payload.length < 126) {
+    return Buffer.concat([Buffer.from([0x81, payload.length]), payload]);
+  }
+
+  if (payload.length <= 0xffff) {
+    const header = Buffer.alloc(4);
+    header[0] = 0x81;
+    header[1] = 126;
+    header.writeUInt16BE(payload.length, 2);
+
+    return Buffer.concat([header, payload]);
+  }
+
+  const header = Buffer.alloc(10);
+  header[0] = 0x81;
+  header[1] = 127;
+  header.writeBigUInt64BE(BigInt(payload.length), 2);
+
+  return Buffer.concat([header, payload]);
+}
+
+function readWebSocketMessages(client: BrowserBridgeClient, chunk: Buffer): string[] {
+  client.buffer = Buffer.concat([client.buffer, chunk]);
+  const messages: string[] = [];
+
+  while (client.buffer.length >= 2) {
+    const firstByte = client.buffer[0];
+    const secondByte = client.buffer[1];
+    const opcode = firstByte & 0x0f;
+    const masked = (secondByte & 0x80) !== 0;
+    let payloadLength = secondByte & 0x7f;
+    let offset = 2;
+
+    if (payloadLength === 126) {
+      if (client.buffer.length < offset + 2) {
+        break;
+      }
+
+      payloadLength = client.buffer.readUInt16BE(offset);
+      offset += 2;
+    } else if (payloadLength === 127) {
+      if (client.buffer.length < offset + 8) {
+        break;
+      }
+
+      const bigLength = client.buffer.readBigUInt64BE(offset);
+
+      if (bigLength > BigInt(Number.MAX_SAFE_INTEGER)) {
+        client.socket.destroy();
+        break;
+      }
+
+      payloadLength = Number(bigLength);
+      offset += 8;
+    }
+
+    const maskLength = masked ? 4 : 0;
+    const frameLength = offset + maskLength + payloadLength;
+
+    if (client.buffer.length < frameLength) {
+      break;
+    }
+
+    if (opcode === 0x8) {
+      client.socket.end();
+      client.buffer = client.buffer.subarray(frameLength);
+      continue;
+    }
+
+    if (opcode !== 0x1) {
+      client.buffer = client.buffer.subarray(frameLength);
+      continue;
+    }
+
+    const mask = masked ? client.buffer.subarray(offset, offset + 4) : null;
+    offset += maskLength;
+
+    const payload = Buffer.from(client.buffer.subarray(offset, offset + payloadLength));
+
+    if (mask) {
+      for (let index = 0; index < payload.length; index += 1) {
+        payload[index] ^= mask[index % 4];
+      }
+    }
+
+    messages.push(payload.toString('utf8'));
+    client.buffer = client.buffer.subarray(frameLength);
+  }
+
+  return messages;
+}
+
+function handleBrowserBridgeMessage(message: string): void {
+  let response: BrowserBridgeResponse;
+
+  try {
+    response = JSON.parse(message) as BrowserBridgeResponse;
+  } catch {
+    return;
+  }
+
+  if (response.type === 'hello' || response.type === 'ping') {
+    browserBridgeLastError = undefined;
+    sendBrowserBridgeStatus();
+    return;
+  }
+
+  if (!response.id) {
+    return;
+  }
+
+  const resolve = browserBridgePending.get(response.id);
+
+  if (!resolve) {
+    return;
+  }
+
+  browserBridgePending.delete(response.id);
+  browserBridgeLastError = response.error;
+  sendBrowserBridgeStatus();
+  resolve(response.handled === true);
+}
+
+function getBrowserBridgeStatus(): BrowserBridgeStatusEvent {
+  return {
+    connected: browserBridgeClients.size > 0,
+    clientCount: browserBridgeClients.size,
+    lastError: browserBridgeLastError
+  };
+}
+
+function sendBrowserBridgeStatus(): void {
+  mainWindow?.webContents.send('browser:bridge-status', getBrowserBridgeStatus());
+}
+
+function startBrowserBridgeServer(): void {
+  const server = createServer();
+
+  server.on('upgrade', (request: IncomingMessage, socket: Socket) => {
+    const key = request.headers['sec-websocket-key'];
+
+    if (typeof key !== 'string') {
+      socket.destroy();
+      return;
+    }
+
+    socket.write(
+      [
+        'HTTP/1.1 101 Switching Protocols',
+        'Upgrade: websocket',
+        'Connection: Upgrade',
+        `Sec-WebSocket-Accept: ${createWebSocketAcceptKey(key)}`,
+        '',
+        ''
+      ].join('\r\n')
+    );
+
+    const client: BrowserBridgeClient = { socket, buffer: Buffer.alloc(0) };
+    browserBridgeClients.add(client);
+    browserBridgeLastError = undefined;
+    sendBrowserBridgeStatus();
+
+    socket.on('data', (chunk) => {
+      for (const message of readWebSocketMessages(client, chunk)) {
+        handleBrowserBridgeMessage(message);
+      }
+    });
+
+    socket.on('close', () => {
+      browserBridgeClients.delete(client);
+      sendBrowserBridgeStatus();
+    });
+    socket.on('error', () => {
+      browserBridgeClients.delete(client);
+      sendBrowserBridgeStatus();
+    });
+  });
+
+  server.on('error', () => {
+    // Another app instance may already own the bridge port. Browser opening still falls back normally.
+  });
+
+  server.listen(BROWSER_BRIDGE_PORT, '127.0.0.1');
+}
+
+function sendBrowserBridgeCommand(url: string): Promise<boolean> {
+  if (browserBridgeClients.size === 0) {
+    return Promise.resolve(false);
+  }
+
+  const id = randomUUID();
+  const payload = createWebSocketTextFrame(JSON.stringify({ id, type: 'openOrFocus', url }));
+
+  return new Promise((resolve) => {
+    const timeout = setTimeout(() => {
+      browserBridgePending.delete(id);
+      resolve(false);
+    }, BROWSER_BRIDGE_TIMEOUT_MS);
+
+    browserBridgePending.set(id, (handled) => {
+      clearTimeout(timeout);
+      resolve(handled);
+    });
+
+    for (const client of browserBridgeClients) {
+      client.socket.write(payload);
+    }
+  });
+}
+
+function normalizeBrowserUrl(input?: string): URL {
+  const value = input?.trim() || DEFAULT_BROWSER_URL;
+  const url = /^[a-z][a-z\d+.-]*:\/\//i.test(value) ? value : `http://${value}`;
+
+  return new URL(url);
+}
+
+function shouldMatchBrowserTab(targetUrl: string, requestedUrl: URL): boolean {
+  let tabUrl: URL;
+
+  try {
+    tabUrl = new URL(targetUrl);
+  } catch {
+    return false;
+  }
+
+  if (tabUrl.origin !== requestedUrl.origin) {
+    return false;
+  }
+
+  const hasSpecificPath = requestedUrl.pathname !== '/' || requestedUrl.search !== '' || requestedUrl.hash !== '';
+
+  if (!hasSpecificPath) {
+    return true;
+  }
+
+  return tabUrl.href.startsWith(requestedUrl.href);
+}
+
+async function openOrFocusBrowser(request: OpenBrowserRequest): Promise<void> {
+  const targetUrl = normalizeBrowserUrl(request.url);
+  const debugUrl = process.env.CAROGENT_BROWSER_DEBUG_URL || DEFAULT_BROWSER_DEBUG_URL;
+
+  if (await sendBrowserBridgeCommand(targetUrl.href)) {
+    return;
+  }
+
+  try {
+    const response = await fetch(`${debugUrl.replace(/\/$/, '')}/json/list`);
+
+    if (response.ok) {
+      const targets = (await response.json()) as BrowserDebugTarget[];
+      const matchedTarget = targets.find(
+        (target) => target.type === 'page' && target.id && target.url && shouldMatchBrowserTab(target.url, targetUrl)
+      );
+
+      if (matchedTarget?.id) {
+        await fetch(`${debugUrl.replace(/\/$/, '')}/json/activate/${encodeURIComponent(matchedTarget.id)}`);
+        return;
+      }
+    }
+  } catch {
+    // Browser remote debugging is optional. Fall back to opening the URL normally.
+  }
+
+  await electronShell.openExternal(targetUrl.href);
+}
+
 app.whenReady().then(() => {
+  startBrowserBridgeServer();
+
   ipcMain.handle('terminal:get-shell-options', () => getShellOptions());
 
   ipcMain.handle('filesystem:list-directory', (_event, request: DirectoryListRequest) => listDirectory(request));
   ipcMain.handle('filesystem:get-image-preview', (_event, request: ImagePreviewRequest) => getImagePreview(request));
   ipcMain.handle('workspace:open-vscode', (_event, request: OpenVSCodeRequest = {}) => openVSCode(request));
+  ipcMain.handle('browser:open-or-focus', (_event, request: OpenBrowserRequest = {}) => openOrFocusBrowser(request));
+  ipcMain.handle('browser:get-bridge-status', () => getBrowserBridgeStatus());
 
   ipcMain.handle('terminal:create', (_event, request: TerminalCreateRequest = {}) => {
     const id = randomUUID();
