@@ -82,8 +82,8 @@ function createXterm(): Terminal {
     cursorWidth: 2,
     fontFamily: '"SF Mono", "SFMono-Regular", Menlo, Monaco, "Cascadia Mono", "Consolas", monospace',
     fontSize: 14,
-    fontWeight: 500,
-    fontWeightBold: 700,
+    fontWeight: 400,
+    fontWeightBold: 600,
     letterSpacing: 0,
     lineHeight: 1.28,
     minimumContrastRatio: 7,
@@ -111,6 +111,10 @@ function createXterm(): Terminal {
       brightWhite: '#ffffff'
     }
   });
+}
+
+function isMacPlatform(): boolean {
+  return navigator.platform.toLowerCase().includes('mac');
 }
 
 function getNextWorkspaceName(workspaces: WorkspaceState[]): string {
@@ -283,6 +287,32 @@ function App(): JSX.Element {
         }
       })
     };
+
+    terminal.attachCustomKeyEventHandler((event) => {
+      const key = event.key.toLowerCase();
+      const pasteShortcut =
+        event.type === 'keydown' &&
+        ((isMacPlatform() && event.metaKey && !event.ctrlKey && key === 'v') ||
+          (!isMacPlatform() && event.ctrlKey && !event.metaKey && key === 'v') ||
+          (event.shiftKey && key === 'insert'));
+
+      if (!pasteShortcut) {
+        return true;
+      }
+
+      event.preventDefault();
+
+      const clipboardText = window.terminalApi.readClipboardText();
+
+      if (clipboardText && session.terminalId && session.status !== 'exited') {
+        window.terminalApi.write({
+          id: session.terminalId,
+          data: clipboardText.replace(/\r?\n/g, '\r')
+        });
+      }
+
+      return false;
+    });
 
     sessions.current.set(pane.paneId, session);
 
