@@ -25,6 +25,11 @@ type TerminalDataEvent = {
   data: string;
 };
 
+type TerminalCwdEvent = {
+  id: string;
+  cwd: string;
+};
+
 type TerminalExitEvent = {
   id: string;
   exitCode: number;
@@ -73,6 +78,15 @@ const terminal = {
     ipcRenderer.on('terminal:data', listener);
 
     return () => ipcRenderer.removeListener('terminal:data', listener);
+  },
+  onCwd: (callback: (event: TerminalCwdEvent) => void): (() => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, payload: TerminalCwdEvent): void => {
+      callback(payload);
+    };
+
+    ipcRenderer.on('terminal:cwd', listener);
+
+    return () => ipcRenderer.removeListener('terminal:cwd', listener);
   },
   onExit: (callback: (event: TerminalExitEvent) => void): (() => void) => {
     const listener = (_event: Electron.IpcRendererEvent, payload: TerminalExitEvent): void => {

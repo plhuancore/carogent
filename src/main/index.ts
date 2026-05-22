@@ -1,6 +1,7 @@
 import { app, BrowserWindow, ipcMain } from 'electron';
 import { randomUUID } from 'node:crypto';
 import { delimiter, dirname, extname, join } from 'node:path';
+import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { readFile, readdir, stat } from 'node:fs/promises';
 import os from 'node:os';
 import * as pty from 'node-pty';
@@ -48,6 +49,8 @@ type ImagePreviewRequest = {
 };
 
 const terminals = new Map<string, pty.IPty>();
+const terminalCwds = new Map<string, string>();
+const terminalOscBuffers = new Map<string, string>();
 let mainWindow: BrowserWindow | null = null;
 
 const IMAGE_MIME_TYPES = new Map([
@@ -61,6 +64,9 @@ const IMAGE_MIME_TYPES = new Map([
 ]);
 
 const MAX_PREVIEW_BYTES = 10 * 1024 * 1024;
+const OSC_CWD_PREFIX = '\x1b]7;';
+const OSC_MAX_BUFFER_LENGTH = 4096;
+const BEL = '\x07';
 
 function getShellOptions(): TerminalShellOption[] {
   if (process.platform === 'win32') {
@@ -132,8 +138,101 @@ function getShell(requestedShell?: string): string {
   return getDefaultShell();
 }
 
+function getShellIntegrationDirectory(): string {
+  const integrationDirectory = join(app.getPath('userData'), 'shell-integration');
+  mkdirSync(integrationDirectory, { recursive: true });
+
+  return integrationDirectory;
+}
+
+function writeShellIntegrationFile(name: string, content: string): string {
+  const filePath = join(getShellIntegrationDirectory(), name);
+
+  if (!existsSync(filePath)) {
+    writeFileSync(filePath, content, 'utf8');
+  }
+
+  return filePath;
+}
+
+function getBashIntegrationScript(): string {
+  return writeShellIntegrationFile(
+    'bashrc',
+    [
+      'if [ -f "$HOME/.bashrc" ]; then',
+      '  . "$HOME/.bashrc"',
+      'fi',
+      'carogent_report_cwd() {',
+      '  printf "\\033]7;file://localhost/%s\\007" "$PWD"',
+      '}',
+      'case "$PROMPT_COMMAND" in',
+      '  *carogent_report_cwd*) ;;',
+      '  "") PROMPT_COMMAND="carogent_report_cwd" ;;',
+      '  *) PROMPT_COMMAND="carogent_report_cwd; $PROMPT_COMMAND" ;;',
+      'esac',
+      ''
+    ].join('\n')
+  );
+}
+
+function ensureZshIntegrationFiles(): string {
+  const integrationDirectory = getShellIntegrationDirectory();
+  const zprofilePath = join(integrationDirectory, '.zprofile');
+  const zshrcPath = join(integrationDirectory, '.zshrc');
+
+  if (!existsSync(zprofilePath)) {
+    writeFileSync(
+      zprofilePath,
+      [
+        'if [ -n "$CAROGENT_ORIGINAL_ZDOTDIR" ] && [ -f "$CAROGENT_ORIGINAL_ZDOTDIR/.zprofile" ]; then',
+        '  . "$CAROGENT_ORIGINAL_ZDOTDIR/.zprofile"',
+        'fi',
+        ''
+      ].join('\n'),
+      'utf8'
+    );
+  }
+
+  if (!existsSync(zshrcPath)) {
+    writeFileSync(
+      zshrcPath,
+      [
+        'if [ -n "$CAROGENT_ORIGINAL_ZDOTDIR" ] && [ -f "$CAROGENT_ORIGINAL_ZDOTDIR/.zshrc" ]; then',
+        '  . "$CAROGENT_ORIGINAL_ZDOTDIR/.zshrc"',
+        'fi',
+        'carogent_report_cwd() {',
+        '  printf "\\033]7;file://localhost/%s\\007" "$PWD"',
+        '}',
+        'autoload -Uz add-zsh-hook',
+        'add-zsh-hook precmd carogent_report_cwd',
+        ''
+      ].join('\n'),
+      'utf8'
+    );
+  }
+
+  return integrationDirectory;
+}
+
+function getPowerShellIntegrationCommand(): string {
+  return [
+    '$global:__carogentOriginalPrompt = (Get-Command prompt -CommandType Function -ErrorAction SilentlyContinue).ScriptBlock',
+    'function global:prompt {',
+    '  $cwd = (Get-Location).ProviderPath',
+    '  [Console]::Write("`e]7;file://localhost/$cwd`a")',
+    '  if ($global:__carogentOriginalPrompt) { & $global:__carogentOriginalPrompt } else { "PS $cwd> " }',
+    '}'
+  ].join('; ');
+}
+
 function getShellArgs(shell: string): string[] {
-  if (process.platform !== 'darwin') {
+  if (process.platform === 'win32') {
+    const shellName = shell.split(/[\\/]/).pop()?.toLowerCase();
+
+    if (shellName === 'powershell.exe' || shellName === 'powershell') {
+      return ['-NoExit', '-Command', getPowerShellIntegrationCommand()];
+    }
+
     return [];
   }
 
@@ -144,13 +243,13 @@ function getShellArgs(shell: string): string[] {
   }
 
   if (shellName === 'bash') {
-    return ['--login'];
+    return ['--init-file', getBashIntegrationScript(), '-i'];
   }
 
   return [];
 }
 
-function getTerminalEnv(): NodeJS.ProcessEnv {
+function getTerminalEnv(shell: string): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = { ...process.env };
 
   for (const key of Object.keys(env)) {
@@ -180,7 +279,84 @@ function getTerminalEnv(): NodeJS.ProcessEnv {
       .join(delimiter);
   }
 
+  const shellName = shell.split(/[\\/]/).pop()?.toLowerCase();
+
+  if (process.platform === 'win32' && (shellName === 'cmd.exe' || shellName === 'cmd')) {
+    env.PROMPT = `${OSC_CWD_PREFIX}file://localhost/$P${BEL}${env.PROMPT || '$P$G'}`;
+  }
+
+  if (shellName === 'zsh') {
+    env.CAROGENT_ORIGINAL_ZDOTDIR = env.ZDOTDIR || os.homedir();
+    env.ZDOTDIR = ensureZshIntegrationFiles();
+  }
+
   return env;
+}
+
+function parseCwdPayload(payload: string): string | null {
+  if (!payload.startsWith('file://')) {
+    return null;
+  }
+
+  const withoutScheme = payload.slice('file://'.length);
+  const slashIndex = withoutScheme.indexOf('/');
+  const pathPart = slashIndex >= 0 ? withoutScheme.slice(slashIndex + 1) : withoutScheme;
+
+  if (!pathPart) {
+    return null;
+  }
+
+  let cwd: string;
+
+  try {
+    cwd = decodeURIComponent(pathPart);
+  } catch {
+    cwd = pathPart;
+  }
+
+  if (process.platform === 'win32') {
+    cwd = cwd.replace(/\//g, '\\');
+    cwd = cwd.replace(/^\\([A-Za-z]:\\)/, '$1');
+  } else if (!cwd.startsWith('/')) {
+    cwd = `/${cwd}`;
+  }
+
+  return cwd;
+}
+
+function reportTerminalCwd(id: string, cwd: string): void {
+  if (terminalCwds.get(id) === cwd) {
+    return;
+  }
+
+  terminalCwds.set(id, cwd);
+  mainWindow?.webContents.send('terminal:cwd', { id, cwd });
+}
+
+function parseTerminalCwdReports(id: string, data: string): void {
+  const combined = `${terminalOscBuffers.get(id) || ''}${data}`;
+  const pattern = /\x1b\]7;([^\x07\x1b]*)(?:\x07|\x1b\\)/g;
+  let match: RegExpExecArray | null;
+
+  while ((match = pattern.exec(combined))) {
+    const cwd = parseCwdPayload(match[1]);
+
+    if (cwd) {
+      reportTerminalCwd(id, cwd);
+    }
+  }
+
+  const lastPrefixIndex = combined.lastIndexOf(OSC_CWD_PREFIX);
+
+  if (lastPrefixIndex >= 0) {
+    const tail = combined.slice(lastPrefixIndex);
+    const hasTerminator = tail.includes(BEL) || tail.includes('\x1b\\');
+
+    terminalOscBuffers.set(id, hasTerminator ? '' : tail.slice(-OSC_MAX_BUFFER_LENGTH));
+    return;
+  }
+
+  terminalOscBuffers.set(id, '');
 }
 
 function expandHomePath(path: string): string {
@@ -231,6 +407,8 @@ function killTerminal(id: string): void {
 
   terminal.kill();
   terminals.delete(id);
+  terminalCwds.delete(id);
+  terminalOscBuffers.delete(id);
 }
 
 async function listDirectory(request: DirectoryListRequest): Promise<{
@@ -329,17 +507,21 @@ app.whenReady().then(() => {
       cols: 100,
       rows: 30,
       cwd,
-      env: getTerminalEnv()
+      env: getTerminalEnv(shell)
     });
 
     terminals.set(id, terminal);
+    terminalCwds.set(id, cwd);
 
     terminal.onData((data) => {
+      parseTerminalCwdReports(id, data);
       mainWindow?.webContents.send('terminal:data', { id, data });
     });
 
     terminal.onExit(({ exitCode, signal }) => {
       terminals.delete(id);
+      terminalCwds.delete(id);
+      terminalOscBuffers.delete(id);
       mainWindow?.webContents.send('terminal:exit', { id, exitCode, signal });
     });
 

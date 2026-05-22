@@ -214,6 +214,19 @@ function App(): JSX.Element {
       }
     });
 
+    const stopCwd = window.terminalApi.onCwd(({ id, cwd }) => {
+      for (const [paneId, session] of sessions.current) {
+        if (session.terminalId === id) {
+          session.cwd = cwd;
+          updatePaneInAnyWorkspace(paneId, (currentPane) => ({
+            ...currentPane,
+            cwd
+          }));
+          break;
+        }
+      }
+    });
+
     const stopExit = window.terminalApi.onExit(({ id, exitCode }) => {
       for (const session of sessions.current.values()) {
         if (session.terminalId === id) {
@@ -227,6 +240,7 @@ function App(): JSX.Element {
 
     return () => {
       stopData();
+      stopCwd();
       stopExit();
 
       for (const [paneId, session] of sessions.current) {
@@ -239,7 +253,7 @@ function App(): JSX.Element {
         sessions.current.delete(paneId);
       }
     };
-  }, []);
+  }, [updatePaneInAnyWorkspace]);
 
   const ensureSession = useCallback((pane: PaneNode): TerminalSession => {
     const existing = sessions.current.get(pane.paneId);
@@ -314,7 +328,14 @@ function App(): JSX.Element {
 
   const handleSplit = useCallback((paneId: string, direction: SplitDirection) => {
     updateActiveWorkspace((workspace) => {
-      const result = splitPane(workspace.layout, paneId, direction);
+      const runtimeCwd = sessions.current.get(paneId)?.cwd;
+      const layoutForSplit = runtimeCwd
+        ? updatePane(workspace.layout, paneId, (pane) => ({
+            ...pane,
+            cwd: runtimeCwd
+          }))
+        : workspace.layout;
+      const result = splitPane(layoutForSplit, paneId, direction);
 
       return {
         ...workspace,
@@ -1311,10 +1332,6 @@ function TerminalPane({
     observer.observe(host);
     window.setTimeout(fit, 0);
 
-    if (active) {
-      window.setTimeout(() => session.terminal.focus(), 0);
-    }
-
     return () => {
       observer.disconnect();
 
@@ -1322,7 +1339,17 @@ function TerminalPane({
         host.removeChild(session.terminal.element);
       }
     };
-  }, [active, ensureSession, pane]);
+  }, [ensureSession, pane.paneId, pane.shell]);
+
+  useEffect(() => {
+    if (!active) {
+      return;
+    }
+
+    const session = ensureSession(pane);
+
+    window.setTimeout(() => session.terminal.focus(), 0);
+  }, [active, ensureSession, pane.paneId, pane.shell]);
 
   useEffect(() => {
     const session = ensureSession(pane);
@@ -1332,7 +1359,7 @@ function TerminalPane({
     });
 
     return () => disposable.dispose();
-  }, [ensureSession, pane]);
+  }, [ensureSession, pane.paneId, pane.shell]);
 
   useEffect(() => {
     if (editorOpen) {

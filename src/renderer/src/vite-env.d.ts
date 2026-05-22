@@ -25,6 +25,11 @@ type TerminalDataEvent = {
   data: string;
 };
 
+type TerminalCwdEvent = {
+  id: string;
+  cwd: string;
+};
+
 type TerminalExitEvent = {
   id: string;
   exitCode: number;
@@ -61,6 +66,7 @@ interface Window {
     getPathForFile: (file: File) => string;
     kill: (id: string) => Promise<void>;
     onData: (callback: (event: TerminalDataEvent) => void) => () => void;
+    onCwd: (callback: (event: TerminalCwdEvent) => void) => () => void;
     onExit: (callback: (event: TerminalExitEvent) => void) => () => void;
   };
 }
