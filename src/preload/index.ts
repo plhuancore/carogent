@@ -58,6 +58,7 @@ type ImagePreviewResult = {
 type BrowserBridgeStatusEvent = {
   connected: boolean;
   clientCount: number;
+  enabled: boolean;
   lastError?: string;
 };
 

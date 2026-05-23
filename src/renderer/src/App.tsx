@@ -252,7 +252,8 @@ function App(): JSX.Element {
   const [shellOptionsError, setShellOptionsError] = useState<string | null>(null);
   const [browserBridgeStatus, setBrowserBridgeStatus] = useState<BrowserBridgeStatusEvent>({
     connected: false,
-    clientCount: 0
+    clientCount: 0,
+    enabled: true
   });
   const sessions = useRef<SessionRegistry>(new Map());
 
@@ -314,7 +315,7 @@ function App(): JSX.Element {
 
   useEffect(() => {
     window.terminalApi.getBrowserBridgeStatus().then(setBrowserBridgeStatus).catch(() => {
-      setBrowserBridgeStatus({ connected: false, clientCount: 0 });
+      setBrowserBridgeStatus({ connected: false, clientCount: 0, enabled: true });
     });
 
     return window.terminalApi.onBrowserBridgeStatus(setBrowserBridgeStatus);
@@ -628,7 +629,9 @@ function App(): JSX.Element {
     activePane?.customTitle ||
     activePane?.title ||
     (shellOptions?.length ? getDefaultShellOption(shellOptions).title : 'terminal');
-  const browserBridgeTitle = browserBridgeStatus.connected
+  const browserBridgeTitle = browserBridgeStatus.connected && !browserBridgeStatus.enabled
+    ? 'Browser bridge disabled in extension'
+    : browserBridgeStatus.connected
     ? `Browser bridge connected (${browserBridgeStatus.clientCount})`
     : 'Browser bridge disconnected; URL will open normally';
 
@@ -746,7 +749,9 @@ function App(): JSX.Element {
               title={browserBridgeStatus.lastError ? `${browserBridgeTitle}: ${browserBridgeStatus.lastError}` : browserBridgeTitle}
             >
               <span
-                className={`topbar-status-dot ${browserBridgeStatus.connected ? 'is-connected' : ''}`}
+                className={`topbar-status-dot ${browserBridgeStatus.connected ? 'is-connected' : ''} ${
+                  browserBridgeStatus.connected && !browserBridgeStatus.enabled ? 'is-disabled' : ''
+                }`}
                 aria-hidden="true"
               />
               Open in Browser
@@ -777,6 +782,7 @@ function App(): JSX.Element {
             onResize={handleResize}
             onUpdatePane={handleUpdatePane}
             onChangeShell={handleChangeShell}
+            onOpenBrowser={(browserUrl) => window.terminalApi.openOrFocusBrowser({ url: browserUrl })}
             shellOptions={shellOptions}
           />
         </div>
@@ -1199,6 +1205,7 @@ type NodeViewProps = {
   onResize: (path: string, firstSize: number) => void;
   onUpdatePane: (paneId: string, changes: Partial<PaneNode>) => void;
   onChangeShell: (paneId: string, shell: string) => void;
+  onOpenBrowser: (browserUrl?: string) => void;
   shellOptions: TerminalShellOption[];
 };
 
@@ -1217,6 +1224,7 @@ function NodeView(props: NodeViewProps): JSX.Element {
         onClose={props.onClose}
         onUpdatePane={props.onUpdatePane}
         onChangeShell={props.onChangeShell}
+        onOpenBrowser={props.onOpenBrowser}
         shellOptions={props.shellOptions}
       />
     );
@@ -1247,6 +1255,7 @@ function SplitView({
   onResize,
   onUpdatePane,
   onChangeShell,
+  onOpenBrowser,
   shellOptions
 }: SplitViewProps): JSX.Element {
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -1302,6 +1311,7 @@ function SplitView({
           onResize={onResize}
           onUpdatePane={onUpdatePane}
           onChangeShell={onChangeShell}
+          onOpenBrowser={onOpenBrowser}
           shellOptions={shellOptions}
         />
       </div>
@@ -1320,6 +1330,7 @@ function SplitView({
           onResize={onResize}
           onUpdatePane={onUpdatePane}
           onChangeShell={onChangeShell}
+          onOpenBrowser={onOpenBrowser}
           shellOptions={shellOptions}
         />
       </div>
@@ -1338,6 +1349,7 @@ type TerminalPaneProps = {
   onClose: (paneId: string) => void;
   onUpdatePane: (paneId: string, changes: Partial<PaneNode>) => void;
   onChangeShell: (paneId: string, shell: string) => void;
+  onOpenBrowser: (browserUrl?: string) => void;
   shellOptions: TerminalShellOption[];
 };
 
@@ -1352,6 +1364,7 @@ function TerminalPane({
   onClose,
   onUpdatePane,
   onChangeShell,
+  onOpenBrowser,
   shellOptions
 }: TerminalPaneProps): JSX.Element {
   const hostRef = useRef<HTMLDivElement | null>(null);
@@ -1701,34 +1714,46 @@ function TerminalPane({
       onDrop={handleDrop}
     >
       <div className="pane-toolbar" style={{ backgroundColor: headerColor }}>
-        <div className="shell-picker" ref={shellMenuRef} onMouseDown={(event) => event.stopPropagation()}>
-          <button
-            className="shell-picker-button"
-            type="button"
-            title="Select terminal"
-            aria-haspopup="menu"
-            aria-expanded={shellMenuOpen}
-            onClick={() => setShellMenuOpen((open) => !open)}
-          >
-            <ShellIcon name={selectedShell.icon} />
-            <ChevronDownIcon />
-          </button>
-          {shellMenuOpen && (
-            <div className="shell-menu" role="menu">
-              {shellOptions.map((option) => (
-                <button
-                  key={option.shell}
-                  className={`shell-menu-item ${option.shell === selectedShell.shell ? 'is-selected' : ''}`}
-                  type="button"
-                  role="menuitem"
-                  onClick={() => handleShellSelect(option.shell)}
-                >
-                  <ShellIcon name={option.icon} />
-                  <span className="shell-menu-label">{option.label}</span>
-                  {option.shortcut && <span className="shell-menu-shortcut">{option.shortcut}</span>}
-                </button>
-              ))}
-            </div>
+        <div className="pane-left-tools">
+          <div className="shell-picker" ref={shellMenuRef} onMouseDown={(event) => event.stopPropagation()}>
+            <button
+              className="shell-picker-button"
+              type="button"
+              title="Select terminal"
+              aria-haspopup="menu"
+              aria-expanded={shellMenuOpen}
+              onClick={() => setShellMenuOpen((open) => !open)}
+            >
+              <ShellIcon name={selectedShell.icon} />
+              <ChevronDownIcon />
+            </button>
+            {shellMenuOpen && (
+              <div className="shell-menu" role="menu">
+                {shellOptions.map((option) => (
+                  <button
+                    key={option.shell}
+                    className={`shell-menu-item ${option.shell === selectedShell.shell ? 'is-selected' : ''}`}
+                    type="button"
+                    role="menuitem"
+                    onClick={() => handleShellSelect(option.shell)}
+                  >
+                    <ShellIcon name={option.icon} />
+                    <span className="shell-menu-label">{option.label}</span>
+                    {option.shortcut && <span className="shell-menu-shortcut">{option.shortcut}</span>}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+          {browserUrlLabel && (
+            <button
+              className="pane-domain"
+              type="button"
+              title={`Open ${pane.browserUrl || browserUrlLabel}`}
+              onClick={() => onOpenBrowser(pane.browserUrl)}
+            >
+              {browserUrlLabel}
+            </button>
           )}
         </div>
         <div
@@ -1741,11 +1766,6 @@ function TerminalPane({
           <div className="pane-title" title={pane.cwd}>
             {displayTitle}
           </div>
-          {browserUrlLabel && (
-            <div className="pane-domain" title={pane.browserUrl}>
-              {browserUrlLabel}
-            </div>
-          )}
         </div>
         {editorOpen && (
           <div className="pane-editor" ref={editorRef} onMouseDown={(event) => event.stopPropagation()}>

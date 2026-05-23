@@ -2,17 +2,32 @@ const BRIDGE_URL = 'ws://127.0.0.1:17321';
 const INITIAL_RECONNECT_DELAY_MS = 2000;
 const MAX_RECONNECT_DELAY_MS = 30000;
 const HEARTBEAT_INTERVAL_MS = 20000;
+const DEFAULT_ENABLED = true;
 
 let socket = null;
 let reconnectTimer = null;
 let heartbeatTimer = null;
 let reconnectDelayMs = INITIAL_RECONNECT_DELAY_MS;
+let enabled = DEFAULT_ENABLED;
 
 function normalizeUrl(input) {
   const value = String(input || '').trim() || 'http://localhost:3000';
-  const url = /^[a-z][a-z\d+.-]*:\/\//i.test(value) ? value : `http://${value}`;
 
-  return new URL(url);
+  if (/^[a-z][a-z\d+.-]*:\/\//i.test(value)) {
+    return new URL(value);
+  }
+
+  const host = value.split(/[/?#]/, 1)[0];
+  const isLocal = host === 'localhost' || host.startsWith('localhost:') || /^[\d.:]+$/.test(host);
+  const normalizedValue = !isLocal && host && !host.includes('.') && !host.includes(':')
+    ? `${host}.com${value.slice(host.length)}`
+    : value;
+
+  return new URL(`${isLocal ? 'http' : 'https'}://${normalizedValue}`);
+}
+
+function normalizeHostname(hostname) {
+  return hostname.toLowerCase().replace(/^www\./, '');
 }
 
 function matchesRequestedUrl(tabUrl, requestedUrl) {
@@ -24,7 +39,11 @@ function matchesRequestedUrl(tabUrl, requestedUrl) {
     return false;
   }
 
-  if (parsedTabUrl.origin !== requestedUrl.origin) {
+  if (normalizeHostname(parsedTabUrl.hostname) !== normalizeHostname(requestedUrl.hostname)) {
+    return false;
+  }
+
+  if (requestedUrl.port && parsedTabUrl.port !== requestedUrl.port) {
     return false;
   }
 
@@ -64,13 +83,17 @@ function stopHeartbeat() {
 
 function startHeartbeat() {
   stopHeartbeat();
-  sendBridgeMessage({ type: 'hello' });
+  sendBridgeMessage({ type: 'hello', enabled });
   heartbeatTimer = setInterval(() => {
-    sendBridgeMessage({ type: 'ping' });
+    sendBridgeMessage({ type: 'ping', enabled });
   }, HEARTBEAT_INTERVAL_MS);
 }
 
 async function openOrFocus(url) {
+  if (!enabled) {
+    throw new Error('Extension disabled');
+  }
+
   const requestedUrl = normalizeUrl(url);
   const tabs = await chrome.tabs.query({});
   const matchedTab = tabs.find((tab) => tab.id !== undefined && tab.url && matchesRequestedUrl(tab.url, requestedUrl));
@@ -157,5 +180,18 @@ function connect() {
     socket?.close();
   };
 }
+
+chrome.storage.local.get({ enabled: DEFAULT_ENABLED }, (values) => {
+  enabled = values.enabled !== false;
+});
+
+chrome.storage.onChanged.addListener((changes, areaName) => {
+  if (areaName !== 'local' || !changes.enabled) {
+    return;
+  }
+
+  enabled = changes.enabled.newValue !== false;
+  sendBridgeMessage({ type: 'hello', enabled });
+});
 
 connect();

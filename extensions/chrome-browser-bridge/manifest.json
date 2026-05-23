@@ -3,8 +3,24 @@
   "name": "Carogent Browser Bridge",
   "version": "0.1.0",
   "description": "Focuses or opens browser tabs requested by Carogent.",
-  "permissions": ["tabs"],
+  "permissions": ["storage", "tabs"],
   "host_permissions": ["<all_urls>"],
+  "icons": {
+    "16": "icons/icon-128.png",
+    "32": "icons/icon-128.png",
+    "48": "icons/icon-128.png",
+    "128": "icons/icon-128.png"
+  },
+  "action": {
+    "default_title": "Carogent Bridge",
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icons/icon-128.png",
+      "32": "icons/icon-128.png",
+      "48": "icons/icon-128.png",
+      "128": "icons/icon-128.png"
+    }
+  },
   "background": {
     "service_worker": "service-worker.js"
   }

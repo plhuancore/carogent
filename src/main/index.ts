@@ -75,14 +75,18 @@ type BrowserBridgeResponse = {
   id?: string;
   type?: string;
   handled?: boolean;
+  enabled?: boolean;
   error?: string;
 };
 
 type BrowserBridgeStatusEvent = {
   connected: boolean;
   clientCount: number;
+  enabled: boolean;
   lastError?: string;
 };
+
+type BrowserBridgeCommandResult = 'handled' | 'disabled' | 'unhandled';
 
 const terminals = new Map<string, pty.IPty>();
 const terminalCwds = new Map<string, string>();
@@ -108,8 +112,9 @@ const DEFAULT_BROWSER_DEBUG_URL = 'http://127.0.0.1:9222';
 const BROWSER_BRIDGE_PORT = 17321;
 const BROWSER_BRIDGE_TIMEOUT_MS = 5000;
 const browserBridgeClients = new Set<BrowserBridgeClient>();
-const browserBridgePending = new Map<string, (handled: boolean) => void>();
+const browserBridgePending = new Map<string, (result: BrowserBridgeCommandResult) => void>();
 let browserBridgeLastError: string | undefined;
+let browserBridgeEnabled = true;
 
 function getShellOptions(): TerminalShellOption[] {
   if (process.platform === 'win32') {
@@ -710,6 +715,10 @@ function handleBrowserBridgeMessage(message: string): void {
   }
 
   if (response.type === 'hello' || response.type === 'ping') {
+    if (typeof response.enabled === 'boolean') {
+      browserBridgeEnabled = response.enabled;
+    }
+
     browserBridgeLastError = undefined;
     sendBrowserBridgeStatus();
     return;
@@ -728,13 +737,14 @@ function handleBrowserBridgeMessage(message: string): void {
   browserBridgePending.delete(response.id);
   browserBridgeLastError = response.error;
   sendBrowserBridgeStatus();
-  resolve(response.handled === true);
+  resolve(response.error === 'Extension disabled' ? 'disabled' : response.handled === true ? 'handled' : 'unhandled');
 }
 
 function getBrowserBridgeStatus(): BrowserBridgeStatusEvent {
   return {
     connected: browserBridgeClients.size > 0,
     clientCount: browserBridgeClients.size,
+    enabled: browserBridgeEnabled,
     lastError: browserBridgeLastError
   };
 }
@@ -793,9 +803,9 @@ function startBrowserBridgeServer(): void {
   server.listen(BROWSER_BRIDGE_PORT, '127.0.0.1');
 }
 
-function sendBrowserBridgeCommand(url: string): Promise<boolean> {
+function sendBrowserBridgeCommand(url: string): Promise<BrowserBridgeCommandResult> {
   if (browserBridgeClients.size === 0) {
-    return Promise.resolve(false);
+    return Promise.resolve('unhandled');
   }
 
   const id = randomUUID();
@@ -804,7 +814,7 @@ function sendBrowserBridgeCommand(url: string): Promise<boolean> {
   return new Promise((resolve) => {
     const timeout = setTimeout(() => {
       browserBridgePending.delete(id);
-      resolve(false);
+      resolve('unhandled');
     }, BROWSER_BRIDGE_TIMEOUT_MS);
 
     browserBridgePending.set(id, (handled) => {
@@ -820,9 +830,22 @@ function sendBrowserBridgeCommand(url: string): Promise<boolean> {
 
 function normalizeBrowserUrl(input?: string): URL {
   const value = input?.trim() || DEFAULT_BROWSER_URL;
-  const url = /^[a-z][a-z\d+.-]*:\/\//i.test(value) ? value : `http://${value}`;
 
-  return new URL(url);
+  if (/^[a-z][a-z\d+.-]*:\/\//i.test(value)) {
+    return new URL(value);
+  }
+
+  const host = value.split(/[/?#]/, 1)[0];
+  const isLocal = host === 'localhost' || host.startsWith('localhost:') || /^[\d.:]+$/.test(host);
+  const normalizedValue = !isLocal && host && !host.includes('.') && !host.includes(':')
+    ? `${host}.com${value.slice(host.length)}`
+    : value;
+
+  return new URL(`${isLocal ? 'http' : 'https'}://${normalizedValue}`);
+}
+
+function normalizeBrowserHostname(hostname: string): string {
+  return hostname.toLowerCase().replace(/^www\./, '');
 }
 
 function shouldMatchBrowserTab(targetUrl: string, requestedUrl: URL): boolean {
@@ -834,7 +857,11 @@ function shouldMatchBrowserTab(targetUrl: string, requestedUrl: URL): boolean {
     return false;
   }
 
-  if (tabUrl.origin !== requestedUrl.origin) {
+  if (normalizeBrowserHostname(tabUrl.hostname) !== normalizeBrowserHostname(requestedUrl.hostname)) {
+    return false;
+  }
+
+  if (requestedUrl.port && tabUrl.port !== requestedUrl.port) {
     return false;
   }
 
@@ -851,7 +878,9 @@ async function openOrFocusBrowser(request: OpenBrowserRequest): Promise<void> {
   const targetUrl = normalizeBrowserUrl(request.url);
   const debugUrl = process.env.CAROGENT_BROWSER_DEBUG_URL || DEFAULT_BROWSER_DEBUG_URL;
 
-  if (await sendBrowserBridgeCommand(targetUrl.href)) {
+  const bridgeResult = await sendBrowserBridgeCommand(targetUrl.href);
+
+  if (bridgeResult === 'handled' || bridgeResult === 'disabled') {
     return;
   }
 
