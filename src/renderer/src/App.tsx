@@ -3,8 +3,10 @@ import type {
   CSSProperties,
   DragEvent as ReactDragEvent,
   FormEvent as ReactFormEvent,
+  KeyboardEvent as ReactKeyboardEvent,
   MouseEvent as ReactMouseEvent,
-  PointerEvent as ReactPointerEvent
+  PointerEvent as ReactPointerEvent,
+  RefObject
 } from 'react';
 import { FitAddon } from '@xterm/addon-fit';
 import { SearchAddon } from '@xterm/addon-search';
@@ -25,7 +27,13 @@ import {
   splitPane,
   updatePane
 } from './layout';
-import { createEmptyWorkspace, loadWorkspaceStore, saveWorkspaceStore, WorkspaceState } from './storage';
+import {
+  createEmptyWorkspace,
+  loadWorkspaceStore,
+  QuickAccessItem,
+  saveWorkspaceStore,
+  WorkspaceState
+} from './storage';
 import carogentLogoUrl from './assets/carogent-logo.png';
 import './styles.css';
 
@@ -248,6 +256,14 @@ function App(): JSX.Element {
   const [pinnedFolderCollapsed, setPinnedFolderCollapsed] = useState(
     () => initialStore.pinnedFolderCollapsed || false
   );
+  const [quickAccessItems, setQuickAccessItems] = useState<QuickAccessItem[]>(
+    () => initialStore.quickAccessItems || []
+  );
+  const [quickAccessOpen, setQuickAccessOpen] = useState(false);
+  const [quickAccessQuery, setQuickAccessQuery] = useState('');
+  const [quickAccessSelectedIndex, setQuickAccessSelectedIndex] = useState(0);
+  const [quickAccessManagerOpen, setQuickAccessManagerOpen] = useState(false);
+  const [settingsMenuOpen, setSettingsMenuOpen] = useState(false);
   const [shellOptions, setShellOptions] = useState<TerminalShellOption[] | null>(null);
   const [shellOptionsError, setShellOptionsError] = useState<string | null>(null);
   const [browserBridgeStatus, setBrowserBridgeStatus] = useState<BrowserBridgeStatusEvent>({
@@ -256,6 +272,8 @@ function App(): JSX.Element {
     enabled: true
   });
   const sessions = useRef<SessionRegistry>(new Map());
+  const quickAccessInputRef = useRef<HTMLInputElement | null>(null);
+  const settingsMenuRef = useRef<HTMLDivElement | null>(null);
 
   const activeWorkspace =
     workspaces.find((workspace) => workspace.id === activeWorkspaceId) || workspaces[0];
@@ -264,15 +282,27 @@ function App(): JSX.Element {
     ? activeWorkspace.activePaneId
     : getFirstPaneId(layout);
   const paneCount = useMemo(() => countPanes(layout), [layout]);
+  const filteredQuickAccessItems = useMemo(() => {
+    const query = quickAccessQuery.trim().toLowerCase();
+
+    if (!query) {
+      return quickAccessItems;
+    }
+
+    return quickAccessItems.filter((item) =>
+      `${item.name} ${item.domain}`.toLowerCase().includes(query)
+    );
+  }, [quickAccessItems, quickAccessQuery]);
 
   useEffect(() => {
     saveWorkspaceStore({
       activeWorkspaceId: activeWorkspace.id,
       workspaces,
       pinnedDirectory,
-      pinnedFolderCollapsed
+      pinnedFolderCollapsed,
+      quickAccessItems
     });
-  }, [activeWorkspace.id, pinnedDirectory, pinnedFolderCollapsed, workspaces]);
+  }, [activeWorkspace.id, pinnedDirectory, pinnedFolderCollapsed, quickAccessItems, workspaces]);
 
   const updateActiveWorkspace = useCallback(
     (updater: (workspace: WorkspaceState) => WorkspaceState) => {
@@ -666,6 +696,106 @@ function App(): JSX.Element {
     window.terminalApi.openOrFocusBrowser({ url: activePane?.browserUrl });
   }, [activePane?.browserUrl]);
 
+  const openQuickAccess = useCallback(() => {
+    setQuickAccessOpen(true);
+    setQuickAccessSelectedIndex(0);
+  }, []);
+
+  const closeQuickAccess = useCallback(() => {
+    setQuickAccessOpen(false);
+    setQuickAccessQuery('');
+    setQuickAccessSelectedIndex(0);
+  }, []);
+
+  const handleOpenQuickAccessItem = useCallback(
+    (item: QuickAccessItem) => {
+      window.terminalApi.openOrFocusBrowser({ url: item.domain });
+      closeQuickAccess();
+    },
+    [closeQuickAccess]
+  );
+
+  const handleSaveQuickAccessItem = useCallback((item: QuickAccessItem) => {
+    const name = item.name.trim();
+    const domain = item.domain.trim();
+
+    if (!name || !domain) {
+      return;
+    }
+
+    setQuickAccessItems((current) => {
+      const nextItem = { ...item, name, domain };
+
+      if (current.some((existing) => existing.id === item.id)) {
+        return current.map((existing) => (existing.id === item.id ? nextItem : existing));
+      }
+
+      return [...current, nextItem];
+    });
+  }, []);
+
+  const handleDeleteQuickAccessItem = useCallback((itemId: string) => {
+    setQuickAccessItems((current) => current.filter((item) => item.id !== itemId));
+  }, []);
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent): void => {
+      if ((event.metaKey || event.ctrlKey) && !event.shiftKey && event.key.toLowerCase() === 'p') {
+        event.preventDefault();
+        event.stopPropagation();
+        openQuickAccess();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown, true);
+
+    return () => window.removeEventListener('keydown', handleKeyDown, true);
+  }, [openQuickAccess]);
+
+  useEffect(() => {
+    if (!quickAccessOpen) {
+      return;
+    }
+
+    window.setTimeout(() => quickAccessInputRef.current?.focus(), 0);
+  }, [quickAccessOpen]);
+
+  useEffect(() => {
+    setQuickAccessSelectedIndex(0);
+  }, [quickAccessQuery]);
+
+  useEffect(() => {
+    if (quickAccessSelectedIndex >= filteredQuickAccessItems.length) {
+      setQuickAccessSelectedIndex(Math.max(0, filteredQuickAccessItems.length - 1));
+    }
+  }, [filteredQuickAccessItems.length, quickAccessSelectedIndex]);
+
+  useEffect(() => {
+    if (!settingsMenuOpen) {
+      return;
+    }
+
+    const handlePointerDown = (event: MouseEvent): void => {
+      if (!settingsMenuRef.current?.contains(event.target as Node)) {
+        setSettingsMenuOpen(false);
+      }
+    };
+
+    const handleKeyDown = (event: KeyboardEvent): void => {
+      if (event.key === 'Escape') {
+        setSettingsMenuOpen(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handlePointerDown);
+    window.addEventListener('keydown', handleKeyDown);
+
+    return () => {
+      document.removeEventListener('mousedown', handlePointerDown);
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [settingsMenuOpen]);
+
   if (shellOptionsError) {
     return (
       <main className="app-shell">
@@ -743,6 +873,15 @@ function App(): JSX.Element {
           </div>
           <div className="topbar-actions">
             <button
+              className="command-palette-button"
+              type="button"
+              onClick={openQuickAccess}
+              title="Open command palette"
+            >
+              <span className="command-palette-shortcut">{isMacPlatform() ? '⌘P' : 'Ctrl P'}</span>
+              <span>Command Palette</span>
+            </button>
+            <button
               className="topbar-button topbar-button-secondary"
               type="button"
               onClick={handleOpenBrowser}
@@ -764,6 +903,34 @@ function App(): JSX.Element {
             >
               Open in VS Code
             </button>
+            <div className="settings-menu-wrap" ref={settingsMenuRef}>
+              <button
+                className="settings-button"
+                type="button"
+                title="Settings"
+                aria-haspopup="menu"
+                aria-expanded={settingsMenuOpen}
+                onClick={() => setSettingsMenuOpen((open) => !open)}
+              >
+                <SettingsIcon />
+              </button>
+              {settingsMenuOpen && (
+                <div className="settings-menu" role="menu">
+                  <button
+                    className="settings-menu-item"
+                    type="button"
+                    role="menuitem"
+                    onClick={() => {
+                      setSettingsMenuOpen(false);
+                      setQuickAccessManagerOpen(true);
+                    }}
+                  >
+                    <QuickAccessIcon />
+                    Quick Access
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
         </header>
 
@@ -787,7 +954,245 @@ function App(): JSX.Element {
           />
         </div>
       </section>
+      {quickAccessOpen && (
+        <QuickAccessPalette
+          inputRef={quickAccessInputRef}
+          query={quickAccessQuery}
+          items={filteredQuickAccessItems}
+          selectedIndex={quickAccessSelectedIndex}
+          onQueryChange={setQuickAccessQuery}
+          onSelectedIndexChange={setQuickAccessSelectedIndex}
+          onOpenItem={handleOpenQuickAccessItem}
+          onClose={closeQuickAccess}
+          onOpenManager={() => {
+            closeQuickAccess();
+            setQuickAccessManagerOpen(true);
+          }}
+        />
+      )}
+      {quickAccessManagerOpen && (
+        <QuickAccessManager
+          items={quickAccessItems}
+          onSave={handleSaveQuickAccessItem}
+          onDelete={handleDeleteQuickAccessItem}
+          onClose={() => setQuickAccessManagerOpen(false)}
+        />
+      )}
     </main>
+  );
+}
+
+type QuickAccessPaletteProps = {
+  inputRef: RefObject<HTMLInputElement>;
+  query: string;
+  items: QuickAccessItem[];
+  selectedIndex: number;
+  onQueryChange: (query: string) => void;
+  onSelectedIndexChange: (index: number) => void;
+  onOpenItem: (item: QuickAccessItem) => void;
+  onClose: () => void;
+  onOpenManager: () => void;
+};
+
+function QuickAccessPalette({
+  inputRef,
+  query,
+  items,
+  selectedIndex,
+  onQueryChange,
+  onSelectedIndexChange,
+  onOpenItem,
+  onClose,
+  onOpenManager
+}: QuickAccessPaletteProps): JSX.Element {
+  const handleKeyDown = (event: ReactKeyboardEvent<HTMLInputElement>): void => {
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      onClose();
+      return;
+    }
+
+    if (event.key === 'ArrowDown') {
+      event.preventDefault();
+      onSelectedIndexChange(items.length === 0 ? 0 : Math.min(items.length - 1, selectedIndex + 1));
+      return;
+    }
+
+    if (event.key === 'ArrowUp') {
+      event.preventDefault();
+      onSelectedIndexChange(Math.max(0, selectedIndex - 1));
+      return;
+    }
+
+    if (event.key === 'Enter') {
+      event.preventDefault();
+
+      const item = items[selectedIndex];
+
+      if (item) {
+        onOpenItem(item);
+      } else {
+        onOpenManager();
+      }
+    }
+  };
+
+  return (
+    <div className="quick-access-overlay" onMouseDown={onClose}>
+      <div className="quick-access-palette" onMouseDown={(event) => event.stopPropagation()}>
+        <div className="quick-access-search">
+          <span className="quick-access-search-icon" aria-hidden="true">
+            <SearchIcon />
+          </span>
+          <input
+            ref={inputRef}
+            className="quick-access-input"
+            value={query}
+            placeholder="Search quick access"
+            onChange={(event) => onQueryChange(event.target.value)}
+            onKeyDown={handleKeyDown}
+          />
+        </div>
+        <div className="quick-access-results">
+          {items.map((item, index) => (
+            <button
+              key={item.id}
+              className={`quick-access-result ${index === selectedIndex ? 'is-selected' : ''}`}
+              type="button"
+              onMouseEnter={() => onSelectedIndexChange(index)}
+              onClick={() => onOpenItem(item)}
+            >
+              <span className="quick-access-result-icon" aria-hidden="true">
+                <QuickAccessIcon />
+              </span>
+              <span className="quick-access-result-copy">
+                <span className="quick-access-result-name">{item.name}</span>
+                <span className="quick-access-result-domain">{formatBrowserUrlLabel(item.domain) || item.domain}</span>
+              </span>
+            </button>
+          ))}
+          {items.length === 0 && (
+            <div className="quick-access-empty">
+              <div>
+                <div className="quick-access-empty-title">No quick access items</div>
+                <div className="quick-access-empty-copy">Create entries to open your frequent domains faster.</div>
+              </div>
+              <button type="button" onClick={onOpenManager}>
+                Manage Quick Access
+              </button>
+            </div>
+          )}
+        </div>
+        <div className="quick-access-footer">
+          <span><kbd>Enter</kbd> Open</span>
+          <span><kbd>Esc</kbd> Close</span>
+          <span><kbd>↑↓</kbd> Navigate</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+type QuickAccessManagerProps = {
+  items: QuickAccessItem[];
+  onSave: (item: QuickAccessItem) => void;
+  onDelete: (itemId: string) => void;
+  onClose: () => void;
+};
+
+function QuickAccessManager({ items, onSave, onDelete, onClose }: QuickAccessManagerProps): JSX.Element {
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [draftName, setDraftName] = useState('');
+  const [draftDomain, setDraftDomain] = useState('');
+
+  const resetDraft = (): void => {
+    setEditingId(null);
+    setDraftName('');
+    setDraftDomain('');
+  };
+
+  const beginEdit = (item: QuickAccessItem): void => {
+    setEditingId(item.id);
+    setDraftName(item.name);
+    setDraftDomain(item.domain);
+  };
+
+  const handleSubmit = (event: ReactFormEvent<HTMLFormElement>): void => {
+    event.preventDefault();
+
+    const name = draftName.trim();
+    const domain = draftDomain.trim();
+
+    if (!name || !domain) {
+      return;
+    }
+
+    onSave({
+      id: editingId || crypto.randomUUID(),
+      name,
+      domain
+    });
+    resetDraft();
+  };
+
+  return (
+    <div className="quick-access-overlay" onMouseDown={onClose}>
+      <section className="quick-access-manager" onMouseDown={(event) => event.stopPropagation()}>
+        <header className="quick-access-manager-header">
+          <div className="quick-access-manager-title">
+            <span className="quick-access-manager-icon" aria-hidden="true">
+              <QuickAccessIcon />
+            </span>
+            <div>
+              <h2>Quick Access</h2>
+              <p>{items.length} item{items.length === 1 ? '' : 's'}</p>
+            </div>
+          </div>
+          <button type="button" onClick={onClose}>
+            Close
+          </button>
+        </header>
+
+        <form className="quick-access-form" onSubmit={handleSubmit}>
+          <input
+            value={draftName}
+            placeholder="Name"
+            onChange={(event) => setDraftName(event.target.value)}
+          />
+          <input
+            value={draftDomain}
+            placeholder="localhost:3000"
+            onChange={(event) => setDraftDomain(event.target.value)}
+          />
+          <button type="submit" disabled={!draftName.trim() || !draftDomain.trim()}>
+            {editingId ? 'Save' : 'Add'}
+          </button>
+          {editingId && (
+            <button type="button" onClick={resetDraft}>
+              Cancel
+            </button>
+          )}
+        </form>
+
+        <div className="quick-access-manager-list">
+          {items.map((item) => (
+            <div className="quick-access-manager-item" key={item.id}>
+              <div>
+                <div className="quick-access-manager-name">{item.name}</div>
+                <div className="quick-access-manager-domain">{formatBrowserUrlLabel(item.domain) || item.domain}</div>
+              </div>
+              <button type="button" onClick={() => beginEdit(item)}>
+                Edit
+              </button>
+              <button type="button" onClick={() => onDelete(item.id)}>
+                Delete
+              </button>
+            </div>
+          ))}
+          {items.length === 0 && <div className="quick-access-manager-empty">No quick access items yet.</div>}
+        </div>
+      </section>
+    </div>
   );
 }
 
@@ -2008,6 +2413,26 @@ function ChevronUpIcon(): JSX.Element {
   return (
     <svg aria-hidden="true" viewBox="0 0 16 16">
       <path d="m4.5 9.75 3.5-3.5 3.5 3.5" />
+    </svg>
+  );
+}
+
+function SettingsIcon(): JSX.Element {
+  return (
+    <svg aria-hidden="true" viewBox="0 0 24 24">
+      <path d="M12 15.25A3.25 3.25 0 1 0 12 8.75a3.25 3.25 0 0 0 0 6.5Z" />
+      <path d="M18.2 13.3c.08-.42.12-.85.12-1.3s-.04-.88-.12-1.3l2.05-1.6-2-3.46-2.42.98a7.3 7.3 0 0 0-2.25-1.3L13.2 2.75h-4l-.38 2.57a7.3 7.3 0 0 0-2.25 1.3l-2.42-.98-2 3.46 2.05 1.6a7 7 0 0 0 0 2.6l-2.05 1.6 2 3.46 2.42-.98a7.3 7.3 0 0 0 2.25 1.3l.38 2.57h4l.38-2.57a7.3 7.3 0 0 0 2.25-1.3l2.42.98 2-3.46-2.05-1.6Z" />
+    </svg>
+  );
+}
+
+function QuickAccessIcon(): JSX.Element {
+  return (
+    <svg aria-hidden="true" viewBox="0 0 16 16">
+      <rect x="2.25" y="3.25" width="11.5" height="9.5" rx="1.5" />
+      <path d="M4.75 6.25h4.5" />
+      <path d="M4.75 8h6.5" />
+      <path d="M4.75 9.75h3.5" />
     </svg>
   );
 }

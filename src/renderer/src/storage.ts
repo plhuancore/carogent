@@ -16,6 +16,13 @@ export type WorkspaceStore = {
   workspaces: WorkspaceState[];
   pinnedDirectory?: string;
   pinnedFolderCollapsed?: boolean;
+  quickAccessItems?: QuickAccessItem[];
+};
+
+export type QuickAccessItem = {
+  id: string;
+  name: string;
+  domain: string;
 };
 
 function createWorkspace(name = 'Workspace'): WorkspaceState {
@@ -36,8 +43,19 @@ function createInitialStore(): WorkspaceStore {
     activeWorkspaceId: workspace.id,
     workspaces: [workspace],
     pinnedDirectory: '',
-    pinnedFolderCollapsed: false
+    pinnedFolderCollapsed: false,
+    quickAccessItems: []
   };
+}
+
+function isQuickAccessItem(value: unknown): value is QuickAccessItem {
+  if (!value || typeof value !== 'object') {
+    return false;
+  }
+
+  const item = value as QuickAccessItem;
+
+  return typeof item.id === 'string' && typeof item.name === 'string' && typeof item.domain === 'string';
 }
 
 function isWorkspaceState(value: unknown): value is WorkspaceState {
@@ -69,7 +87,9 @@ function isWorkspaceStore(value: unknown): value is WorkspaceStore {
     store.workspaces.length > 0 &&
     store.workspaces.every(isWorkspaceState) &&
     (store.pinnedDirectory === undefined || typeof store.pinnedDirectory === 'string') &&
-    (store.pinnedFolderCollapsed === undefined || typeof store.pinnedFolderCollapsed === 'boolean')
+    (store.pinnedFolderCollapsed === undefined || typeof store.pinnedFolderCollapsed === 'boolean') &&
+    (store.quickAccessItems === undefined ||
+      (Array.isArray(store.quickAccessItems) && store.quickAccessItems.every(isQuickAccessItem)))
   );
 }
 
@@ -98,7 +118,8 @@ function loadLegacyStore(): WorkspaceStore | null {
       activeWorkspaceId: workspace.id,
       workspaces: [workspace],
       pinnedDirectory: '',
-      pinnedFolderCollapsed: false
+      pinnedFolderCollapsed: false,
+      quickAccessItems: []
     };
   } catch {
     return null;

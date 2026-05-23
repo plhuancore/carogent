@@ -647,6 +647,452 @@ button {
   color: #f8fafc;
 }
 
+.command-palette-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 28px;
+  border: 1px solid #2a2f36;
+  border-radius: 5px;
+  background: #101214;
+  color: #8b949e;
+  padding: 0 10px 0 5px;
+  font-size: 12px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.command-palette-button:hover {
+  border-color: #3d4652;
+  color: #c9d1d9;
+}
+
+.command-palette-shortcut {
+  display: inline-grid;
+  min-width: 42px;
+  height: 20px;
+  place-items: center;
+  border: 1px solid #2b3038;
+  border-radius: 4px;
+  background: #171a1f;
+  color: #8b949e;
+  font-family: "Cascadia Mono", Consolas, monospace;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+  padding: 0 6px;
+}
+
+.settings-menu-wrap {
+  position: relative;
+}
+
+.settings-button {
+  display: grid;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  border: 1px solid #2a2f36;
+  border-radius: 5px;
+  background: #101214;
+  color: #8b949e;
+  cursor: pointer;
+}
+
+.settings-button:hover,
+.settings-button[aria-expanded='true'] {
+  border-color: #3d4652;
+  color: #c9d1d9;
+}
+
+.settings-button svg {
+  width: 15px;
+  height: 15px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.7;
+}
+
+.settings-menu {
+  position: absolute;
+  top: 34px;
+  right: 0;
+  z-index: 60;
+  width: 180px;
+  border: 1px solid #2b3038;
+  border-radius: 8px;
+  background: #202020;
+  box-shadow: 0 18px 42px rgba(0, 0, 0, 0.48);
+  padding: 6px;
+}
+
+.settings-menu-item {
+  display: grid;
+  width: 100%;
+  height: 32px;
+  grid-template-columns: 18px minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: #f3f4f6;
+  font-size: 12px;
+  padding: 0 10px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.settings-menu-item svg {
+  width: 15px;
+  height: 15px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.55;
+}
+
+.settings-menu-item:hover {
+  background: #2d2d2d;
+}
+
+.quick-access-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 120;
+  background: rgba(0, 0, 0, 0.34);
+}
+
+.quick-access-palette {
+  width: min(720px, calc(100vw - 32px));
+  overflow: hidden;
+  border: 1px solid #2a3441;
+  border-radius: 8px;
+  background: #11161d;
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.58);
+  margin: 56px auto 0;
+}
+
+.quick-access-search {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  border-bottom: 1px solid #2a3441;
+  background: #1b212b;
+  padding: 8px 12px;
+}
+
+.quick-access-search-icon {
+  display: grid;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  color: #64748b;
+}
+
+.quick-access-search-icon svg {
+  width: 15px;
+  height: 15px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.7;
+}
+
+.quick-access-input {
+  width: 100%;
+  height: 30px;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: #f8fafc;
+  font-size: 15px;
+  padding: 0;
+}
+
+.quick-access-input::placeholder {
+  color: #6b7280;
+}
+
+.quick-access-results {
+  max-height: min(380px, calc(100vh - 130px));
+  overflow-y: auto;
+  padding: 8px;
+}
+
+.quick-access-result {
+  display: grid;
+  width: 100%;
+  min-height: 44px;
+  grid-template-columns: 30px minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: #d1d5db;
+  padding: 0 10px 0 7px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.quick-access-result:hover,
+.quick-access-result.is-selected {
+  background: #1f2a37;
+  color: #ffffff;
+  box-shadow: 3px 0 0 #3b82f6 inset;
+}
+
+.quick-access-result-icon {
+  display: grid;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  border: 1px solid #2a394a;
+  border-radius: 6px;
+  background: #0d141d;
+  color: #93c5fd;
+}
+
+.quick-access-result-icon svg {
+  width: 15px;
+  height: 15px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.55;
+}
+
+.quick-access-result-copy {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.quick-access-result-name {
+  overflow: hidden;
+  font-size: 13px;
+  font-weight: 650;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.quick-access-result-domain {
+  overflow: hidden;
+  color: #93c5fd;
+  font-family: "Cascadia Mono", Consolas, monospace;
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.quick-access-empty {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 70px;
+  color: #94a3b8;
+  font-size: 12px;
+  padding: 8px 10px;
+}
+
+.quick-access-empty-title {
+  color: #e5e7eb;
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.quick-access-empty-copy {
+  margin-top: 3px;
+  color: #718096;
+}
+
+.quick-access-footer {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  border-top: 1px solid #202a36;
+  background: #0d1117;
+  color: #64748b;
+  font-size: 11px;
+  padding: 8px 12px;
+}
+
+.quick-access-footer kbd {
+  display: inline-grid;
+  min-width: 22px;
+  height: 18px;
+  place-items: center;
+  border: 1px solid #2a3441;
+  border-radius: 4px;
+  background: #151b24;
+  color: #cbd5e1;
+  font-family: "Cascadia Mono", Consolas, monospace;
+  font-size: 10px;
+  font-weight: 700;
+  margin-right: 4px;
+}
+
+.quick-access-empty button,
+.quick-access-manager button {
+  height: 28px;
+  border: 1px solid #2a3441;
+  border-radius: 5px;
+  background: #10151d;
+  color: #dbeafe;
+  font-size: 12px;
+  padding: 0 10px;
+  cursor: pointer;
+}
+
+.quick-access-empty button:hover,
+.quick-access-manager button:hover:not(:disabled) {
+  border-color: #3b82f6;
+  color: #ffffff;
+}
+
+.quick-access-manager {
+  width: min(720px, calc(100vw - 32px));
+  max-height: calc(100vh - 80px);
+  overflow: hidden;
+  border: 1px solid #2a3441;
+  border-radius: 8px;
+  background: #11161d;
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.58);
+  margin: 40px auto 0;
+}
+
+.quick-access-manager-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  border-bottom: 1px solid #202a36;
+  padding: 14px 16px;
+}
+
+.quick-access-manager-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.quick-access-manager-icon {
+  display: grid;
+  width: 34px;
+  height: 34px;
+  place-items: center;
+  border: 1px solid #2a394a;
+  border-radius: 8px;
+  background: #0d141d;
+  color: #93c5fd;
+}
+
+.quick-access-manager-icon svg {
+  width: 17px;
+  height: 17px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.55;
+}
+
+.quick-access-manager-header h2 {
+  margin: 0;
+  color: #f8fafc;
+  font-size: 15px;
+}
+
+.quick-access-manager-header p {
+  margin: 3px 0 0;
+  color: #718096;
+  font-size: 11px;
+}
+
+.quick-access-form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr) auto auto;
+  gap: 8px;
+  border-bottom: 1px solid #202a36;
+  padding: 12px 16px;
+}
+
+.quick-access-form input {
+  min-width: 0;
+  height: 30px;
+  border: 1px solid #263445;
+  border-radius: 6px;
+  outline: 0;
+  background: #07090c;
+  color: #e5e7eb;
+  font-size: 12px;
+  padding: 0 9px;
+}
+
+.quick-access-form input:focus {
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 1px rgba(59, 130, 246, 0.28);
+}
+
+.quick-access-manager button:disabled {
+  color: #475569;
+  cursor: not-allowed;
+}
+
+.quick-access-manager-list {
+  max-height: calc(100vh - 230px);
+  overflow-y: auto;
+  padding: 8px;
+}
+
+.quick-access-manager-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 8px;
+  min-height: 46px;
+  border-radius: 6px;
+  padding: 6px 8px;
+}
+
+.quick-access-manager-item:hover {
+  background: #161f2a;
+}
+
+.quick-access-manager-name {
+  overflow: hidden;
+  color: #e5e7eb;
+  font-size: 13px;
+  font-weight: 650;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.quick-access-manager-domain {
+  overflow: hidden;
+  margin-top: 2px;
+  color: #93c5fd;
+  font-family: "Cascadia Mono", Consolas, monospace;
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.quick-access-manager-empty {
+  color: #64748b;
+  font-size: 12px;
+  padding: 18px 8px;
+}
+
 .terminal-canvas {
   min-width: 0;
   min-height: 0;
