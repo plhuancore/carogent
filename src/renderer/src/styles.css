@@ -669,7 +669,7 @@ button {
 
 .command-palette-shortcut {
   display: inline-grid;
-  min-width: 42px;
+  min-width: 56px;
   height: 20px;
   place-items: center;
   border: 1px solid #2b3038;
@@ -841,9 +841,13 @@ button {
   cursor: pointer;
 }
 
-.quick-access-result:hover,
+.quick-access-result:hover {
+  background: #20262f;
+  color: #ffffff;
+}
+
 .quick-access-result.is-selected {
-  background: #1f2a37;
+  background: #17345f;
   color: #ffffff;
   box-shadow: 3px 0 0 #3b82f6 inset;
 }

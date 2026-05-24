@@ -52,6 +52,17 @@ type TerminalSession = {
 
 type SessionRegistry = Map<string, TerminalSession>;
 
+type CommandPaletteItem = {
+  id: string;
+  title: string;
+  subtitle: string;
+  keywords: string;
+  icon: 'browser' | 'code' | 'quick-access';
+  run: () => void;
+};
+
+type PaletteMode = 'quick-access' | 'command';
+
 const WORKSPACE_COLOR_PRESETS = [
   '#07090c',
   '#2563eb',
@@ -76,6 +87,105 @@ const HEADER_COLOR_PRESETS = [
 
 function getHeaderColor(color?: string): string {
   return color && HEADER_COLOR_PRESETS.includes(color) ? color : HEADER_COLOR_PRESETS[0];
+}
+
+function normalizeSearchValue(value: string): string {
+  return value
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase();
+}
+
+function compactSearchValue(value: string): string {
+  return normalizeSearchValue(value).replace(/[^a-z0-9]/g, '');
+}
+
+function getSearchWords(value: string): string[] {
+  return normalizeSearchValue(value)
+    .split(/[^a-z0-9]+/)
+    .filter(Boolean);
+}
+
+function isSubsequence(needle: string, haystack: string): boolean {
+  let needleIndex = 0;
+
+  for (const char of haystack) {
+    if (char === needle[needleIndex]) {
+      needleIndex += 1;
+
+      if (needleIndex === needle.length) {
+        return true;
+      }
+    }
+  }
+
+  return needle.length === 0;
+}
+
+function matchesWordPrefixChain(term: string, words: string[]): boolean {
+  function visit(termIndex: number, wordIndex: number): boolean {
+    if (termIndex === term.length) {
+      return true;
+    }
+
+    for (let currentWordIndex = wordIndex; currentWordIndex < words.length; currentWordIndex += 1) {
+      const word = words[currentWordIndex];
+      let prefixLength = 0;
+
+      while (
+        prefixLength < word.length &&
+        termIndex + prefixLength < term.length &&
+        word[prefixLength] === term[termIndex + prefixLength]
+      ) {
+        prefixLength += 1;
+      }
+
+      for (let used = prefixLength; used > 0; used -= 1) {
+        if (visit(termIndex + used, currentWordIndex + 1)) {
+          return true;
+        }
+      }
+    }
+
+    return false;
+  }
+
+  return visit(0, 0);
+}
+
+function scorePaletteItemMatch(item: CommandPaletteItem, terms: string[]): number {
+  const title = normalizeSearchValue(item.title);
+  const haystack = normalizeSearchValue(`${item.title} ${item.subtitle} ${item.keywords}`);
+  const compactTitle = compactSearchValue(item.title);
+  const compactHaystack = compactSearchValue(`${item.title} ${item.subtitle} ${item.keywords}`);
+  const words = getSearchWords(`${item.title} ${item.subtitle} ${item.keywords}`);
+  let score = 0;
+
+  for (const rawTerm of terms) {
+    const term = compactSearchValue(rawTerm);
+
+    if (!term) {
+      continue;
+    }
+
+    if (title.startsWith(term)) {
+      score += 120;
+    } else if (haystack.includes(term)) {
+      score += 100;
+    } else if (compactTitle.includes(term)) {
+      score += 90;
+    } else if (compactHaystack.includes(term)) {
+      score += 80;
+    } else if (matchesWordPrefixChain(term, words)) {
+      score += 70;
+    } else if (isSubsequence(term, compactHaystack)) {
+      score += 35;
+    } else {
+      return 0;
+    }
+  }
+
+  return score;
 }
 
 function getDefaultShellOption(shellOptions: TerminalShellOption[]): TerminalShellOption {
@@ -277,6 +387,7 @@ function App(): JSX.Element {
   const [quickAccessOpen, setQuickAccessOpen] = useState(false);
   const [quickAccessQuery, setQuickAccessQuery] = useState('');
   const [quickAccessSelectedIndex, setQuickAccessSelectedIndex] = useState(0);
+  const [paletteMode, setPaletteMode] = useState<PaletteMode>('quick-access');
   const [quickAccessManagerOpen, setQuickAccessManagerOpen] = useState(false);
   const [settingsMenuOpen, setSettingsMenuOpen] = useState(false);
   const [shellOptions, setShellOptions] = useState<TerminalShellOption[] | null>(null);
@@ -297,18 +408,6 @@ function App(): JSX.Element {
     ? activeWorkspace.activePaneId
     : getFirstPaneId(layout);
   const paneCount = useMemo(() => countPanes(layout), [layout]);
-  const filteredQuickAccessItems = useMemo(() => {
-    const query = quickAccessQuery.trim().toLowerCase();
-
-    if (!query) {
-      return quickAccessItems;
-    }
-
-    return quickAccessItems.filter((item) =>
-      `${item.name} ${item.domain}`.toLowerCase().includes(query)
-    );
-  }, [quickAccessItems, quickAccessQuery]);
-
   useEffect(() => {
     saveWorkspaceStore({
       activeWorkspaceId: activeWorkspace.id,
@@ -711,7 +810,8 @@ function App(): JSX.Element {
     window.terminalApi.openOrFocusBrowser({ url: activePane?.browserUrl });
   }, [activePane?.browserUrl]);
 
-  const openQuickAccess = useCallback(() => {
+  const openQuickAccess = useCallback((mode: PaletteMode = 'quick-access') => {
+    setPaletteMode(mode);
     setQuickAccessOpen(true);
     setQuickAccessSelectedIndex(0);
   }, []);
@@ -720,6 +820,7 @@ function App(): JSX.Element {
     setQuickAccessOpen(false);
     setQuickAccessQuery('');
     setQuickAccessSelectedIndex(0);
+    setPaletteMode('quick-access');
   }, []);
 
   const handleOpenQuickAccessItem = useCallback(
@@ -729,6 +830,81 @@ function App(): JSX.Element {
     },
     [closeQuickAccess]
   );
+
+  const quickAccessPaletteItems = useMemo<CommandPaletteItem[]>(
+    () =>
+      quickAccessItems.map((item) => ({
+        id: `quick-access-${item.id}`,
+        title: item.name,
+        subtitle: formatBrowserUrlLabel(item.domain) || item.domain,
+        keywords: `quick access browser domain ${item.name} ${item.domain}`,
+        icon: 'quick-access',
+        run: () => handleOpenQuickAccessItem(item)
+      })),
+    [handleOpenQuickAccessItem, quickAccessItems]
+  );
+
+  const commandPaletteItems = useMemo<CommandPaletteItem[]>(() => {
+    const codePath = sessions.current.get(activePaneId)?.cwd || activePane?.cwd || 'Home directory';
+    const browserLabel = formatBrowserUrlLabel(activePane?.browserUrl) || 'localhost:3000';
+
+    return [
+      {
+        id: 'open-browser',
+        title: 'Open in Browser',
+        subtitle: browserLabel,
+        keywords: `browser web chrome open url localhost ${activePane?.browserUrl || ''}`,
+        icon: 'browser',
+        run: () => {
+          handleOpenBrowser();
+          closeQuickAccess();
+        }
+      },
+      {
+        id: 'open-vscode',
+        title: 'Open in VS Code',
+        subtitle: codePath,
+        keywords: `vscode vs code editor open workspace folder ${codePath}`,
+        icon: 'code',
+        run: () => {
+          handleOpenInVSCode();
+          closeQuickAccess();
+        }
+      }
+    ];
+  }, [
+    activePane?.browserUrl,
+    activePane?.cwd,
+    activePaneId,
+    closeQuickAccess,
+    handleOpenBrowser,
+    handleOpenInVSCode
+  ]);
+
+  const effectivePaletteMode: PaletteMode = quickAccessQuery.trimStart().startsWith('>')
+    ? 'command'
+    : paletteMode;
+
+  const filteredPaletteItems = useMemo(() => {
+    const rawQuery =
+      effectivePaletteMode === 'command' && quickAccessQuery.trimStart().startsWith('>')
+        ? quickAccessQuery.trimStart().slice(1)
+        : quickAccessQuery;
+    const query = rawQuery.trim();
+    const sourceItems = effectivePaletteMode === 'command' ? commandPaletteItems : quickAccessPaletteItems;
+
+    if (!query) {
+      return sourceItems;
+    }
+
+    const terms = query.split(/\s+/).filter(Boolean);
+
+    return sourceItems
+      .map((item, index) => ({ item, index, score: scorePaletteItemMatch(item, terms) }))
+      .filter((match) => match.score > 0)
+      .sort((first, second) => second.score - first.score || first.index - second.index)
+      .map((match) => match.item);
+  }, [commandPaletteItems, effectivePaletteMode, quickAccessPaletteItems, quickAccessQuery]);
 
   const handleSaveQuickAccessItem = useCallback((item: QuickAccessItem) => {
     const name = item.name.trim();
@@ -755,10 +931,10 @@ function App(): JSX.Element {
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent): void => {
-      if ((event.metaKey || event.ctrlKey) && !event.shiftKey && event.key.toLowerCase() === 'p') {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'p') {
         event.preventDefault();
         event.stopPropagation();
-        openQuickAccess();
+        openQuickAccess(event.shiftKey ? 'command' : 'quick-access');
       }
     };
 
@@ -780,10 +956,10 @@ function App(): JSX.Element {
   }, [quickAccessQuery]);
 
   useEffect(() => {
-    if (quickAccessSelectedIndex >= filteredQuickAccessItems.length) {
-      setQuickAccessSelectedIndex(Math.max(0, filteredQuickAccessItems.length - 1));
+    if (quickAccessSelectedIndex >= filteredPaletteItems.length) {
+      setQuickAccessSelectedIndex(Math.max(0, filteredPaletteItems.length - 1));
     }
-  }, [filteredQuickAccessItems.length, quickAccessSelectedIndex]);
+  }, [filteredPaletteItems.length, quickAccessSelectedIndex]);
 
   useEffect(() => {
     if (!settingsMenuOpen) {
@@ -890,11 +1066,11 @@ function App(): JSX.Element {
             <button
               className="command-palette-button"
               type="button"
-              onClick={openQuickAccess}
-              title="Open command palette"
+              onClick={() => openQuickAccess()}
+              title="Open quick access"
             >
               <span className="command-palette-shortcut">{isMacPlatform() ? '⌘P' : 'Ctrl P'}</span>
-              <span>Command Palette</span>
+              <span>Quick Access</span>
             </button>
             <button
               className="topbar-button topbar-button-secondary"
@@ -973,11 +1149,12 @@ function App(): JSX.Element {
         <QuickAccessPalette
           inputRef={quickAccessInputRef}
           query={quickAccessQuery}
-          items={filteredQuickAccessItems}
+          mode={effectivePaletteMode}
+          items={filteredPaletteItems}
           selectedIndex={quickAccessSelectedIndex}
           onQueryChange={setQuickAccessQuery}
           onSelectedIndexChange={setQuickAccessSelectedIndex}
-          onOpenItem={handleOpenQuickAccessItem}
+          onOpenItem={(item) => item.run()}
           onClose={closeQuickAccess}
           onOpenManager={() => {
             closeQuickAccess();
@@ -1000,11 +1177,12 @@ function App(): JSX.Element {
 type QuickAccessPaletteProps = {
   inputRef: RefObject<HTMLInputElement>;
   query: string;
-  items: QuickAccessItem[];
+  mode: PaletteMode;
+  items: CommandPaletteItem[];
   selectedIndex: number;
   onQueryChange: (query: string) => void;
   onSelectedIndexChange: (index: number) => void;
-  onOpenItem: (item: QuickAccessItem) => void;
+  onOpenItem: (item: CommandPaletteItem) => void;
   onClose: () => void;
   onOpenManager: () => void;
 };
@@ -1012,6 +1190,7 @@ type QuickAccessPaletteProps = {
 function QuickAccessPalette({
   inputRef,
   query,
+  mode,
   items,
   selectedIndex,
   onQueryChange,
@@ -1020,6 +1199,9 @@ function QuickAccessPalette({
   onClose,
   onOpenManager
 }: QuickAccessPaletteProps): JSX.Element {
+  const isCommandMode = mode === 'command';
+  const hasQuery = query.trim().length > 0;
+
   const handleKeyDown = (event: ReactKeyboardEvent<HTMLInputElement>): void => {
     if (event.key === 'Escape') {
       event.preventDefault();
@@ -1063,7 +1245,7 @@ function QuickAccessPalette({
             ref={inputRef}
             className="quick-access-input"
             value={query}
-            placeholder="Search quick access"
+            placeholder={isCommandMode ? 'Search commands' : 'Search quick access'}
             onChange={(event) => onQueryChange(event.target.value)}
             onKeyDown={handleKeyDown}
           />
@@ -1078,23 +1260,35 @@ function QuickAccessPalette({
               onClick={() => onOpenItem(item)}
             >
               <span className="quick-access-result-icon" aria-hidden="true">
-                <QuickAccessIcon />
+                <CommandPaletteIcon type={item.icon} />
               </span>
               <span className="quick-access-result-copy">
-                <span className="quick-access-result-name">{item.name}</span>
-                <span className="quick-access-result-domain">{formatBrowserUrlLabel(item.domain) || item.domain}</span>
+                <span className="quick-access-result-name">{item.title}</span>
+                <span className="quick-access-result-domain">{item.subtitle}</span>
               </span>
             </button>
           ))}
           {items.length === 0 && (
             <div className="quick-access-empty">
               <div>
-                <div className="quick-access-empty-title">No quick access items</div>
-                <div className="quick-access-empty-copy">Create entries to open your frequent domains faster.</div>
+                <div className="quick-access-empty-title">
+                  {isCommandMode
+                    ? 'No matching commands'
+                    : hasQuery
+                    ? 'No matching quick access items'
+                    : 'No quick access items'}
+                </div>
+                <div className="quick-access-empty-copy">
+                  {isCommandMode
+                    ? 'Try another command search.'
+                    : 'Create entries to open your frequent domains faster.'}
+                </div>
               </div>
-              <button type="button" onClick={onOpenManager}>
-                Manage Quick Access
-              </button>
+              {!isCommandMode && (
+                <button type="button" onClick={onOpenManager}>
+                  Manage Quick Access
+                </button>
+              )}
             </div>
           )}
         </div>
@@ -1102,6 +1296,7 @@ function QuickAccessPalette({
           <span><kbd>Enter</kbd> Open</span>
           <span><kbd>Esc</kbd> Close</span>
           <span><kbd>↑↓</kbd> Navigate</span>
+          {!isCommandMode && <span><kbd>&gt;</kbd> Commands</span>}
         </div>
       </div>
     </div>
@@ -2450,6 +2645,39 @@ function QuickAccessIcon(): JSX.Element {
       <path d="M4.75 9.75h3.5" />
     </svg>
   );
+}
+
+function BrowserIcon(): JSX.Element {
+  return (
+    <svg aria-hidden="true" viewBox="0 0 16 16">
+      <circle cx="8" cy="8" r="5.75" />
+      <path d="M2.75 8h10.5" />
+      <path d="M8 2.25c1.5 1.55 2.25 3.47 2.25 5.75S9.5 12.2 8 13.75" />
+      <path d="M8 2.25C6.5 3.8 5.75 5.72 5.75 8s.75 4.2 2.25 5.75" />
+    </svg>
+  );
+}
+
+function CodeIcon(): JSX.Element {
+  return (
+    <svg aria-hidden="true" viewBox="0 0 16 16">
+      <path d="m6.25 4.75-3 3.25 3 3.25" />
+      <path d="m9.75 4.75 3 3.25-3 3.25" />
+      <path d="m8.85 3.5-1.7 9" />
+    </svg>
+  );
+}
+
+function CommandPaletteIcon({ type }: { type: CommandPaletteItem['icon'] }): JSX.Element {
+  if (type === 'browser') {
+    return <BrowserIcon />;
+  }
+
+  if (type === 'code') {
+    return <CodeIcon />;
+  }
+
+  return <QuickAccessIcon />;
 }
 
 export default App;
