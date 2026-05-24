@@ -52,7 +52,7 @@ type TerminalSession = {
 
 type SessionRegistry = Map<string, TerminalSession>;
 
-const HEADER_COLOR_PRESETS = [
+const WORKSPACE_COLOR_PRESETS = [
   '#07090c',
   '#2563eb',
   '#0f766e',
@@ -62,6 +62,21 @@ const HEADER_COLOR_PRESETS = [
   '#16a34a',
   '#475569'
 ];
+
+const HEADER_COLOR_PRESETS = [
+  '#0b0f14',
+  '#172554',
+  '#134e4a',
+  '#3b0764',
+  '#500724',
+  '#431407',
+  '#14532d',
+  '#1e293b'
+];
+
+function getHeaderColor(color?: string): string {
+  return color && HEADER_COLOR_PRESETS.includes(color) ? color : HEADER_COLOR_PRESETS[0];
+}
 
 function getDefaultShellOption(shellOptions: TerminalShellOption[]): TerminalShellOption {
   return shellOptions.find((option) => option.isDefault) || shellOptions[0];
@@ -108,7 +123,7 @@ function createXterm(): Terminal {
     minimumContrastRatio: 7,
     scrollback: 4000,
     theme: {
-      background: '#0c0c0c',
+      background: '#111315',
       foreground: '#eef2f7',
       cursor: '#ffffff',
       selectionBackground: '#3b82f680',
@@ -618,7 +633,7 @@ function App(): JSX.Element {
     setWorkspaces((current) =>
       current.map((workspace) =>
         workspace.id === workspaceId
-          ? { ...workspace, color: color === HEADER_COLOR_PRESETS[0] ? undefined : color }
+          ? { ...workspace, color: color === WORKSPACE_COLOR_PRESETS[0] ? undefined : color }
           : workspace
       )
     );
@@ -1512,7 +1527,7 @@ function WorkspaceItem({
 }: WorkspaceItemProps): JSX.Element {
   const [editing, setEditing] = useState(false);
   const [draftName, setDraftName] = useState(workspace.name);
-  const workspaceColor = workspace.color || HEADER_COLOR_PRESETS[0];
+  const workspaceColor = workspace.color || WORKSPACE_COLOR_PRESETS[0];
   const dotStyle = {
     backgroundColor: workspaceColor,
     boxShadow: active
@@ -1556,12 +1571,12 @@ function WorkspaceItem({
           <span className="badge">{countPanes(workspace.layout)}</span>
         </div>
         <div className="workspace-color-swatches" aria-label="Workspace color">
-          {HEADER_COLOR_PRESETS.map((color) => (
+          {WORKSPACE_COLOR_PRESETS.map((color) => (
             <button
               key={color}
               className={`workspace-color-swatch ${color === workspaceColor ? 'is-selected' : ''}`}
               type="button"
-              title={color === HEADER_COLOR_PRESETS[0] ? 'Default' : color}
+              title={color === WORKSPACE_COLOR_PRESETS[0] ? 'Default' : color}
               style={{ backgroundColor: color }}
               onMouseDown={(event) => event.preventDefault()}
               onClick={() => onColorChange(workspace.id, color)}
@@ -1791,7 +1806,7 @@ function TerminalPane({
   const [draftBrowserUrl, setDraftBrowserUrl] = useState(pane.browserUrl || '');
   const displayTitle = pane.customTitle || pane.title;
   const browserUrlLabel = formatBrowserUrlLabel(pane.browserUrl);
-  const headerColor = pane.headerColor || HEADER_COLOR_PRESETS[0];
+  const headerColor = getHeaderColor(pane.headerColor);
   const selectedShell = getShellOption(shellOptions, pane.shell);
   const paneStyle = useMemo(
     () =>
