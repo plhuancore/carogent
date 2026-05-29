@@ -2518,7 +2518,11 @@ function TerminalPane({
           </button>
         </div>
       </div>
-      <div className="terminal-host">
+      <div
+        className="terminal-host"
+        onWheel={() => onActivate(pane.paneId)}
+        onTouchMove={() => onActivate(pane.paneId)}
+      >
         <div className="terminal-viewport" ref={hostRef} />
       </div>
     </article>
