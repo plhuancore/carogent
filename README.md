@@ -33,6 +33,12 @@ Build the app:
 npm run build
 ```
 
+Run the app:
+
+```powershell
+npm run preview
+```
+
 Run type checking:
 
 ```powershell
@@ -48,6 +54,8 @@ npm run typecheck
 - Run independent terminal sessions in each pane.
 - Choose the shell for each pane.
 - Pin one folder in the sidebar and insert file paths into the active terminal.
+- Open or focus a browser tab from the active pane.
+- Save frequently used websites in Quick Access.
 - Restore the pane layout after restarting the app.
 - Customize each pane name and header color.
 
@@ -97,8 +105,65 @@ The first swatch restores the default header color.
 
 Header colors are saved per pane, so different split terminals can use different colors.
 
+## Install The Chrome Browser Bridge
+
+Install the included Chrome extension if you want `Open in Browser` and Quick Access to focus existing Chrome tabs instead of opening duplicate tabs.
+
+1. Open `chrome://extensions` in Chrome.
+2. Enable `Developer mode`.
+3. Click `Load unpacked`.
+4. Select the `extensions/chrome-browser-bridge` folder from this repository.
+5. Optionally pin `Carogent Browser Bridge` from Chrome's extensions menu.
+6. Open the extension popup and keep `Enabled` turned on.
+
+The extension connects to the running Carogent app over `ws://127.0.0.1:17321`. It reconnects automatically after Carogent or Chrome restarts.
+
+After the extension connects, the status dot inside Carogent's top-bar `Open in Browser` button turns green. If it stays gray, make sure Carogent is running, reload the extension from `chrome://extensions`, and wait a few seconds for reconnect.
+
+## Open In Browser
+
+Each terminal pane can keep its own browser URL.
+
+1. Double-click the pane title.
+2. Enter a URL or domain in the `Domain` input.
+3. Press `Enter` to save.
+4. Click `Open in Browser` in the top bar, or click the domain badge in the pane header.
+
+If no URL is configured for the active pane, Carogent opens `http://localhost:3000`.
+
+Carogent first asks the optional Chrome browser bridge to open or focus a matching tab. If the bridge is not installed or unavailable, it tries Chrome remote debugging and then falls back to opening the URL normally.
+
+The status dot inside the top-bar `Open in Browser` button shows the browser bridge state:
+
+- Gray: browser bridge disconnected.
+- Green: browser bridge connected.
+- Amber: browser bridge connected but disabled in the extension.
+
+## Use Quick Access
+
+Quick Access stores frequently used websites and opens them from a searchable palette.
+
+Add an item:
+
+1. Click the settings icon in the top-right corner.
+2. Choose `Quick Access`.
+3. Enter a name and domain or URL.
+4. Click `Add`.
+
+Open an item:
+
+1. Click `Quick Access` in the top bar, or press `Cmd+P` on macOS / `Ctrl+P` on Windows.
+2. Type part of the saved name or domain.
+3. Select an item to open or focus its browser tab.
+
+The palette also supports commands:
+
+- Press `Cmd+Shift+P` on macOS / `Ctrl+Shift+P` on Windows to open command mode.
+- Or type `>` at the start of a Quick Access search.
+- Use command mode to run `Open in Browser` or `Open in VS Code` for the active pane.
+
 ## Notes
 
 - Terminal command output and scrollback are not saved between app restarts.
-- Only the pane layout, pinned folder, pane shells, pane names, pane colors, and working directory metadata are restored.
+- Only the pane layout, pinned folder, pane shells, pane names, pane colors, pane browser URLs, Quick Access items, and working directory metadata are restored.
 - The app uses platform-specific shell defaults: Command Prompt on Windows and zsh on macOS.
