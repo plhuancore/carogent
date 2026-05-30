@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, shell as electronShell } from 'electron';
+import { app, BrowserWindow, ipcMain, screen, shell as electronShell } from 'electron';
 import { spawn } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
 import { delimiter, dirname, extname, join } from 'node:path';
@@ -88,10 +88,36 @@ type BrowserBridgeStatusEvent = {
 
 type BrowserBridgeCommandResult = 'handled' | 'disabled' | 'unhandled';
 
+type AgentDoneOverlayItem = {
+  paneId: string;
+  workspaceId: string;
+  workspaceName: string;
+  title: string;
+  cwd?: string;
+};
+
+type AgentOpenPaneRequest = {
+  paneId: string;
+  workspaceId: string;
+};
+
 const terminals = new Map<string, pty.IPty>();
 const terminalCwds = new Map<string, string>();
 const terminalOscBuffers = new Map<string, string>();
 let mainWindow: BrowserWindow | null = null;
+let agentDoneOverlayWindow: BrowserWindow | null = null;
+let agentDoneOverlayItems: AgentDoneOverlayItem[] = [];
+let agentDoneOverlayExpanded = false;
+let agentDoneOverlayMovedByUser = false;
+let agentDoneOverlayPositioning = false;
+let agentDoneOverlayEnabled = true;
+const AGENT_DONE_OVERLAY_COLLAPSED_HEIGHT = 44;
+const AGENT_DONE_OVERLAY_ROW_HEIGHT = 34;
+const AGENT_DONE_OVERLAY_MENU_GAP = 6;
+const AGENT_DONE_OVERLAY_MENU_PADDING = 12;
+const AGENT_DONE_OVERLAY_IDLE_WIDTH = 154;
+const AGENT_DONE_OVERLAY_ITEM_WIDTH = 260;
+const AGENT_DONE_OVERLAY_MAX_WIDTH = 300;
 
 const IMAGE_MIME_TYPES = new Map([
   ['.png', 'image/png'],
@@ -447,7 +473,166 @@ function createWindow(): void {
 
   mainWindow.on('closed', () => {
     mainWindow = null;
+    if (agentDoneOverlayWindow) {
+      agentDoneOverlayWindow.close();
+    }
   });
+}
+
+function showDockIcon(): void {
+  if (process.platform !== 'darwin') {
+    return;
+  }
+
+  app.setActivationPolicy('regular');
+  app.dock.show();
+}
+
+function getRendererEntryUrl(search = ''): string {
+  if (process.env.ELECTRON_RENDERER_URL) {
+    const rendererUrl = new URL(process.env.ELECTRON_RENDERER_URL);
+    rendererUrl.search = search;
+    return rendererUrl.href;
+  }
+
+  return join(__dirname, '../renderer/index.html');
+}
+
+function positionAgentDoneOverlay(): void {
+  if (!agentDoneOverlayWindow || agentDoneOverlayMovedByUser) {
+    return;
+  }
+
+  const { workArea } = screen.getPrimaryDisplay();
+  const width = getAgentDoneOverlayWidth();
+  const height = getAgentDoneOverlayHeight();
+
+  agentDoneOverlayPositioning = true;
+  agentDoneOverlayWindow.setBounds({
+    x: Math.round(workArea.x + workArea.width - width - 18),
+    y: Math.round(workArea.y + 18),
+    width,
+    height
+  });
+  agentDoneOverlayPositioning = false;
+}
+
+function getAgentDoneOverlayHeight(): number {
+  if (!agentDoneOverlayExpanded || agentDoneOverlayItems.length === 0) {
+    return AGENT_DONE_OVERLAY_COLLAPSED_HEIGHT;
+  }
+
+  return (
+    AGENT_DONE_OVERLAY_COLLAPSED_HEIGHT +
+    AGENT_DONE_OVERLAY_MENU_GAP +
+    AGENT_DONE_OVERLAY_MENU_PADDING +
+    Math.max(0, agentDoneOverlayItems.length - 1) * AGENT_DONE_OVERLAY_ROW_HEIGHT
+  );
+}
+
+function getAgentDoneOverlayWidth(): number {
+  // Always return fixed width to prevent macOS transparent window white background glitch
+  // on resize. CSS content right-aligns within the window via justify-content: flex-end.
+  return Math.min(AGENT_DONE_OVERLAY_MAX_WIDTH, AGENT_DONE_OVERLAY_ITEM_WIDTH);
+}
+
+function sendAgentDoneOverlayItems(): void {
+  agentDoneOverlayWindow?.webContents.send('agent-overlay:items', agentDoneOverlayItems);
+}
+
+function createAgentDoneOverlayWindow(): BrowserWindow {
+  if (agentDoneOverlayWindow) {
+    return agentDoneOverlayWindow;
+  }
+
+  agentDoneOverlayWindow = new BrowserWindow({
+    width: Math.min(AGENT_DONE_OVERLAY_MAX_WIDTH, AGENT_DONE_OVERLAY_ITEM_WIDTH),
+    height: AGENT_DONE_OVERLAY_COLLAPSED_HEIGHT,
+    frame: false,
+    transparent: true,
+    hasShadow: false,
+    resizable: false,
+    movable: true,
+    minimizable: false,
+    maximizable: false,
+    fullscreenable: false,
+    alwaysOnTop: true,
+    show: false,
+    backgroundColor: '#00000000',
+    webPreferences: {
+      preload: join(__dirname, '../preload/index.mjs'),
+      sandbox: false,
+      contextIsolation: true,
+      nodeIntegration: false
+    }
+  });
+
+  agentDoneOverlayWindow.setAlwaysOnTop(true, 'floating');
+  agentDoneOverlayWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+  positionAgentDoneOverlay();
+
+  if (process.env.ELECTRON_RENDERER_URL) {
+    agentDoneOverlayWindow.loadURL(getRendererEntryUrl('?overlay=1'));
+  } else {
+    agentDoneOverlayWindow.loadFile(getRendererEntryUrl(), { search: 'overlay=1' });
+  }
+
+  agentDoneOverlayWindow.webContents.once('did-finish-load', sendAgentDoneOverlayItems);
+
+  // Debounced setBackgroundColor after move to fix macOS transparent window
+  // losing transparency when dragged between monitors with different display profiles.
+  let moveRepaintTimer: NodeJS.Timeout | null = null;
+  agentDoneOverlayWindow.on('move', () => {
+    if (!agentDoneOverlayPositioning) {
+      agentDoneOverlayMovedByUser = true;
+    }
+    if (process.platform === 'darwin') {
+      if (moveRepaintTimer) clearTimeout(moveRepaintTimer);
+      moveRepaintTimer = setTimeout(() => {
+        if (agentDoneOverlayWindow && !agentDoneOverlayWindow.isDestroyed()) {
+          agentDoneOverlayWindow.setBackgroundColor('#00000000');
+        }
+      }, 200);
+    }
+  });
+  agentDoneOverlayWindow.on('closed', () => {
+    agentDoneOverlayWindow = null;
+  });
+
+  return agentDoneOverlayWindow;
+}
+
+function updateAgentDoneOverlayVisibility(): void {
+  const overlayWindow = createAgentDoneOverlayWindow();
+  const width = getAgentDoneOverlayWidth();
+  const height = getAgentDoneOverlayHeight();
+
+  if (agentDoneOverlayMovedByUser) {
+    const bounds = overlayWindow.getBounds();
+    const newX = bounds.x + bounds.width - width;
+    agentDoneOverlayPositioning = true;
+    overlayWindow.setBounds({
+      x: Math.round(newX),
+      y: bounds.y,
+      width,
+      height
+    });
+    agentDoneOverlayPositioning = false;
+  } else {
+    positionAgentDoneOverlay();
+  }
+
+  if (agentDoneOverlayEnabled) {
+    overlayWindow.showInactive();
+  } else {
+    overlayWindow.hide();
+  }
+  sendAgentDoneOverlayItems();
+}
+
+function showAgentDoneOverlay(item: AgentDoneOverlayItem): void {
+  agentDoneOverlayItems = [item, ...agentDoneOverlayItems.filter((current) => current.paneId !== item.paneId)].slice(0, 4);
+  updateAgentDoneOverlayVisibility();
 }
 
 function killTerminal(id: string): void {
@@ -906,6 +1091,7 @@ async function openOrFocusBrowser(request: OpenBrowserRequest): Promise<void> {
 }
 
 app.whenReady().then(() => {
+  showDockIcon();
   startBrowserBridgeServer();
 
   ipcMain.handle('terminal:get-shell-options', () => getShellOptions());
@@ -915,6 +1101,47 @@ app.whenReady().then(() => {
   ipcMain.handle('workspace:open-vscode', (_event, request: OpenVSCodeRequest = {}) => openVSCode(request));
   ipcMain.handle('browser:open-or-focus', (_event, request: OpenBrowserRequest = {}) => openOrFocusBrowser(request));
   ipcMain.handle('browser:get-bridge-status', () => getBrowserBridgeStatus());
+  ipcMain.handle('agent-overlay:get-items', () => agentDoneOverlayItems);
+  ipcMain.handle('agent-overlay:get-visible', () => agentDoneOverlayEnabled);
+  ipcMain.handle('agent-overlay:show-done', (_event, item: AgentDoneOverlayItem) => {
+    showAgentDoneOverlay(item);
+  });
+  ipcMain.handle('agent-overlay:open-pane', (_event, request: AgentOpenPaneRequest) => {
+    agentDoneOverlayItems = agentDoneOverlayItems.filter((item) => item.paneId !== request.paneId);
+    if (agentDoneOverlayItems.length === 0) {
+      agentDoneOverlayExpanded = false;
+    }
+    updateAgentDoneOverlayVisibility();
+
+    if (mainWindow?.isMinimized()) {
+      mainWindow.restore();
+    }
+
+    mainWindow?.show();
+    mainWindow?.focus();
+    mainWindow?.webContents.send('agent:open-pane', request);
+  });
+  ipcMain.handle('agent-overlay:close', () => {
+    agentDoneOverlayEnabled = false;
+    updateAgentDoneOverlayVisibility();
+  });
+  ipcMain.handle('agent-overlay:set-expanded', (_event, expanded: boolean) => {
+    agentDoneOverlayExpanded = expanded;
+    updateAgentDoneOverlayVisibility();
+  });
+  ipcMain.handle('agent-overlay:set-visible', (_event, visible: boolean) => {
+    agentDoneOverlayEnabled = visible;
+    updateAgentDoneOverlayVisibility();
+    return agentDoneOverlayEnabled;
+  });
+  ipcMain.handle('agent-overlay:focus-app', () => {
+    if (mainWindow?.isMinimized()) {
+      mainWindow.restore();
+    }
+
+    mainWindow?.show();
+    mainWindow?.focus();
+  });
 
   ipcMain.handle('terminal:create', (_event, request: TerminalCreateRequest = {}) => {
     const id = randomUUID();
@@ -964,11 +1191,16 @@ app.whenReady().then(() => {
   });
 
   createWindow();
+  createAgentDoneOverlayWindow();
+  updateAgentDoneOverlayVisibility();
 
   app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) {
+    if (!mainWindow) {
       createWindow();
     }
+
+    createAgentDoneOverlayWindow();
+    updateAgentDoneOverlayVisibility();
   });
 });
 

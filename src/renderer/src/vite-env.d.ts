@@ -62,6 +62,19 @@ type BrowserBridgeStatusEvent = {
   lastError?: string;
 };
 
+type AgentDoneOverlayItem = {
+  paneId: string;
+  workspaceId: string;
+  workspaceName: string;
+  title: string;
+  cwd?: string;
+};
+
+type AgentOpenPaneRequest = {
+  paneId: string;
+  workspaceId: string;
+};
+
 interface Window {
   terminalApi: {
     getShellOptions: () => Promise<TerminalShellOption[]>;
@@ -70,6 +83,14 @@ interface Window {
     openInVSCode: (request: { path?: string }) => Promise<void>;
     openOrFocusBrowser: (request: { url?: string }) => Promise<void>;
     getBrowserBridgeStatus: () => Promise<BrowserBridgeStatusEvent>;
+    getAgentDoneOverlayItems: () => Promise<AgentDoneOverlayItem[]>;
+    getAgentDoneOverlayVisible: () => Promise<boolean>;
+    showAgentDoneOverlay: (item: AgentDoneOverlayItem) => Promise<void>;
+    openAgentDonePane: (request: AgentOpenPaneRequest) => Promise<void>;
+    closeAgentDoneOverlay: () => Promise<void>;
+    setAgentDoneOverlayExpanded: (expanded: boolean) => Promise<void>;
+    setAgentDoneOverlayVisible: (visible: boolean) => Promise<boolean>;
+    focusCarogentApp: () => Promise<void>;
     create: (request?: TerminalCreateRequest) => Promise<TerminalCreated>;
     resize: (request: { id: string; cols: number; rows: number }) => Promise<void>;
     write: (request: { id: string; data: string }) => Promise<void>;
@@ -80,6 +101,8 @@ interface Window {
     onData: (callback: (event: TerminalDataEvent) => void) => () => void;
     onCwd: (callback: (event: TerminalCwdEvent) => void) => () => void;
     onBrowserBridgeStatus: (callback: (event: BrowserBridgeStatusEvent) => void) => () => void;
+    onAgentDoneOverlayItems: (callback: (items: AgentDoneOverlayItem[]) => void) => () => void;
+    onOpenAgentPane: (callback: (request: AgentOpenPaneRequest) => void) => () => void;
     onExit: (callback: (event: TerminalExitEvent) => void) => () => void;
   };
 }

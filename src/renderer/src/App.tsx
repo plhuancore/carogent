@@ -63,6 +63,14 @@ type CommandPaletteItem = {
 
 type PaletteMode = 'quick-access' | 'command';
 
+type AgentDoneItem = {
+  paneId: string;
+  workspaceId: string;
+  workspaceName: string;
+  title: string;
+  cwd?: string;
+};
+
 const WORKSPACE_COLOR_PRESETS = [
   '#07090c',
   '#2563eb',
@@ -84,6 +92,9 @@ const HEADER_COLOR_PRESETS = [
   '#14532d',
   '#1e293b'
 ];
+
+const AGENT_DONE_SENTINEL = 'carogent_done';
+const AGENT_DONE_VISIBLE_MS = 8000;
 
 function getHeaderColor(color?: string): string {
   return color && HEADER_COLOR_PRESETS.includes(color) ? color : HEADER_COLOR_PRESETS[0];
@@ -392,12 +403,17 @@ function App(): JSX.Element {
   const [settingsMenuOpen, setSettingsMenuOpen] = useState(false);
   const [shellOptions, setShellOptions] = useState<TerminalShellOption[] | null>(null);
   const [shellOptionsError, setShellOptionsError] = useState<string | null>(null);
+  const [agentOverlayVisible, setAgentOverlayVisible] = useState(true);
   const [browserBridgeStatus, setBrowserBridgeStatus] = useState<BrowserBridgeStatusEvent>({
     connected: false,
     clientCount: 0,
     enabled: true
   });
+  const [agentDonePaneIds, setAgentDonePaneIds] = useState<Set<string>>(() => new Set());
   const sessions = useRef<SessionRegistry>(new Map());
+  const agentDoneTimers = useRef<Map<string, number>>(new Map());
+  const workspacesRef = useRef<WorkspaceState[]>(workspaces);
+  const shellOptionsRef = useRef<TerminalShellOption[] | null>(shellOptions);
   const quickAccessInputRef = useRef<HTMLInputElement | null>(null);
   const settingsMenuRef = useRef<HTMLDivElement | null>(null);
 
@@ -408,6 +424,15 @@ function App(): JSX.Element {
     ? activeWorkspace.activePaneId
     : getFirstPaneId(layout);
   const paneCount = useMemo(() => countPanes(layout), [layout]);
+
+  useEffect(() => {
+    workspacesRef.current = workspaces;
+  }, [workspaces]);
+
+  useEffect(() => {
+    shellOptionsRef.current = shellOptions;
+  }, [shellOptions]);
+
   useEffect(() => {
     saveWorkspaceStore({
       activeWorkspaceId: activeWorkspace.id,
@@ -445,6 +470,61 @@ function App(): JSX.Element {
     []
   );
 
+  const getAgentDoneItem = useCallback(
+    (paneId: string): AgentDoneItem | null => {
+      for (const workspace of workspacesRef.current) {
+        const pane = findPane(workspace.layout, paneId);
+
+        if (pane) {
+          const currentShellOptions = shellOptionsRef.current;
+
+          return {
+            paneId,
+            workspaceId: workspace.id,
+            workspaceName: workspace.name,
+            title:
+              pane.customTitle ||
+              pane.title ||
+              (currentShellOptions?.length ? getShellTitle(currentShellOptions, pane.shell) : 'terminal'),
+            cwd: sessions.current.get(paneId)?.cwd || pane.cwd
+          };
+        }
+      }
+
+      return null;
+    },
+    []
+  );
+
+  const markAgentDonePane = useCallback((paneId: string) => {
+    const existingTimer = agentDoneTimers.current.get(paneId);
+
+    if (existingTimer !== undefined) {
+      window.clearTimeout(existingTimer);
+    }
+
+    setAgentDonePaneIds((current) => {
+      const next = new Set(current);
+      next.add(paneId);
+      return next;
+    });
+
+    const timer = window.setTimeout(() => {
+      agentDoneTimers.current.delete(paneId);
+      setAgentDonePaneIds((current) => {
+        if (!current.has(paneId)) {
+          return current;
+        }
+
+        const next = new Set(current);
+        next.delete(paneId);
+        return next;
+      });
+    }, AGENT_DONE_VISIBLE_MS);
+
+    agentDoneTimers.current.set(paneId, timer);
+  }, []);
+
   useEffect(() => {
     window.terminalApi
       .getShellOptions()
@@ -458,6 +538,12 @@ function App(): JSX.Element {
   }, []);
 
   useEffect(() => {
+    window.terminalApi.getAgentDoneOverlayVisible().then(setAgentOverlayVisible).catch(() => {
+      setAgentOverlayVisible(true);
+    });
+  }, []);
+
+  useEffect(() => {
     window.terminalApi.getBrowserBridgeStatus().then(setBrowserBridgeStatus).catch(() => {
       setBrowserBridgeStatus({ connected: false, clientCount: 0, enabled: true });
     });
@@ -467,8 +553,17 @@ function App(): JSX.Element {
 
   useEffect(() => {
     const stopData = window.terminalApi.onData(({ id, data }) => {
-      for (const session of sessions.current.values()) {
+      for (const [paneId, session] of sessions.current) {
         if (session.terminalId === id) {
+          if (data.includes(AGENT_DONE_SENTINEL)) {
+            markAgentDonePane(paneId);
+            const doneItem = getAgentDoneItem(paneId);
+
+            if (doneItem) {
+              window.terminalApi.showAgentDoneOverlay(doneItem).catch(() => {});
+            }
+          }
+
           session.terminal.write(data);
           scheduleTerminalFit(session);
           break;
@@ -515,8 +610,14 @@ function App(): JSX.Element {
         session.terminal.dispose();
         sessions.current.delete(paneId);
       }
+
+      for (const timer of agentDoneTimers.current.values()) {
+        window.clearTimeout(timer);
+      }
+
+      agentDoneTimers.current.clear();
     };
-  }, [updatePaneInAnyWorkspace]);
+  }, [getAgentDoneItem, markAgentDonePane, updatePaneInAnyWorkspace]);
 
   const ensureSession = useCallback((pane: PaneNode): TerminalSession => {
     const existing = sessions.current.get(pane.paneId);
@@ -987,6 +1088,15 @@ function App(): JSX.Element {
     };
   }, [settingsMenuOpen]);
 
+  useEffect(() => {
+    return window.terminalApi.onOpenAgentPane(({ workspaceId, paneId }) => {
+      setActiveWorkspaceId(workspaceId);
+      setWorkspaces((current) =>
+        current.map((workspace) => (workspace.id === workspaceId ? { ...workspace, activePaneId: paneId } : workspace))
+      );
+    });
+  }, []);
+
   if (shellOptionsError) {
     return (
       <main className="app-shell">
@@ -1119,6 +1229,27 @@ function App(): JSX.Element {
                     <QuickAccessIcon />
                     Quick Access
                   </button>
+                  <button
+                    className="settings-menu-item"
+                    type="button"
+                    role="menuitemcheckbox"
+                    aria-checked={agentOverlayVisible}
+                    onClick={() => {
+                      const nextVisible = !agentOverlayVisible;
+
+                      setAgentOverlayVisible(nextVisible);
+                      window.terminalApi
+                        .setAgentDoneOverlayVisible(nextVisible)
+                        .then(setAgentOverlayVisible)
+                        .catch(() => setAgentOverlayVisible(agentOverlayVisible));
+                    }}
+                  >
+                    <AgentOverlayIcon />
+                    Floating Bar
+                    <span className="settings-menu-check" aria-hidden="true">
+                      {agentOverlayVisible ? '✓' : ''}
+                    </span>
+                  </button>
                 </div>
               )}
             </div>
@@ -1142,6 +1273,7 @@ function App(): JSX.Element {
             onChangeShell={handleChangeShell}
             onOpenBrowser={(browserUrl) => window.terminalApi.openOrFocusBrowser({ url: browserUrl })}
             shellOptions={shellOptions}
+            agentDonePaneIds={agentDonePaneIds}
           />
         </div>
       </section>
@@ -1822,6 +1954,7 @@ type NodeViewProps = {
   onChangeShell: (paneId: string, shell: string) => void;
   onOpenBrowser: (browserUrl?: string) => void;
   shellOptions: TerminalShellOption[];
+  agentDonePaneIds: Set<string>;
 };
 
 function NodeView(props: NodeViewProps): JSX.Element {
@@ -1841,6 +1974,7 @@ function NodeView(props: NodeViewProps): JSX.Element {
         onChangeShell={props.onChangeShell}
         onOpenBrowser={props.onOpenBrowser}
         shellOptions={props.shellOptions}
+        agentDone={props.agentDonePaneIds.has(props.node.paneId)}
       />
     );
   }
@@ -1871,7 +2005,8 @@ function SplitView({
   onUpdatePane,
   onChangeShell,
   onOpenBrowser,
-  shellOptions
+  shellOptions,
+  agentDonePaneIds
 }: SplitViewProps): JSX.Element {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const directionClass = node.direction === 'row' ? 'split-row' : 'split-column';
@@ -1928,6 +2063,7 @@ function SplitView({
           onChangeShell={onChangeShell}
           onOpenBrowser={onOpenBrowser}
           shellOptions={shellOptions}
+          agentDonePaneIds={agentDonePaneIds}
         />
       </div>
       <div className="divider" role="separator" onPointerDown={beginResize} />
@@ -1947,6 +2083,7 @@ function SplitView({
           onChangeShell={onChangeShell}
           onOpenBrowser={onOpenBrowser}
           shellOptions={shellOptions}
+          agentDonePaneIds={agentDonePaneIds}
         />
       </div>
     </div>
@@ -1966,6 +2103,7 @@ type TerminalPaneProps = {
   onChangeShell: (paneId: string, shell: string) => void;
   onOpenBrowser: (browserUrl?: string) => void;
   shellOptions: TerminalShellOption[];
+  agentDone: boolean;
 };
 
 function TerminalPane({
@@ -1980,7 +2118,8 @@ function TerminalPane({
   onUpdatePane,
   onChangeShell,
   onOpenBrowser,
-  shellOptions
+  shellOptions,
+  agentDone
 }: TerminalPaneProps): JSX.Element {
   const hostRef = useRef<HTMLDivElement | null>(null);
   const editorRef = useRef<HTMLDivElement | null>(null);
@@ -2381,6 +2520,7 @@ function TerminalPane({
           <div className="pane-title" title={pane.cwd}>
             {displayTitle}
           </div>
+          {agentDone && <span className="pane-agent-done-dot" title="Agent finished" aria-label="Agent finished" />}
         </div>
         {editorOpen && (
           <div className="pane-editor" ref={editorRef} onMouseDown={(event) => event.stopPropagation()}>
@@ -2636,6 +2776,16 @@ function SettingsIcon(): JSX.Element {
     <svg aria-hidden="true" viewBox="0 0 24 24">
       <path d="M12 15.25A3.25 3.25 0 1 0 12 8.75a3.25 3.25 0 0 0 0 6.5Z" />
       <path d="M18.2 13.3c.08-.42.12-.85.12-1.3s-.04-.88-.12-1.3l2.05-1.6-2-3.46-2.42.98a7.3 7.3 0 0 0-2.25-1.3L13.2 2.75h-4l-.38 2.57a7.3 7.3 0 0 0-2.25 1.3l-2.42-.98-2 3.46 2.05 1.6a7 7 0 0 0 0 2.6l-2.05 1.6 2 3.46 2.42-.98a7.3 7.3 0 0 0 2.25 1.3l.38 2.57h4l.38-2.57a7.3 7.3 0 0 0 2.25-1.3l2.42.98 2-3.46-2.05-1.6Z" />
+    </svg>
+  );
+}
+
+function AgentOverlayIcon(): JSX.Element {
+  return (
+    <svg aria-hidden="true" viewBox="0 0 16 16">
+      <rect x="2.25" y="4.25" width="11.5" height="7.5" rx="3.75" />
+      <circle cx="5.6" cy="8" r="1" />
+      <path d="M8 8h3" />
     </svg>
   );
 }

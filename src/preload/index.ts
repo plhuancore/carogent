@@ -62,6 +62,19 @@ type BrowserBridgeStatusEvent = {
   lastError?: string;
 };
 
+type AgentDoneOverlayItem = {
+  paneId: string;
+  workspaceId: string;
+  workspaceName: string;
+  title: string;
+  cwd?: string;
+};
+
+type AgentOpenPaneRequest = {
+  paneId: string;
+  workspaceId: string;
+};
+
 const terminal = {
   getShellOptions: (): Promise<TerminalShellOption[]> =>
     ipcRenderer.invoke('terminal:get-shell-options'),
@@ -75,6 +88,22 @@ const terminal = {
     ipcRenderer.invoke('browser:open-or-focus', request),
   getBrowserBridgeStatus: (): Promise<BrowserBridgeStatusEvent> =>
     ipcRenderer.invoke('browser:get-bridge-status'),
+  getAgentDoneOverlayItems: (): Promise<AgentDoneOverlayItem[]> =>
+    ipcRenderer.invoke('agent-overlay:get-items'),
+  getAgentDoneOverlayVisible: (): Promise<boolean> =>
+    ipcRenderer.invoke('agent-overlay:get-visible'),
+  showAgentDoneOverlay: (item: AgentDoneOverlayItem): Promise<void> =>
+    ipcRenderer.invoke('agent-overlay:show-done', item),
+  openAgentDonePane: (request: AgentOpenPaneRequest): Promise<void> =>
+    ipcRenderer.invoke('agent-overlay:open-pane', request),
+  closeAgentDoneOverlay: (): Promise<void> =>
+    ipcRenderer.invoke('agent-overlay:close'),
+  setAgentDoneOverlayExpanded: (expanded: boolean): Promise<void> =>
+    ipcRenderer.invoke('agent-overlay:set-expanded', expanded),
+  setAgentDoneOverlayVisible: (visible: boolean): Promise<boolean> =>
+    ipcRenderer.invoke('agent-overlay:set-visible', visible),
+  focusCarogentApp: (): Promise<void> =>
+    ipcRenderer.invoke('agent-overlay:focus-app'),
   create: (request?: TerminalCreateRequest): Promise<TerminalCreated> =>
     ipcRenderer.invoke('terminal:create', request),
   resize: (request: { id: string; cols: number; rows: number }): Promise<void> =>
@@ -111,6 +140,24 @@ const terminal = {
     ipcRenderer.on('browser:bridge-status', listener);
 
     return () => ipcRenderer.removeListener('browser:bridge-status', listener);
+  },
+  onAgentDoneOverlayItems: (callback: (items: AgentDoneOverlayItem[]) => void): (() => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, payload: AgentDoneOverlayItem[]): void => {
+      callback(payload);
+    };
+
+    ipcRenderer.on('agent-overlay:items', listener);
+
+    return () => ipcRenderer.removeListener('agent-overlay:items', listener);
+  },
+  onOpenAgentPane: (callback: (request: AgentOpenPaneRequest) => void): (() => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, payload: AgentOpenPaneRequest): void => {
+      callback(payload);
+    };
+
+    ipcRenderer.on('agent:open-pane', listener);
+
+    return () => ipcRenderer.removeListener('agent:open-pane', listener);
   },
   onExit: (callback: (event: TerminalExitEvent) => void): (() => void) => {
     const listener = (_event: Electron.IpcRendererEvent, payload: TerminalExitEvent): void => {
