@@ -94,6 +94,7 @@ type AgentDoneOverlayItem = {
   workspaceName: string;
   title: string;
   cwd?: string;
+  lines?: string[];
 };
 
 type AgentOpenPaneRequest = {
@@ -112,12 +113,12 @@ let agentDoneOverlayMovedByUser = false;
 let agentDoneOverlayPositioning = false;
 let agentDoneOverlayEnabled = true;
 const AGENT_DONE_OVERLAY_COLLAPSED_HEIGHT = 44;
-const AGENT_DONE_OVERLAY_ROW_HEIGHT = 34;
+const AGENT_DONE_OVERLAY_ROW_HEIGHT = 82;
 const AGENT_DONE_OVERLAY_MENU_GAP = 6;
 const AGENT_DONE_OVERLAY_MENU_PADDING = 12;
 const AGENT_DONE_OVERLAY_IDLE_WIDTH = 154;
-const AGENT_DONE_OVERLAY_ITEM_WIDTH = 260;
-const AGENT_DONE_OVERLAY_MAX_WIDTH = 300;
+const AGENT_DONE_OVERLAY_ITEM_WIDTH = 200;
+const AGENT_DONE_OVERLAY_MAX_WIDTH = 220;
 
 const IMAGE_MIME_TYPES = new Map([
   ['.png', 'image/png'],
@@ -526,7 +527,7 @@ function getAgentDoneOverlayHeight(): number {
     AGENT_DONE_OVERLAY_COLLAPSED_HEIGHT +
     AGENT_DONE_OVERLAY_MENU_GAP +
     AGENT_DONE_OVERLAY_MENU_PADDING +
-    Math.max(0, agentDoneOverlayItems.length - 1) * AGENT_DONE_OVERLAY_ROW_HEIGHT
+    agentDoneOverlayItems.length * AGENT_DONE_OVERLAY_ROW_HEIGHT
   );
 }
 
@@ -538,6 +539,7 @@ function getAgentDoneOverlayWidth(): number {
 
 function sendAgentDoneOverlayItems(): void {
   agentDoneOverlayWindow?.webContents.send('agent-overlay:items', agentDoneOverlayItems);
+  mainWindow?.webContents.send('agent-overlay:items', agentDoneOverlayItems);
 }
 
 function createAgentDoneOverlayWindow(): BrowserWindow {
@@ -602,28 +604,33 @@ function createAgentDoneOverlayWindow(): BrowserWindow {
   return agentDoneOverlayWindow;
 }
 
-function updateAgentDoneOverlayVisibility(): void {
+function updateAgentDoneOverlayVisibility(forceResize = true): void {
   const overlayWindow = createAgentDoneOverlayWindow();
-  const width = getAgentDoneOverlayWidth();
-  const height = getAgentDoneOverlayHeight();
+  
+  if (forceResize) {
+    const width = getAgentDoneOverlayWidth();
+    const height = getAgentDoneOverlayHeight();
 
-  if (agentDoneOverlayMovedByUser) {
-    const bounds = overlayWindow.getBounds();
-    const newX = bounds.x + bounds.width - width;
-    agentDoneOverlayPositioning = true;
-    overlayWindow.setBounds({
-      x: Math.round(newX),
-      y: bounds.y,
-      width,
-      height
-    });
-    agentDoneOverlayPositioning = false;
-  } else {
-    positionAgentDoneOverlay();
+    if (agentDoneOverlayMovedByUser) {
+      const bounds = overlayWindow.getBounds();
+      const newX = bounds.x + bounds.width - width;
+      agentDoneOverlayPositioning = true;
+      overlayWindow.setBounds({
+        x: Math.round(newX),
+        y: bounds.y,
+        width,
+        height
+      });
+      agentDoneOverlayPositioning = false;
+    } else {
+      positionAgentDoneOverlay();
+    }
   }
 
   if (agentDoneOverlayEnabled) {
-    overlayWindow.showInactive();
+    if (forceResize || !overlayWindow.isVisible()) {
+      overlayWindow.showInactive();
+    }
   } else {
     overlayWindow.hide();
   }
@@ -631,8 +638,17 @@ function updateAgentDoneOverlayVisibility(): void {
 }
 
 function showAgentDoneOverlay(item: AgentDoneOverlayItem): void {
-  agentDoneOverlayItems = [item, ...agentDoneOverlayItems.filter((current) => current.paneId !== item.paneId)].slice(0, 4);
-  updateAgentDoneOverlayVisibility();
+  const existingIndex = agentDoneOverlayItems.findIndex((current) => current.paneId === item.paneId);
+  let sizeChanged = false;
+
+  if (existingIndex !== -1) {
+    // Preserve order and update in-place to avoid reordering stuttering
+    agentDoneOverlayItems[existingIndex] = item;
+  } else {
+    agentDoneOverlayItems = [item, ...agentDoneOverlayItems].slice(0, 4);
+    sizeChanged = true;
+  }
+  updateAgentDoneOverlayVisibility(sizeChanged);
 }
 
 function killTerminal(id: string): void {

@@ -68,6 +68,7 @@ type AgentDoneOverlayItem = {
   workspaceName: string;
   title: string;
   cwd?: string;
+  lines?: string[];
 };
 
 type AgentOpenPaneRequest = {

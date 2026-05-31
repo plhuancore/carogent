@@ -50,6 +50,7 @@ button {
   width: max-content;
   max-width: 100%;
   justify-self: end;
+  position: relative;
   -webkit-app-region: drag;
 }
 
@@ -199,33 +200,40 @@ button {
 }
 
 .agent-overlay-menu {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  width: 100%;
+  margin-top: 6px;
   display: grid;
   gap: 4px;
-  width: 100%;
   min-width: 0;
   overflow: hidden;
   border: 1px solid rgba(45, 212, 191, 0.38);
   border-radius: 10px;
   background: #090d12;
   padding: 5px;
+  box-sizing: border-box;
   -webkit-app-region: no-drag;
+  z-index: 10;
 }
 
 .agent-overlay-menu-item {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 7px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
   width: 100%;
-  height: 30px;
+  height: 76px;
   min-width: 0;
   border: 0;
   border-radius: 6px;
   background: transparent;
   color: #e2e8f0;
-  padding: 0 8px;
+  padding: 4px 6px;
   text-align: left;
   cursor: pointer;
+  box-sizing: border-box;
+  overflow: hidden;
 }
 
 .agent-overlay-menu-item:hover {
@@ -233,13 +241,49 @@ button {
   color: #ffffff;
 }
 
+.agent-overlay-item-header {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  width: 100%;
+  min-width: 0;
+}
+
 .agent-overlay-menu-title {
+  flex: 1;
   min-width: 0;
   overflow: hidden;
   font-size: 11px;
   font-weight: 750;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.agent-overlay-item-terminal {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  min-width: 0;
+  background: #111315;
+  border: 1px solid #242b35;
+  border-radius: 4px;
+  padding: 1px 3px;
+  box-sizing: border-box;
+  font-family: Consolas, "Courier New", monospace;
+  font-size: 6.2px;
+  line-height: 1.1;
+  color: #eef2f7;
+  height: 48px;
+  overflow: hidden;
+  pointer-events: none;
+  letter-spacing: 0.05px;
+}
+
+.agent-overlay-terminal-line {
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  overflow: hidden;
+  width: 100%;
 }
 
 .app-shell {

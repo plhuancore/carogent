@@ -10,7 +10,7 @@ function OverlayApp(): JSX.Element {
   const [items, setItems] = useState<AgentDoneOverlayItem[]>([]);
   const [expanded, setExpanded] = useState(false);
   const latestItem = items[0];
-  const menuItems = useMemo(() => items.slice(1), [items]);
+  const menuItems = items;
 
   useEffect(() => {
     document.documentElement.classList.add('is-agent-overlay');
@@ -20,7 +20,7 @@ function OverlayApp(): JSX.Element {
     const stopItems = window.terminalApi.onAgentDoneOverlayItems((nextItems) => {
       setItems(nextItems);
 
-      if (nextItems.length <= 1) {
+      if (nextItems.length === 0) {
         setExpanded(false);
         window.terminalApi.setAgentDoneOverlayExpanded(false).catch(() => {});
       }
@@ -33,7 +33,7 @@ function OverlayApp(): JSX.Element {
   }, []);
 
   const toggleExpanded = (): void => {
-    const nextExpanded = !expanded && menuItems.length > 0;
+    const nextExpanded = !expanded && items.length > 0;
 
     setExpanded(nextExpanded);
     window.terminalApi.setAgentDoneOverlayExpanded(nextExpanded).catch(() => {});
@@ -42,7 +42,7 @@ function OverlayApp(): JSX.Element {
   return (
     <main className="agent-overlay-shell">
       <div className={`agent-overlay-dropdown ${expanded && menuItems.length > 0 ? 'is-expanded' : ''}`}>
-        <div className="agent-overlay-trigger" aria-label="Recently finished agents">
+        <div className="agent-overlay-trigger" aria-label="Pinned shells">
           <button
             className="agent-overlay-logo"
             type="button"
@@ -67,7 +67,7 @@ function OverlayApp(): JSX.Element {
           <button
             className="agent-overlay-menu-button"
             type="button"
-            title="Show completed tasks"
+            title="Show terminal previews"
             aria-expanded={expanded}
             disabled={menuItems.length === 0}
             onClick={toggleExpanded}
@@ -92,9 +92,20 @@ function OverlayApp(): JSX.Element {
                 title={`${item.workspaceName}: ${item.cwd || item.title}`}
                 onClick={() => openAgentDonePane(item)}
               >
-                <span className="agent-overlay-chip-dot" aria-hidden="true" />
-                <span className="agent-overlay-menu-title">{item.title}</span>
-                <span className="agent-overlay-chip-workspace">{item.workspaceName}</span>
+                <div className="agent-overlay-item-header">
+                  <span className="agent-overlay-chip-dot" aria-hidden="true" />
+                  <span className="agent-overlay-menu-title">{item.title}</span>
+                  <span className="agent-overlay-chip-workspace">{item.workspaceName}</span>
+                </div>
+                {item.lines && item.lines.length > 0 && (
+                  <div className="agent-overlay-item-terminal">
+                    {item.lines.map((line, idx) => (
+                      <div key={idx} className="agent-overlay-terminal-line">
+                        {line || '\u00A0'}
+                      </div>
+                    ))}
+                  </div>
+                )}
               </button>
             ))}
           </div>
