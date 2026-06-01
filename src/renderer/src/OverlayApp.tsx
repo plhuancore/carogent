@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import carogentLogoUrl from './assets/carogent-logo.webp';
+import carogentLogoUrl from './assets/carogent-logo-v2.png';
 import './styles.css';
 
 function OverlayApp(): JSX.Element {

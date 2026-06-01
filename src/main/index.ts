@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, screen, shell as electronShell } from 'electron';
+import { app, BrowserWindow, ipcMain, nativeImage, screen, shell as electronShell } from 'electron';
 import { spawn } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
 import { delimiter, dirname, extname, join } from 'node:path';
@@ -141,6 +141,10 @@ const browserBridgeClients = new Set<BrowserBridgeClient>();
 const browserBridgePending = new Map<string, (result: BrowserBridgeCommandResult) => void>();
 let browserBridgeLastError: string | undefined;
 let browserBridgeEnabled = true;
+
+function getAppIconPath(): string {
+  return join(__dirname, '../../build/icon.png');
+}
 
 function getShellOptions(): TerminalShellOption[] {
   if (process.platform === 'win32') {
@@ -456,7 +460,7 @@ function createWindow(): void {
     minHeight: 560,
     title: 'Carogent Terminal',
     backgroundColor: '#050607',
-    icon: join(__dirname, '../../build/icon.png'),
+    icon: getAppIconPath(),
     webPreferences: {
       preload: join(__dirname, '../preload/index.mjs'),
       sandbox: false,
@@ -485,6 +489,7 @@ function showDockIcon(): void {
   }
 
   app.setActivationPolicy('regular');
+  app.dock.setIcon(nativeImage.createFromPath(getAppIconPath()));
   app.dock.show();
 }
 
