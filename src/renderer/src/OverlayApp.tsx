@@ -39,6 +39,10 @@ function OverlayApp(): JSX.Element {
     window.terminalApi.setAgentDoneOverlayExpanded(nextExpanded).catch(() => {});
   };
 
+  const handleOpenPane = (item: AgentDoneOverlayItem): void => {
+    window.terminalApi.openAgentDonePane({ workspaceId: item.workspaceId, paneId: item.paneId });
+  };
+
   return (
     <main className="agent-overlay-shell">
       <div className={`agent-overlay-dropdown ${expanded && menuItems.length > 0 ? 'is-expanded' : ''}`}>
@@ -49,18 +53,16 @@ function OverlayApp(): JSX.Element {
             title="Open Carogent"
             onClick={() => window.terminalApi.focusCarogentApp()}
           >
-            <img src={carogentLogoUrl} alt="" />
+            <img src={carogentLogoUrl} alt="" draggable={false} />
           </button>
-          {latestItem ? (
-            <button
-              className="agent-overlay-current"
-              type="button"
-              title={`${latestItem.workspaceName}: ${latestItem.cwd || latestItem.title}`}
-              onClick={() => openAgentDonePane(latestItem)}
+          {items.length > 0 ? (
+            <div
+              className="agent-overlay-current-count"
+              title={`${items.length} shells pinned`}
             >
               <span className="agent-overlay-chip-dot" aria-hidden="true" />
-              <span className="agent-overlay-chip-title">{latestItem.title}</span>
-            </button>
+              <span className="agent-overlay-chip-title">{items.length} Pinned</span>
+            </div>
           ) : (
             <span className="agent-overlay-empty">Idle</span>
           )}
@@ -90,7 +92,7 @@ function OverlayApp(): JSX.Element {
                 type="button"
                 role="menuitem"
                 title={`${item.workspaceName}: ${item.cwd || item.title}`}
-                onClick={() => openAgentDonePane(item)}
+                onClick={() => handleOpenPane(item)}
               >
                 <div className="agent-overlay-item-header">
                   <span className="agent-overlay-chip-dot" aria-hidden="true" />

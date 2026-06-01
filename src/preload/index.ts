@@ -150,6 +150,15 @@ const terminal = {
 
     return () => ipcRenderer.removeListener('agent-overlay:items', listener);
   },
+  onAgentDoneOverlayVisible: (callback: (visible: boolean) => void): (() => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, payload: boolean): void => {
+      callback(payload);
+    };
+
+    ipcRenderer.on('agent-overlay:visible', listener);
+
+    return () => ipcRenderer.removeListener('agent-overlay:visible', listener);
+  },
   onOpenAgentPane: (callback: (request: AgentOpenPaneRequest) => void): (() => void) => {
     const listener = (_event: Electron.IpcRendererEvent, payload: AgentOpenPaneRequest): void => {
       callback(payload);

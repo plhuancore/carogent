@@ -103,6 +103,7 @@ interface Window {
     onCwd: (callback: (event: TerminalCwdEvent) => void) => () => void;
     onBrowserBridgeStatus: (callback: (event: BrowserBridgeStatusEvent) => void) => () => void;
     onAgentDoneOverlayItems: (callback: (items: AgentDoneOverlayItem[]) => void) => () => void;
+    onAgentDoneOverlayVisible: (callback: (visible: boolean) => void) => () => void;
     onOpenAgentPane: (callback: (request: AgentOpenPaneRequest) => void) => () => void;
     onExit: (callback: (event: TerminalExitEvent) => void) => () => void;
   };

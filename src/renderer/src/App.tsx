@@ -57,7 +57,7 @@ type CommandPaletteItem = {
   title: string;
   subtitle: string;
   keywords: string;
-  icon: 'browser' | 'code' | 'quick-access';
+  icon: 'browser' | 'code' | 'quick-access' | 'agent-overlay';
   run: () => void;
 };
 
@@ -245,7 +245,7 @@ function createXterm(): Terminal {
     minimumContrastRatio: 7,
     scrollback: 4000,
     theme: {
-      background: '#111315',
+      background: '#181818',
       foreground: '#eef2f7',
       cursor: '#ffffff',
       selectionBackground: '#3b82f680',
@@ -608,6 +608,11 @@ function App(): JSX.Element {
     window.terminalApi.getAgentDoneOverlayVisible().then(setAgentOverlayVisible).catch(() => {
       setAgentOverlayVisible(true);
     });
+  }, []);
+
+  useEffect(() => {
+    const stopListening = window.terminalApi.onAgentDoneOverlayVisible(setAgentOverlayVisible);
+    return stopListening;
   }, []);
 
   useEffect(() => {
@@ -999,6 +1004,20 @@ function App(): JSX.Element {
     window.terminalApi.openOrFocusBrowser({ url: activePane?.browserUrl });
   }, [activePane?.browserUrl]);
 
+  const handleToggleAgentOverlay = useCallback(() => {
+    const nextVisible = !agentOverlayVisible;
+
+    setAgentOverlayVisible(nextVisible);
+    window.terminalApi
+      .setAgentDoneOverlayVisible(nextVisible)
+      .then((res) => {
+        if (typeof res === 'boolean') {
+          setAgentOverlayVisible(res);
+        }
+      })
+      .catch(() => setAgentOverlayVisible(agentOverlayVisible));
+  }, [agentOverlayVisible]);
+
   const openQuickAccess = useCallback((mode: PaletteMode = 'quick-access') => {
     setPaletteMode(mode);
     setQuickAccessOpen(true);
@@ -1037,7 +1056,7 @@ function App(): JSX.Element {
     const codePath = sessions.current.get(activePaneId)?.cwd || activePane?.cwd || 'Home directory';
     const browserLabel = formatBrowserUrlLabel(activePane?.browserUrl) || 'localhost:3000';
 
-    return [
+    const items: CommandPaletteItem[] = [
       {
         id: 'open-browser',
         title: 'Open in Browser',
@@ -1059,15 +1078,46 @@ function App(): JSX.Element {
           handleOpenInVSCode();
           closeQuickAccess();
         }
+      },
+      {
+        id: 'toggle-floating-bar',
+        title: agentOverlayVisible ? 'Hide Floating Bar' : 'Show Floating Bar',
+        subtitle: 'Toggle sticky overlay bar visibility',
+        keywords: `floating bar sticky overlay show hide toggle settings visual window visibility ${agentOverlayVisible ? 'hide' : 'show'}`,
+        icon: 'agent-overlay',
+        run: () => {
+          handleToggleAgentOverlay();
+          closeQuickAccess();
+        }
       }
     ];
+
+    if (activePaneId) {
+      items.push({
+        id: 'pin-current-shell',
+        title: 'Pin Current Shell to Floating Bar',
+        subtitle: activePane?.title || 'Active shell',
+        keywords: 'pin current shell floating bar overlay sticky active pane terminal push show',
+        icon: 'agent-overlay',
+        run: () => {
+          handlePushToOverlay(activePaneId);
+          closeQuickAccess();
+        }
+      });
+    }
+
+    return items;
   }, [
     activePane?.browserUrl,
     activePane?.cwd,
+    activePane?.title,
     activePaneId,
     closeQuickAccess,
     handleOpenBrowser,
-    handleOpenInVSCode
+    handleOpenInVSCode,
+    agentOverlayVisible,
+    handleToggleAgentOverlay,
+    handlePushToOverlay
   ]);
 
   const effectivePaletteMode: PaletteMode = quickAccessQuery.trimStart().startsWith('>')
@@ -1322,15 +1372,7 @@ function App(): JSX.Element {
                     type="button"
                     role="menuitemcheckbox"
                     aria-checked={agentOverlayVisible}
-                    onClick={() => {
-                      const nextVisible = !agentOverlayVisible;
-
-                      setAgentOverlayVisible(nextVisible);
-                      window.terminalApi
-                        .setAgentDoneOverlayVisible(nextVisible)
-                        .then(setAgentOverlayVisible)
-                        .catch(() => setAgentOverlayVisible(agentOverlayVisible));
-                    }}
+                    onClick={handleToggleAgentOverlay}
                   >
                     <AgentOverlayIcon />
                     Floating Bar
@@ -2886,9 +2928,8 @@ function SettingsIcon(): JSX.Element {
 function AgentOverlayIcon(): JSX.Element {
   return (
     <svg aria-hidden="true" viewBox="0 0 16 16">
-      <rect x="2.25" y="4.25" width="11.5" height="7.5" rx="3.75" />
-      <circle cx="5.6" cy="8" r="1" />
-      <path d="M8 8h3" />
+      <rect x="2.5" y="2.5" width="11" height="11" rx="2" />
+      <rect className="icon-accent" x="7.5" y="7.5" width="5" height="5" rx="1" />
     </svg>
   );
 }
@@ -2932,6 +2973,10 @@ function CommandPaletteIcon({ type }: { type: CommandPaletteItem['icon'] }): JSX
 
   if (type === 'code') {
     return <CodeIcon />;
+  }
+
+  if (type === 'agent-overlay') {
+    return <AgentOverlayIcon />;
   }
 
   return <QuickAccessIcon />;

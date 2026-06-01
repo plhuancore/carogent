@@ -96,6 +96,22 @@ button {
   height: 100%;
   object-fit: cover;
   transform: scale(1.18);
+  -webkit-user-drag: none;
+  user-select: none;
+}
+
+.agent-overlay-current-count {
+  display: inline-grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 6px;
+  height: 25px;
+  min-width: 0;
+  border: 1px solid #243244;
+  border-radius: 999px;
+  background: #10151d;
+  color: #e2e8f0;
+  padding: 0 10px;
 }
 
 .agent-overlay-current {
@@ -822,7 +838,7 @@ button {
   display: grid;
   min-width: 0;
   grid-template-rows: 54px minmax(0, 1fr);
-  background: #111315;
+  background: #181818;
 }
 
 .workspace-full {
@@ -1368,7 +1384,7 @@ button {
 .terminal-canvas {
   min-width: 0;
   min-height: 0;
-  background: #111315;
+  background: #181818;
 }
 
 .split {
@@ -1422,7 +1438,7 @@ button {
   min-height: 0;
   grid-template-rows: 34px minmax(0, 1fr);
   border: 1px solid #111820;
-  background: #111315;
+  background: #181818;
 }
 
 .terminal-pane.is-active {
@@ -1804,6 +1820,11 @@ button {
   stroke-width: 1.45;
 }
 
+rect.icon-accent {
+  fill: currentColor !important;
+  stroke: none !important;
+}
+
 .pane-actions .icon-accent {
   stroke-width: 1.75;
 }
@@ -1825,7 +1846,7 @@ button {
   min-width: 0;
   min-height: 0;
   overflow: hidden;
-  background: #111315;
+  background: #181818;
   padding: 8px 10px 12px;
 }
 
@@ -1834,7 +1855,7 @@ button {
   height: 100%;
   min-width: 0;
   min-height: 0;
-  background: #111315;
+  background: #181818;
   overflow: hidden;
 }
 
@@ -1844,7 +1865,7 @@ button {
 }
 
 .terminal-viewport .xterm .xterm-viewport {
-  background-color: #111315;
+  background-color: #181818;
   scrollbar-color: rgba(148, 163, 184, 0.45) transparent;
   scrollbar-width: thin;
 }

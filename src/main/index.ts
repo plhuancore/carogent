@@ -542,6 +542,10 @@ function sendAgentDoneOverlayItems(): void {
   mainWindow?.webContents.send('agent-overlay:items', agentDoneOverlayItems);
 }
 
+function sendAgentDoneOverlayVisibility(): void {
+  mainWindow?.webContents.send('agent-overlay:visible', agentDoneOverlayEnabled);
+}
+
 function createAgentDoneOverlayWindow(): BrowserWindow {
   if (agentDoneOverlayWindow) {
     return agentDoneOverlayWindow;
@@ -635,6 +639,7 @@ function updateAgentDoneOverlayVisibility(forceResize = true): void {
     overlayWindow.hide();
   }
   sendAgentDoneOverlayItems();
+  sendAgentDoneOverlayVisibility();
 }
 
 function showAgentDoneOverlay(item: AgentDoneOverlayItem): void {
@@ -1123,12 +1128,6 @@ app.whenReady().then(() => {
     showAgentDoneOverlay(item);
   });
   ipcMain.handle('agent-overlay:open-pane', (_event, request: AgentOpenPaneRequest) => {
-    agentDoneOverlayItems = agentDoneOverlayItems.filter((item) => item.paneId !== request.paneId);
-    if (agentDoneOverlayItems.length === 0) {
-      agentDoneOverlayExpanded = false;
-    }
-    updateAgentDoneOverlayVisibility();
-
     if (mainWindow?.isMinimized()) {
       mainWindow.restore();
     }
