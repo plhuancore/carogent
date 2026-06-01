@@ -44,6 +44,10 @@ type TerminalSession = {
   input: IDisposable;
   fitFrame?: number;
   fitTimer?: number;
+  restoreScrollFrame?: number;
+  restoreScrollTimer?: number;
+  viewportY?: number;
+  viewportAtBottom?: boolean;
   terminalId?: string;
   cwd?: string;
   shell?: string;
@@ -51,6 +55,14 @@ type TerminalSession = {
 };
 
 type SessionRegistry = Map<string, TerminalSession>;
+
+type TerminalWithViewportSync = Terminal & {
+  _core?: {
+    viewport?: {
+      syncScrollArea: (immediate?: boolean) => void;
+    };
+  };
+};
 
 type CommandPaletteItem = {
   id: string;
@@ -349,6 +361,55 @@ function scheduleTerminalFit(session: TerminalSession): void {
   }, 50);
 }
 
+function captureTerminalScroll(session: TerminalSession): void {
+  const buffer = session.terminal.buffer.active;
+
+  session.viewportY = buffer.viewportY;
+  session.viewportAtBottom = buffer.viewportY === buffer.baseY;
+}
+
+function syncTerminalScrollArea(session: TerminalSession): void {
+  // Reattaching can leave xterm's DOM scrollbar at 0 while its buffer remains at the saved line.
+  (session.terminal as TerminalWithViewportSync)._core?.viewport?.syncScrollArea(true);
+}
+
+function restoreTerminalScroll(session: TerminalSession): void {
+  if (!session.terminal.element?.parentElement || session.viewportY === undefined) {
+    return;
+  }
+
+  const buffer = session.terminal.buffer.active;
+
+  if (session.viewportAtBottom) {
+    session.terminal.scrollToBottom();
+    syncTerminalScrollArea(session);
+    return;
+  }
+
+  session.terminal.scrollToLine(Math.min(session.viewportY, buffer.baseY));
+  syncTerminalScrollArea(session);
+}
+
+function scheduleTerminalScrollRestore(session: TerminalSession): void {
+  restoreTerminalScroll(session);
+
+  if (session.restoreScrollFrame === undefined) {
+    session.restoreScrollFrame = window.requestAnimationFrame(() => {
+      session.restoreScrollFrame = undefined;
+      restoreTerminalScroll(session);
+    });
+  }
+
+  if (session.restoreScrollTimer !== undefined) {
+    window.clearTimeout(session.restoreScrollTimer);
+  }
+
+  session.restoreScrollTimer = window.setTimeout(() => {
+    session.restoreScrollTimer = undefined;
+    restoreTerminalScroll(session);
+  }, 75);
+}
+
 function clearTerminalFitTimers(session: TerminalSession): void {
   if (session.fitFrame !== undefined) {
     window.cancelAnimationFrame(session.fitFrame);
@@ -358,6 +419,16 @@ function clearTerminalFitTimers(session: TerminalSession): void {
   if (session.fitTimer !== undefined) {
     window.clearTimeout(session.fitTimer);
     session.fitTimer = undefined;
+  }
+
+  if (session.restoreScrollFrame !== undefined) {
+    window.cancelAnimationFrame(session.restoreScrollFrame);
+    session.restoreScrollFrame = undefined;
+  }
+
+  if (session.restoreScrollTimer !== undefined) {
+    window.clearTimeout(session.restoreScrollTimer);
+    session.restoreScrollTimer = undefined;
   }
 }
 
@@ -2408,10 +2479,12 @@ function TerminalPane({
     const observer = new ResizeObserver(() => scheduleTerminalFit(session));
     observer.observe(host);
     scheduleTerminalFit(session);
+    scheduleTerminalScrollRestore(session);
     window.setTimeout(() => scheduleTerminalFit(session), 0);
 
     return () => {
       observer.disconnect();
+      captureTerminalScroll(session);
 
       if (session.terminal.element?.parentElement === host) {
         host.removeChild(session.terminal.element);
