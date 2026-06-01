@@ -1,15 +1,10 @@
-import { useEffect, useMemo, useState } from 'react';
-import carogentLogoUrl from './assets/carogent-logo.png';
+import { useEffect, useState } from 'react';
+import carogentLogoUrl from './assets/carogent-logo.webp';
 import './styles.css';
-
-function openAgentDonePane(item: AgentDoneOverlayItem): void {
-  window.terminalApi.openAgentDonePane({ workspaceId: item.workspaceId, paneId: item.paneId });
-}
 
 function OverlayApp(): JSX.Element {
   const [items, setItems] = useState<AgentDoneOverlayItem[]>([]);
   const [expanded, setExpanded] = useState(false);
-  const latestItem = items[0];
   const menuItems = items;
 
   useEffect(() => {

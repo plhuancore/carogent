@@ -111,14 +111,13 @@ let agentDoneOverlayItems: AgentDoneOverlayItem[] = [];
 let agentDoneOverlayExpanded = false;
 let agentDoneOverlayMovedByUser = false;
 let agentDoneOverlayPositioning = false;
-let agentDoneOverlayEnabled = true;
-const AGENT_DONE_OVERLAY_COLLAPSED_HEIGHT = 44;
-const AGENT_DONE_OVERLAY_ROW_HEIGHT = 82;
-const AGENT_DONE_OVERLAY_MENU_GAP = 6;
-const AGENT_DONE_OVERLAY_MENU_PADDING = 12;
-const AGENT_DONE_OVERLAY_IDLE_WIDTH = 154;
-const AGENT_DONE_OVERLAY_ITEM_WIDTH = 200;
-const AGENT_DONE_OVERLAY_MAX_WIDTH = 220;
+let agentDoneOverlayEnabled = false;
+const FLOATING_BAR_COLLAPSED_HEIGHT = 44;
+const FLOATING_BAR_ROW_HEIGHT = 82;
+const FLOATING_BAR_MENU_GAP = 6;
+const FLOATING_BAR_MENU_PADDING = 12;
+const FLOATING_BAR_ITEM_WIDTH = 200;
+const FLOATING_BAR_MAX_WIDTH = 220;
 
 const IMAGE_MIME_TYPES = new Map([
   ['.png', 'image/png'],
@@ -520,26 +519,32 @@ function positionAgentDoneOverlay(): void {
 
 function getAgentDoneOverlayHeight(): number {
   if (!agentDoneOverlayExpanded || agentDoneOverlayItems.length === 0) {
-    return AGENT_DONE_OVERLAY_COLLAPSED_HEIGHT;
+    return FLOATING_BAR_COLLAPSED_HEIGHT;
   }
 
   return (
-    AGENT_DONE_OVERLAY_COLLAPSED_HEIGHT +
-    AGENT_DONE_OVERLAY_MENU_GAP +
-    AGENT_DONE_OVERLAY_MENU_PADDING +
-    agentDoneOverlayItems.length * AGENT_DONE_OVERLAY_ROW_HEIGHT
+    FLOATING_BAR_COLLAPSED_HEIGHT +
+    FLOATING_BAR_MENU_GAP +
+    FLOATING_BAR_MENU_PADDING +
+    agentDoneOverlayItems.length * FLOATING_BAR_ROW_HEIGHT
   );
 }
 
 function getAgentDoneOverlayWidth(): number {
   // Always return fixed width to prevent macOS transparent window white background glitch
   // on resize. CSS content right-aligns within the window via justify-content: flex-end.
-  return Math.min(AGENT_DONE_OVERLAY_MAX_WIDTH, AGENT_DONE_OVERLAY_ITEM_WIDTH);
+  return Math.min(FLOATING_BAR_MAX_WIDTH, FLOATING_BAR_ITEM_WIDTH);
 }
 
 function sendAgentDoneOverlayItems(): void {
   agentDoneOverlayWindow?.webContents.send('agent-overlay:items', agentDoneOverlayItems);
-  mainWindow?.webContents.send('agent-overlay:items', agentDoneOverlayItems);
+}
+
+function sendAgentDoneOverlayPinnedPaneIds(paneIds = agentDoneOverlayItems.map((item) => item.paneId)): void {
+  mainWindow?.webContents.send(
+    'agent-overlay:pinned-pane-ids',
+    paneIds
+  );
 }
 
 function sendAgentDoneOverlayVisibility(): void {
@@ -552,8 +557,8 @@ function createAgentDoneOverlayWindow(): BrowserWindow {
   }
 
   agentDoneOverlayWindow = new BrowserWindow({
-    width: Math.min(AGENT_DONE_OVERLAY_MAX_WIDTH, AGENT_DONE_OVERLAY_ITEM_WIDTH),
-    height: AGENT_DONE_OVERLAY_COLLAPSED_HEIGHT,
+    width: Math.min(FLOATING_BAR_MAX_WIDTH, FLOATING_BAR_ITEM_WIDTH),
+    height: FLOATING_BAR_COLLAPSED_HEIGHT,
     frame: false,
     transparent: true,
     hasShadow: false,
@@ -609,8 +614,17 @@ function createAgentDoneOverlayWindow(): BrowserWindow {
 }
 
 function updateAgentDoneOverlayVisibility(forceResize = true): void {
+  if (!agentDoneOverlayEnabled) {
+    if (agentDoneOverlayWindow && !agentDoneOverlayWindow.isDestroyed()) {
+      agentDoneOverlayWindow.close();
+    }
+    sendAgentDoneOverlayPinnedPaneIds([]);
+    sendAgentDoneOverlayVisibility();
+    return;
+  }
+
   const overlayWindow = createAgentDoneOverlayWindow();
-  
+
   if (forceResize) {
     const width = getAgentDoneOverlayWidth();
     const height = getAgentDoneOverlayHeight();
@@ -631,20 +645,20 @@ function updateAgentDoneOverlayVisibility(forceResize = true): void {
     }
   }
 
-  if (agentDoneOverlayEnabled) {
-    if (forceResize || !overlayWindow.isVisible()) {
-      overlayWindow.showInactive();
-    }
-  } else {
-    overlayWindow.hide();
+  if (forceResize || !overlayWindow.isVisible()) {
+    overlayWindow.showInactive();
   }
+
   sendAgentDoneOverlayItems();
+  sendAgentDoneOverlayPinnedPaneIds();
   sendAgentDoneOverlayVisibility();
 }
 
-function showAgentDoneOverlay(item: AgentDoneOverlayItem): void {
+function showAgentDoneOverlay(item: AgentDoneOverlayItem): string[] {
   const existingIndex = agentDoneOverlayItems.findIndex((current) => current.paneId === item.paneId);
   let sizeChanged = false;
+
+  agentDoneOverlayEnabled = true;
 
   if (existingIndex !== -1) {
     // Preserve order and update in-place to avoid reordering stuttering
@@ -654,6 +668,16 @@ function showAgentDoneOverlay(item: AgentDoneOverlayItem): void {
     sizeChanged = true;
   }
   updateAgentDoneOverlayVisibility(sizeChanged);
+  return agentDoneOverlayItems.map((current) => current.paneId);
+}
+
+function unpinAgentDonePane(paneId: string): string[] {
+  agentDoneOverlayItems = agentDoneOverlayItems.filter((item) => item.paneId !== paneId);
+  if (agentDoneOverlayItems.length === 0) {
+    agentDoneOverlayExpanded = false;
+  }
+  updateAgentDoneOverlayVisibility(true);
+  return agentDoneOverlayItems.map((item) => item.paneId);
 }
 
 function killTerminal(id: string): void {
@@ -1125,7 +1149,10 @@ app.whenReady().then(() => {
   ipcMain.handle('agent-overlay:get-items', () => agentDoneOverlayItems);
   ipcMain.handle('agent-overlay:get-visible', () => agentDoneOverlayEnabled);
   ipcMain.handle('agent-overlay:show-done', (_event, item: AgentDoneOverlayItem) => {
-    showAgentDoneOverlay(item);
+    return showAgentDoneOverlay(item);
+  });
+  ipcMain.handle('agent-overlay:unpin-pane', (_event, paneId: string) => {
+    return unpinAgentDonePane(paneId);
   });
   ipcMain.handle('agent-overlay:open-pane', (_event, request: AgentOpenPaneRequest) => {
     if (mainWindow?.isMinimized()) {
@@ -1206,16 +1233,15 @@ app.whenReady().then(() => {
   });
 
   createWindow();
-  createAgentDoneOverlayWindow();
-  updateAgentDoneOverlayVisibility();
 
   app.on('activate', () => {
     if (!mainWindow) {
       createWindow();
     }
 
-    createAgentDoneOverlayWindow();
-    updateAgentDoneOverlayVisibility();
+    if (agentDoneOverlayEnabled) {
+      updateAgentDoneOverlayVisibility();
+    }
   });
 });
 

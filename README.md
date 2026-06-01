@@ -163,61 +163,13 @@ The palette also supports commands:
 - Or type `>` at the start of a Quick Access search.
 - Use command mode to run `Open in Browser` or `Open in VS Code` for the active pane.
 
-## Agent Completion Notifications
+## Floating Bar
 
-Carogent detects this exact terminal output marker:
+Use `Pin Current Shell to Floating Bar` from command mode or the pane toolbar to pin a shell preview. The floating always-on-top bar shows pinned shells and their latest terminal preview.
 
-```text
-carogent_done
-```
-
-When an agent prints the marker after finishing a task:
-
-- The matching terminal pane briefly shows a green completion dot.
-- The floating always-on-top bar shows the newest completed shell in its trigger.
-- Older unhandled completed shells stay in the floating bar dropdown.
-- Clicking a completed shell focuses Carogent and opens its pane.
-- Clicking the Carogent logo in the floating bar focuses the app.
-
-Use the settings menu in the top-right corner and toggle `Floating Bar` to show or hide the floating bar. A checkmark appears when it is enabled.
-
-The agent CLI must run inside a Carogent terminal pane so Carogent can read the marker from terminal output.
-
-Test the notification manually:
-
-```sh
-printf 'carogent_done\n'
-```
-
-## Configure Codex CLI Notifications
-
-Add a global instruction to `~/.codex/config.toml` so every new Codex CLI session prints the completion marker automatically:
-
-```toml
-developer_instructions = """
-When you complete the user's task or finish your final response, always print `carogent_done` at the very end of your response text to trigger the Carogent terminal notification.
-
-CRITICAL RULE: You MUST print the word exactly as `carogent_done`. Do not wrap it in backticks or a code block. Do not write any text after the marker.
-"""
-```
-
-If `developer_instructions` already exists, append these rules inside its existing multiline string instead of creating a second key.
-
-Restart Codex CLI after updating the config.
-
-## Configure Gemini Or Antigravity CLI Notifications
-
-Create the global instruction file `~/.gemini/GEMINI.md`:
-
-```md
-# Carogent Completion Marker
-
-When you complete any user request, always end your final response with this exact marker on its own final line:
-
-carogent_done
-
-Do not wrap the marker in backticks or a code block. Do not write any text after the marker.
-```
+- Click a pinned shell to focus Carogent and open its pane.
+- Click the Carogent logo in the floating bar to focus the app.
+- Use the settings menu in the top-right corner and toggle `Floating Bar` to show or hide the floating bar. A checkmark appears when it is enabled.
 
 For repository-specific setup, place the same content in:
 

@@ -86,7 +86,8 @@ interface Window {
     getBrowserBridgeStatus: () => Promise<BrowserBridgeStatusEvent>;
     getAgentDoneOverlayItems: () => Promise<AgentDoneOverlayItem[]>;
     getAgentDoneOverlayVisible: () => Promise<boolean>;
-    showAgentDoneOverlay: (item: AgentDoneOverlayItem) => Promise<void>;
+    showAgentDoneOverlay: (item: AgentDoneOverlayItem) => Promise<string[]>;
+    unpinAgentDonePane: (paneId: string) => Promise<string[]>;
     openAgentDonePane: (request: AgentOpenPaneRequest) => Promise<void>;
     closeAgentDoneOverlay: () => Promise<void>;
     setAgentDoneOverlayExpanded: (expanded: boolean) => Promise<void>;
@@ -104,6 +105,7 @@ interface Window {
     onBrowserBridgeStatus: (callback: (event: BrowserBridgeStatusEvent) => void) => () => void;
     onAgentDoneOverlayItems: (callback: (items: AgentDoneOverlayItem[]) => void) => () => void;
     onAgentDoneOverlayVisible: (callback: (visible: boolean) => void) => () => void;
+    onAgentDoneOverlayPinnedPaneIds: (callback: (paneIds: string[]) => void) => () => void;
     onOpenAgentPane: (callback: (request: AgentOpenPaneRequest) => void) => () => void;
     onExit: (callback: (event: TerminalExitEvent) => void) => () => void;
   };

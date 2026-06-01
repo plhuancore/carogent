@@ -114,29 +114,6 @@ button {
   padding: 0 10px;
 }
 
-.agent-overlay-current {
-  display: inline-grid;
-  grid-template-columns: auto minmax(0, 1fr);
-  align-items: center;
-  gap: 6px;
-  max-width: 126px;
-  height: 25px;
-  min-width: 0;
-  border: 1px solid #243244;
-  border-radius: 999px;
-  background: #10151d;
-  color: #e2e8f0;
-  padding: 0 8px;
-  cursor: pointer;
-  -webkit-app-region: no-drag;
-}
-
-.agent-overlay-current:hover {
-  border-color: #2dd4bf;
-  background: #132026;
-  color: #ffffff;
-}
-
 .agent-overlay-chip-dot {
   width: 7px;
   height: 7px;
@@ -1491,18 +1468,6 @@ button {
   user-select: none;
 }
 
-.pane-agent-done-dot {
-  flex: 0 0 auto;
-  width: 8px;
-  height: 8px;
-  border-radius: 999px;
-  background: #34d399;
-  box-shadow:
-    0 0 0 1px rgba(15, 23, 42, 0.9),
-    0 0 10px rgba(52, 211, 153, 0.86),
-    0 0 18px rgba(52, 211, 153, 0.42);
-}
-
 .pane-domain {
   min-width: 0;
   max-width: min(132px, 18vw);
@@ -1801,13 +1766,14 @@ button {
   width: 24px;
   height: 24px;
   place-items: center;
-  border: 0;
+  border: 1px solid transparent;
   border-radius: 6px;
   background: transparent;
   color: #94a3b8;
   font-family: "Cascadia Mono", Consolas, monospace;
   font-size: 14px;
   font-weight: 800;
+  padding: 0;
 }
 
 .pane-actions svg {
@@ -1832,6 +1798,18 @@ rect.icon-accent {
 .pane-actions button:hover:not(:disabled) {
   background: #16202b;
   color: #ffffff;
+}
+
+.pane-actions button.is-pinned {
+  color: #2dd4bf;
+  background: rgba(45, 212, 191, 0.12);
+  border: 1px solid rgba(45, 212, 191, 0.35);
+}
+
+.pane-actions button.is-pinned:hover {
+  background: rgba(45, 212, 191, 0.22);
+  color: #2dd4bf;
+  border-color: #2dd4bf;
 }
 
 .pane-actions button:disabled {

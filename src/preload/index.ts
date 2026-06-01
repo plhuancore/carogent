@@ -92,8 +92,10 @@ const terminal = {
     ipcRenderer.invoke('agent-overlay:get-items'),
   getAgentDoneOverlayVisible: (): Promise<boolean> =>
     ipcRenderer.invoke('agent-overlay:get-visible'),
-  showAgentDoneOverlay: (item: AgentDoneOverlayItem): Promise<void> =>
+  showAgentDoneOverlay: (item: AgentDoneOverlayItem): Promise<string[]> =>
     ipcRenderer.invoke('agent-overlay:show-done', item),
+  unpinAgentDonePane: (paneId: string): Promise<string[]> =>
+    ipcRenderer.invoke('agent-overlay:unpin-pane', paneId),
   openAgentDonePane: (request: AgentOpenPaneRequest): Promise<void> =>
     ipcRenderer.invoke('agent-overlay:open-pane', request),
   closeAgentDoneOverlay: (): Promise<void> =>
@@ -158,6 +160,15 @@ const terminal = {
     ipcRenderer.on('agent-overlay:visible', listener);
 
     return () => ipcRenderer.removeListener('agent-overlay:visible', listener);
+  },
+  onAgentDoneOverlayPinnedPaneIds: (callback: (paneIds: string[]) => void): (() => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, payload: string[]): void => {
+      callback(payload);
+    };
+
+    ipcRenderer.on('agent-overlay:pinned-pane-ids', listener);
+
+    return () => ipcRenderer.removeListener('agent-overlay:pinned-pane-ids', listener);
   },
   onOpenAgentPane: (callback: (request: AgentOpenPaneRequest) => void): (() => void) => {
     const listener = (_event: Electron.IpcRendererEvent, payload: AgentOpenPaneRequest): void => {

@@ -34,7 +34,7 @@ import {
   saveWorkspaceStore,
   WorkspaceState
 } from './storage';
-import carogentLogoUrl from './assets/carogent-logo.png';
+import carogentLogoUrl from './assets/carogent-logo.webp';
 import './styles.css';
 
 type TerminalSession = {
@@ -94,8 +94,7 @@ const HEADER_COLOR_PRESETS = [
   '#1e293b'
 ];
 
-const AGENT_DONE_SENTINEL = 'carogent_done';
-const AGENT_DONE_VISIBLE_MS = 8000;
+const OVERLAY_PREVIEW_UPDATE_MS = 500;
 
 function getHeaderColor(color?: string): string {
   return color && HEADER_COLOR_PRESETS.includes(color) ? color : HEADER_COLOR_PRESETS[0];
@@ -404,16 +403,15 @@ function App(): JSX.Element {
   const [settingsMenuOpen, setSettingsMenuOpen] = useState(false);
   const [shellOptions, setShellOptions] = useState<TerminalShellOption[] | null>(null);
   const [shellOptionsError, setShellOptionsError] = useState<string | null>(null);
-  const [agentOverlayVisible, setAgentOverlayVisible] = useState(true);
+  const [agentOverlayVisible, setAgentOverlayVisible] = useState(false);
   const [browserBridgeStatus, setBrowserBridgeStatus] = useState<BrowserBridgeStatusEvent>({
     connected: false,
     clientCount: 0,
     enabled: true
   });
-  const [agentDonePaneIds, setAgentDonePaneIds] = useState<Set<string>>(() => new Set());
   const sessions = useRef<SessionRegistry>(new Map());
-  const agentDoneTimers = useRef<Map<string, number>>(new Map());
   const pinnedPaneIdsRef = useRef<Set<string>>(new Set());
+  const [pinnedPaneIds, setPinnedPaneIds] = useState<Set<string>>(new Set());
   const overlayUpdateTimers = useRef<Map<string, number>>(new Map());
   const workspacesRef = useRef<WorkspaceState[]>(workspaces);
   const shellOptionsRef = useRef<TerminalShellOption[] | null>(shellOptions);
@@ -520,10 +518,35 @@ function App(): JSX.Element {
           }
           doneItem.lines = lines;
         }
-        window.terminalApi.showAgentDoneOverlay(doneItem).catch(() => {});
+        window.terminalApi
+          .showAgentDoneOverlay(doneItem)
+          .then((paneIds) => {
+            const nextIds = new Set(paneIds);
+            pinnedPaneIdsRef.current = nextIds;
+            setPinnedPaneIds(nextIds);
+          })
+          .catch(() => {});
       }
     },
     [getAgentDoneItem]
+  );
+
+  const handleTogglePinShell = useCallback(
+    (paneId: string) => {
+      if (pinnedPaneIdsRef.current.has(paneId)) {
+        window.terminalApi
+          .unpinAgentDonePane(paneId)
+          .then((paneIds) => {
+            const nextIds = new Set(paneIds);
+            pinnedPaneIdsRef.current = nextIds;
+            setPinnedPaneIds(nextIds);
+          })
+          .catch(() => {});
+      } else {
+        handlePushToOverlay(paneId);
+      }
+    },
+    [handlePushToOverlay]
   );
 
   const triggerOverlayUpdate = useCallback(
@@ -534,6 +557,10 @@ function App(): JSX.Element {
 
       const timer = window.setTimeout(() => {
         overlayUpdateTimers.current.delete(paneId);
+
+        if (!pinnedPaneIdsRef.current.has(paneId)) {
+          return;
+        }
 
         const doneItem = getAgentDoneItem(paneId);
         if (doneItem) {
@@ -554,43 +581,19 @@ function App(): JSX.Element {
             }
             doneItem.lines = lines;
           }
-          window.terminalApi.showAgentDoneOverlay(doneItem).catch(() => {});
+          window.terminalApi
+            .showAgentDoneOverlay(doneItem)
+            .then((paneIds) => {
+              pinnedPaneIdsRef.current = new Set(paneIds);
+            })
+            .catch(() => {});
         }
-      }, 100);
+      }, OVERLAY_PREVIEW_UPDATE_MS);
 
       overlayUpdateTimers.current.set(paneId, timer);
     },
     [getAgentDoneItem]
   );
-
-  const markAgentDonePane = useCallback((paneId: string) => {
-    const existingTimer = agentDoneTimers.current.get(paneId);
-
-    if (existingTimer !== undefined) {
-      window.clearTimeout(existingTimer);
-    }
-
-    setAgentDonePaneIds((current) => {
-      const next = new Set(current);
-      next.add(paneId);
-      return next;
-    });
-
-    const timer = window.setTimeout(() => {
-      agentDoneTimers.current.delete(paneId);
-      setAgentDonePaneIds((current) => {
-        if (!current.has(paneId)) {
-          return current;
-        }
-
-        const next = new Set(current);
-        next.delete(paneId);
-        return next;
-      });
-    }, AGENT_DONE_VISIBLE_MS);
-
-    agentDoneTimers.current.set(paneId, timer);
-  }, []);
 
   useEffect(() => {
     window.terminalApi
@@ -606,7 +609,7 @@ function App(): JSX.Element {
 
   useEffect(() => {
     window.terminalApi.getAgentDoneOverlayVisible().then(setAgentOverlayVisible).catch(() => {
-      setAgentOverlayVisible(true);
+      setAgentOverlayVisible(false);
     });
   }, []);
 
@@ -616,9 +619,17 @@ function App(): JSX.Element {
   }, []);
 
   useEffect(() => {
-    const stopListening = window.terminalApi.onAgentDoneOverlayItems((nextItems) => {
-      const nextIds = new Set(nextItems.map((item) => item.paneId));
+    window.terminalApi.getAgentDoneOverlayItems().then((items) => {
+      const paneIds = items.map((item) => item.paneId);
+      const nextIds = new Set(paneIds);
       pinnedPaneIdsRef.current = nextIds;
+      setPinnedPaneIds(nextIds);
+    }).catch(() => {});
+
+    const stopListening = window.terminalApi.onAgentDoneOverlayPinnedPaneIds((paneIds) => {
+      const nextIds = new Set(paneIds);
+      pinnedPaneIdsRef.current = nextIds;
+      setPinnedPaneIds(nextIds);
     });
     return stopListening;
   }, []);
@@ -635,18 +646,6 @@ function App(): JSX.Element {
     const stopData = window.terminalApi.onData(({ id, data }) => {
       for (const [paneId, session] of sessions.current) {
         if (session.terminalId === id) {
-          // Automatic check for carogent_done is disabled per user request
-          /*
-          if (data.includes(AGENT_DONE_SENTINEL)) {
-            markAgentDonePane(paneId);
-            const doneItem = getAgentDoneItem(paneId);
-
-            if (doneItem) {
-              window.terminalApi.showAgentDoneOverlay(doneItem).catch(() => {});
-            }
-          }
-          */
-
           session.terminal.write(data);
           scheduleTerminalFit(session);
 
@@ -698,19 +697,13 @@ function App(): JSX.Element {
         sessions.current.delete(paneId);
       }
 
-      for (const timer of agentDoneTimers.current.values()) {
-        window.clearTimeout(timer);
-      }
-
-      agentDoneTimers.current.clear();
-
       for (const timer of overlayUpdateTimers.current.values()) {
         window.clearTimeout(timer);
       }
 
       overlayUpdateTimers.current.clear();
     };
-  }, [getAgentDoneItem, markAgentDonePane, updatePaneInAnyWorkspace]);
+  }, [triggerOverlayUpdate, updatePaneInAnyWorkspace]);
 
   const ensureSession = useCallback((pane: PaneNode): TerminalSession => {
     const existing = sessions.current.get(pane.paneId);
@@ -1093,14 +1086,15 @@ function App(): JSX.Element {
     ];
 
     if (activePaneId) {
+      const isPinned = pinnedPaneIds.has(activePaneId);
       items.push({
         id: 'pin-current-shell',
-        title: 'Pin Current Shell to Floating Bar',
+        title: isPinned ? 'Unpin Current Shell from Floating Bar' : 'Pin Current Shell to Floating Bar',
         subtitle: activePane?.title || 'Active shell',
-        keywords: 'pin current shell floating bar overlay sticky active pane terminal push show',
+        keywords: `${isPinned ? 'unpin remove delete' : 'pin push show add'} current shell floating bar overlay sticky active pane terminal`,
         icon: 'agent-overlay',
         run: () => {
-          handlePushToOverlay(activePaneId);
+          handleTogglePinShell(activePaneId);
           closeQuickAccess();
         }
       });
@@ -1117,7 +1111,8 @@ function App(): JSX.Element {
     handleOpenInVSCode,
     agentOverlayVisible,
     handleToggleAgentOverlay,
-    handlePushToOverlay
+    handleTogglePinShell,
+    pinnedPaneIds
   ]);
 
   const effectivePaletteMode: PaletteMode = quickAccessQuery.trimStart().startsWith('>')
@@ -1403,8 +1398,8 @@ function App(): JSX.Element {
             onChangeShell={handleChangeShell}
             onOpenBrowser={(browserUrl) => window.terminalApi.openOrFocusBrowser({ url: browserUrl })}
             shellOptions={shellOptions}
-            agentDonePaneIds={agentDonePaneIds}
-            onPushToOverlay={handlePushToOverlay}
+            onPushToOverlay={handleTogglePinShell}
+            pinnedPaneIds={pinnedPaneIds}
           />
         </div>
       </section>
@@ -2085,8 +2080,8 @@ type NodeViewProps = {
   onChangeShell: (paneId: string, shell: string) => void;
   onOpenBrowser: (browserUrl?: string) => void;
   shellOptions: TerminalShellOption[];
-  agentDonePaneIds: Set<string>;
   onPushToOverlay: (paneId: string) => void;
+  pinnedPaneIds: Set<string>;
 };
 
 function NodeView(props: NodeViewProps): JSX.Element {
@@ -2106,8 +2101,8 @@ function NodeView(props: NodeViewProps): JSX.Element {
         onChangeShell={props.onChangeShell}
         onOpenBrowser={props.onOpenBrowser}
         shellOptions={props.shellOptions}
-        agentDone={props.agentDonePaneIds.has(props.node.paneId)}
         onPushToOverlay={props.onPushToOverlay}
+        pinnedPaneIds={props.pinnedPaneIds}
       />
     );
   }
@@ -2139,8 +2134,8 @@ function SplitView({
   onChangeShell,
   onOpenBrowser,
   shellOptions,
-  agentDonePaneIds,
-  onPushToOverlay
+  onPushToOverlay,
+  pinnedPaneIds
 }: SplitViewProps): JSX.Element {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const directionClass = node.direction === 'row' ? 'split-row' : 'split-column';
@@ -2197,8 +2192,8 @@ function SplitView({
           onChangeShell={onChangeShell}
           onOpenBrowser={onOpenBrowser}
           shellOptions={shellOptions}
-          agentDonePaneIds={agentDonePaneIds}
           onPushToOverlay={onPushToOverlay}
+          pinnedPaneIds={pinnedPaneIds}
         />
       </div>
       <div className="divider" role="separator" onPointerDown={beginResize} />
@@ -2218,8 +2213,8 @@ function SplitView({
           onChangeShell={onChangeShell}
           onOpenBrowser={onOpenBrowser}
           shellOptions={shellOptions}
-          agentDonePaneIds={agentDonePaneIds}
           onPushToOverlay={onPushToOverlay}
+          pinnedPaneIds={pinnedPaneIds}
         />
       </div>
     </div>
@@ -2239,8 +2234,8 @@ type TerminalPaneProps = {
   onChangeShell: (paneId: string, shell: string) => void;
   onOpenBrowser: (browserUrl?: string) => void;
   shellOptions: TerminalShellOption[];
-  agentDone: boolean;
   onPushToOverlay: (paneId: string) => void;
+  pinnedPaneIds: Set<string>;
 };
 
 function TerminalPane({
@@ -2256,8 +2251,8 @@ function TerminalPane({
   onChangeShell,
   onOpenBrowser,
   shellOptions,
-  agentDone,
-  onPushToOverlay
+  onPushToOverlay,
+  pinnedPaneIds
 }: TerminalPaneProps): JSX.Element {
   const hostRef = useRef<HTMLDivElement | null>(null);
   const editorRef = useRef<HTMLDivElement | null>(null);
@@ -2278,6 +2273,7 @@ function TerminalPane({
   const [draftBrowserUrl, setDraftBrowserUrl] = useState(pane.browserUrl || '');
   const displayTitle = pane.customTitle || pane.title;
   const browserUrlLabel = formatBrowserUrlLabel(pane.browserUrl);
+  const isPinned = pinnedPaneIds.has(pane.paneId);
   const headerColor = getHeaderColor(pane.headerColor);
   const selectedShell = getShellOption(shellOptions, pane.shell);
   const paneStyle = useMemo(
@@ -2658,7 +2654,6 @@ function TerminalPane({
           <div className="pane-title" title={pane.cwd}>
             {displayTitle}
           </div>
-          {agentDone && <span className="pane-agent-done-dot" title="Agent finished" aria-label="Agent finished" />}
         </div>
         {editorOpen && (
           <div className="pane-editor" ref={editorRef} onMouseDown={(event) => event.stopPropagation()}>
@@ -2783,8 +2778,9 @@ function TerminalPane({
         )}
         <div className="pane-actions">
           <button
+            className={isPinned ? 'is-pinned' : ''}
             type="button"
-            title="Show in overlay"
+            title={isPinned ? 'Remove from overlay' : 'Show in overlay'}
             onClick={() => onPushToOverlay(pane.paneId)}
           >
             <AgentOverlayIcon />
