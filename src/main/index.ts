@@ -573,7 +573,9 @@ function createAgentDoneOverlayWindow(): BrowserWindow {
     maximizable: false,
     fullscreenable: false,
     alwaysOnTop: true,
+    skipTaskbar: true,
     show: false,
+    icon: getAppIconPath(),
     backgroundColor: '#00000000',
     webPreferences: {
       preload: join(__dirname, '../preload/index.mjs'),
@@ -664,6 +666,7 @@ function showAgentDoneOverlay(item: AgentDoneOverlayItem): string[] {
   let sizeChanged = false;
 
   agentDoneOverlayEnabled = true;
+  showDockIcon();
 
   if (existingIndex !== -1) {
     // Preserve order and update in-place to avoid reordering stuttering
