@@ -664,9 +664,12 @@ function updateAgentDoneOverlayVisibility(forceResize = true): void {
 function showAgentDoneOverlay(item: AgentDoneOverlayItem): string[] {
   const existingIndex = agentDoneOverlayItems.findIndex((current) => current.paneId === item.paneId);
   let sizeChanged = false;
+  const wasOverlayEnabled = agentDoneOverlayEnabled;
 
   agentDoneOverlayEnabled = true;
-  showDockIcon();
+  if (!wasOverlayEnabled) {
+    showDockIcon();
+  }
 
   if (existingIndex !== -1) {
     // Preserve order and update in-place to avoid reordering stuttering

@@ -94,7 +94,7 @@ const HEADER_COLOR_PRESETS = [
   '#1e293b'
 ];
 
-const OVERLAY_PREVIEW_UPDATE_MS = 500;
+const OVERLAY_PREVIEW_UPDATE_MS = 1000;
 
 function getHeaderColor(color?: string): string {
   return color && HEADER_COLOR_PRESETS.includes(color) ? color : HEADER_COLOR_PRESETS[0];
