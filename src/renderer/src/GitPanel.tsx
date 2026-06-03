@@ -1286,6 +1286,7 @@ export const GitPanel: React.FC<GitPanelProps> = ({ cwd, onClose, width, onResiz
                           <tr
                             key={commit.hash + '-' + i}
                             className={`git-history-row ${isUncommitted ? 'uncommitted-row' : ''}`}
+                            style={{ zIndex: 1000 - i }}
                           >
                             <td className="col-graph" style={{ width: columnWidths.graph, minWidth: columnWidths.graph, maxWidth: columnWidths.graph }}>
                               <GraphCell

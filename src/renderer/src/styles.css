@@ -3086,6 +3086,7 @@ rect.icon-accent {
 .git-history-row {
   height: 36px;
   transition: background 0.1s;
+  position: relative;
 }
 
 .git-history-row:hover {
