@@ -246,6 +246,43 @@ const terminal = {
     ipcRenderer.on('terminal:exit', listener);
 
     return () => ipcRenderer.removeListener('terminal:exit', listener);
+  },
+  gitStatus: (request: { cwd: string }): Promise<any> =>
+    ipcRenderer.invoke('git:status', request),
+  gitDiff: (request: { cwd: string; filePath: string; isStaged: boolean }): Promise<{ diff?: string; error?: string }> =>
+    ipcRenderer.invoke('git:diff', request),
+  gitStage: (request: { cwd: string; filePath: string }): Promise<void> =>
+    ipcRenderer.invoke('git:stage', request),
+  gitUnstage: (request: { cwd: string; filePath: string }): Promise<void> =>
+    ipcRenderer.invoke('git:unstage', request),
+  gitStageAll: (request: { cwd: string }): Promise<void> =>
+    ipcRenderer.invoke('git:stage-all', request),
+  gitUnstageAll: (request: { cwd: string }): Promise<void> =>
+    ipcRenderer.invoke('git:unstage-all', request),
+  gitDiscard: (request: { cwd: string; filePath: string; isUntracked: boolean }): Promise<void> =>
+    ipcRenderer.invoke('git:discard', request),
+  gitCommit: (request: { cwd: string; message: string }): Promise<void> =>
+    ipcRenderer.invoke('git:commit', request),
+  gitHistory: (request: { cwd: string }): Promise<string> =>
+    ipcRenderer.invoke('git:history', request),
+  gitInit: (request: { cwd: string }): Promise<void> =>
+    ipcRenderer.invoke('git:init', request),
+  gitWatch: (request: { cwd: string }): Promise<void> =>
+    ipcRenderer.invoke('git:watch', request),
+  gitWorktrees: (request: { cwd: string }): Promise<any> =>
+    ipcRenderer.invoke('git:worktrees', request),
+  gitUndoLastCommit: (request: { cwd: string }): Promise<string> =>
+    ipcRenderer.invoke('git:undo-last-commit', request),
+  gitDiscardAll: (request: { cwd: string }): Promise<void> =>
+    ipcRenderer.invoke('git:discard-all', request),
+  onGitChange: (callback: () => void): (() => void) => {
+    const listener = (): void => {
+      callback();
+    };
+    ipcRenderer.on('git:change', listener);
+    return () => {
+      ipcRenderer.removeListener('git:change', listener);
+    };
   }
 };
 

@@ -156,5 +156,20 @@ interface Window {
     onOpenAgentPane: (callback: (request: AgentOpenPaneRequest) => void) => () => void;
     onAgentBridgeRequest: (callback: (request: AgentBridgeRendererRequest) => void) => () => void;
     onExit: (callback: (event: TerminalExitEvent) => void) => () => void;
+    gitStatus: (request: { cwd: string }) => Promise<any>;
+    gitDiff: (request: { cwd: string; filePath: string; isStaged: boolean }) => Promise<{ diff?: string; error?: string }>;
+    gitStage: (request: { cwd: string; filePath: string }) => Promise<void>;
+    gitUnstage: (request: { cwd: string; filePath: string }) => Promise<void>;
+    gitStageAll: (request: { cwd: string }) => Promise<void>;
+    gitUnstageAll: (request: { cwd: string }) => Promise<void>;
+    gitDiscard: (request: { cwd: string; filePath: string; isUntracked: boolean }) => Promise<void>;
+    gitCommit: (request: { cwd: string; message: string }) => Promise<void>;
+    gitHistory: (request: { cwd: string }) => Promise<string>;
+    gitInit: (request: { cwd: string }) => Promise<void>;
+    gitWatch: (request: { cwd: string }) => Promise<void>;
+    gitWorktrees: (request: { cwd: string }) => Promise<any>;
+    gitUndoLastCommit: (request: { cwd: string }) => Promise<string>;
+    gitDiscardAll: (request: { cwd: string }) => Promise<void>;
+    onGitChange: (callback: () => void) => () => void;
   };
 }
