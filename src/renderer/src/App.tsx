@@ -35,6 +35,7 @@ import {
   WorkspaceState
 } from './storage';
 import carogentLogoUrl from './assets/carogent-logo-v2.png';
+import { GitPanel } from './GitPanel';
 import './styles.css';
 
 type TerminalSession = {
@@ -69,7 +70,7 @@ type CommandPaletteItem = {
   title: string;
   subtitle: string;
   keywords: string;
-  icon: 'browser' | 'code' | 'quick-access' | 'agent-overlay';
+  icon: 'browser' | 'code' | 'quick-access' | 'agent-overlay' | 'git';
   run: () => void;
 };
 
@@ -497,6 +498,9 @@ function App(): JSX.Element {
     clientCount: 0,
     enabled: true
   });
+  const [isGitSidebarOpen, setIsGitSidebarOpen] = useState(false);
+  const [gitRefreshTrigger, setGitRefreshTrigger] = useState(0);
+  const [gitSidebarWidth, setGitSidebarWidth] = useState(380);
   const sessions = useRef<SessionRegistry>(new Map());
   const pinnedPaneIdsRef = useRef<Set<string>>(new Set());
   const [pinnedPaneIds, setPinnedPaneIds] = useState<Set<string>>(new Set());
@@ -1249,7 +1253,7 @@ function App(): JSX.Element {
     const items: CommandPaletteItem[] = [
       {
         id: 'open-browser',
-        title: 'Open in Browser',
+        title: 'Browser: Open in Browser',
         subtitle: browserLabel,
         keywords: `browser web chrome open url localhost ${activePane?.browserUrl || ''}`,
         icon: 'browser',
@@ -1260,7 +1264,7 @@ function App(): JSX.Element {
       },
       {
         id: 'open-vscode',
-        title: 'Open in VS Code',
+        title: 'VS Code: Open in VS Code',
         subtitle: codePath,
         keywords: `vscode vs code editor open workspace folder ${codePath}`,
         icon: 'code',
@@ -1271,12 +1275,35 @@ function App(): JSX.Element {
       },
       {
         id: 'toggle-floating-bar',
-        title: agentOverlayVisible ? 'Hide Floating Bar' : 'Show Floating Bar',
+        title: agentOverlayVisible ? 'Floating Bar: Hide Floating Bar' : 'Floating Bar: Show Floating Bar',
         subtitle: 'Toggle sticky overlay bar visibility',
         keywords: `floating bar sticky overlay show hide toggle settings visual window visibility ${agentOverlayVisible ? 'hide' : 'show'}`,
         icon: 'agent-overlay',
         run: () => {
           handleToggleAgentOverlay();
+          closeQuickAccess();
+        }
+      },
+      {
+        id: 'toggle-git-control',
+        title: isGitSidebarOpen ? 'Git: Hide Git Control' : 'Git: Show Git Control',
+        subtitle: 'Toggle Git sidebar panel visibility',
+        keywords: `git control sidebar show hide toggle repository branch diff changes version control ${isGitSidebarOpen ? 'hide' : 'show'}`,
+        icon: 'git',
+        run: () => {
+          setIsGitSidebarOpen((open) => !open);
+          closeQuickAccess();
+        }
+      },
+      {
+        id: 'git-refresh',
+        title: 'Git: Refresh',
+        subtitle: 'Refresh Git repository status and history',
+        keywords: 'git refresh reload update status sync history repository changes',
+        icon: 'git',
+        run: () => {
+          setGitRefreshTrigger((prev) => prev + 1);
+          setIsGitSidebarOpen(true);
           closeQuickAccess();
         }
       }
@@ -1286,7 +1313,7 @@ function App(): JSX.Element {
       const isPinned = pinnedPaneIds.has(activePaneId);
       items.push({
         id: 'pin-current-shell',
-        title: isPinned ? 'Unpin Current Shell from Floating Bar' : 'Pin Current Shell to Floating Bar',
+        title: isPinned ? 'Floating Bar: Unpin Current Shell from Floating Bar' : 'Floating Bar: Pin Current Shell to Floating Bar',
         subtitle: activePane?.title || 'Active shell',
         keywords: `${isPinned ? 'unpin remove delete' : 'pin push show add'} current shell floating bar overlay sticky active pane terminal`,
         icon: 'agent-overlay',
@@ -1309,7 +1336,9 @@ function App(): JSX.Element {
     agentOverlayVisible,
     handleToggleAgentOverlay,
     handleTogglePinShell,
-    pinnedPaneIds
+    pinnedPaneIds,
+    isGitSidebarOpen,
+    setGitRefreshTrigger
   ]);
 
   const effectivePaletteMode: PaletteMode = quickAccessQuery.trimStart().startsWith('>')
@@ -1448,7 +1477,7 @@ function App(): JSX.Element {
   }
 
   return (
-    <main className="app-shell">
+    <main className="app-shell" style={isGitSidebarOpen ? { gridTemplateColumns: `244px minmax(0, 1fr) ${gitSidebarWidth}px` } : undefined}>
       <aside className="sidebar">
         <div className="brand">
           <div className="brand-mark">
@@ -1534,6 +1563,18 @@ function App(): JSX.Element {
             >
               Open in VS Code
             </button>
+            <button
+              className={`topbar-button topbar-button-secondary ${isGitSidebarOpen ? 'is-active' : ''}`}
+              type="button"
+              onClick={() => setIsGitSidebarOpen((open) => !open)}
+              title="Toggle Git Control Sidebar"
+              style={isGitSidebarOpen ? { borderColor: '#a3be5c', color: '#a3be5c' } : undefined}
+            >
+              <svg viewBox="0 0 16 16" width="12" height="12" style={{ fill: 'currentColor' }}>
+                <path d="M5 3.25a.75.75 0 1 1-1.5 0 .75.75 0 0 1 1.5 0zm0 2.122a2.25 2.25 0 1 0-1.5 0v5.256a2.251 2.251 0 1 0 1.5 0V5.372zm8-.25a.75.75 0 1 1-1.5 0 .75.75 0 0 1 1.5 0zM11.5 7.25a2.25 2.25 0 1 0 0 4.5 2.25 2.25 0 0 0 0-4.5z"/>
+              </svg>
+              Git Control
+            </button>
             <div className="settings-menu-wrap" ref={settingsMenuRef}>
               <button
                 className="settings-button"
@@ -1600,6 +1641,17 @@ function App(): JSX.Element {
           />
         </div>
       </section>
+      {isGitSidebarOpen && (
+        <GitPanel
+          cwd={sessions.current.get(activePaneId)?.cwd || activePane?.cwd || ''}
+          onClose={() => setIsGitSidebarOpen(false)}
+          width={gitSidebarWidth}
+          onResize={setGitSidebarWidth}
+          activePaneId={activePaneId}
+          terminalId={sessions.current.get(activePaneId)?.terminalId}
+          refreshTrigger={gitRefreshTrigger}
+        />
+      )}
       {quickAccessOpen && (
         <QuickAccessPalette
           inputRef={quickAccessInputRef}
@@ -3161,6 +3213,18 @@ function CodeIcon(): JSX.Element {
   );
 }
 
+function GitIcon(): JSX.Element {
+  return (
+    <svg aria-hidden="true" viewBox="0 0 16 16">
+      <line x1="4" y1="6" x2="4" y2="10" />
+      <path d="M12 6a6 6 0 0 1-6 6" />
+      <circle cx="4" cy="4" r="2" />
+      <circle cx="4" cy="12" r="2" />
+      <circle cx="12" cy="4" r="2" />
+    </svg>
+  );
+}
+
 function CommandPaletteIcon({ type }: { type: CommandPaletteItem['icon'] }): JSX.Element {
   if (type === 'browser') {
     return <BrowserIcon />;
@@ -3172,6 +3236,10 @@ function CommandPaletteIcon({ type }: { type: CommandPaletteItem['icon'] }): JSX
 
   if (type === 'agent-overlay') {
     return <AgentOverlayIcon />;
+  }
+
+  if (type === 'git') {
+    return <GitIcon />;
   }
 
   return <QuickAccessIcon />;

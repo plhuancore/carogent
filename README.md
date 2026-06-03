@@ -57,8 +57,25 @@ npm run typecheck
 - Open or focus a browser tab from the active pane.
 - Save frequently used websites in Quick Access.
 - Show agent completion notifications for terminal panes.
+- Open Git Control for the active pane to stage changes, preview diffs, commit, and browse history.
 - Restore the pane layout after restarting the app.
 - Customize each pane name and header color.
+
+## Git Control
+
+Git Control opens a source-control sidebar for the active pane's current working directory.
+
+1. Click `Git Control` in the top bar.
+2. Use the `Changes` tab to inspect staged and unstaged files.
+3. Select a file to preview its diff with syntax highlighting.
+4. Stage, unstage, or discard file changes from the row actions.
+5. Enter a commit message and commit the staged changes.
+
+The file list shows untracked files individually, similar to VS Code. Large or binary file previews may be skipped or truncated to keep the sidebar responsive.
+
+Use the `History` tab to browse recent commits and their graph. Use the repository dropdown to view available Git worktrees and switch the active pane to another worktree.
+
+`Discard` deletes untracked files or reverts tracked file changes. This cannot be undone.
 
 ## Choose A Pane Shell
 
