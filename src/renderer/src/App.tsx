@@ -490,6 +490,7 @@ function App(): JSX.Element {
   const [paletteMode, setPaletteMode] = useState<PaletteMode>('quick-access');
   const [quickAccessManagerOpen, setQuickAccessManagerOpen] = useState(false);
   const [settingsMenuOpen, setSettingsMenuOpen] = useState(false);
+  const [mcpSettingsOpen, setMcpSettingsOpen] = useState(false);
   const [shellOptions, setShellOptions] = useState<TerminalShellOption[] | null>(null);
   const [shellOptionsError, setShellOptionsError] = useState<string | null>(null);
   const [agentOverlayVisible, setAgentOverlayVisible] = useState(false);
@@ -1635,6 +1636,18 @@ function App(): JSX.Element {
                       {agentOverlayVisible ? '✓' : ''}
                     </span>
                   </button>
+                  <button
+                    className="settings-menu-item"
+                    type="button"
+                    role="menuitem"
+                    onClick={() => {
+                      setSettingsMenuOpen(false);
+                      setMcpSettingsOpen(true);
+                    }}
+                  >
+                    <McpIcon />
+                    Carogent MCP
+                  </button>
                 </div>
               )}
             </div>
@@ -1697,6 +1710,11 @@ function App(): JSX.Element {
           onSave={handleSaveQuickAccessItem}
           onDelete={handleDeleteQuickAccessItem}
           onClose={() => setQuickAccessManagerOpen(false)}
+        />
+      )}
+      {mcpSettingsOpen && (
+        <McpSettingsModal
+          onClose={() => setMcpSettingsOpen(false)}
         />
       )}
     </main>
@@ -3265,6 +3283,164 @@ function CommandPaletteIcon({ type }: { type: CommandPaletteItem['icon'] }): JSX
   }
 
   return <QuickAccessIcon />;
+}
+
+function McpIcon(): JSX.Element {
+  return (
+    <svg aria-hidden="true" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="2" y="2" width="20" height="8" rx="2" ry="2"></rect>
+      <rect x="2" y="14" width="20" height="8" rx="2" ry="2"></rect>
+      <line x1="6" y1="6" x2="6.01" y2="6"></line>
+      <line x1="6" y1="18" x2="6.01" y2="18"></line>
+    </svg>
+  );
+}
+
+type McpSettingsModalProps = {
+  onClose: () => void;
+};
+
+function McpSettingsModal({ onClose }: McpSettingsModalProps): JSX.Element {
+  const [enabled, setEnabled] = useState(true);
+  const [port, setPort] = useState('17322');
+  const [scriptPath, setScriptPath] = useState('');
+  const [copied, setCopied] = useState(false);
+  const [errorMsg, setErrorMsg] = useState('');
+
+  useEffect(() => {
+    window.terminalApi.getAgentBridgeSettings().then((settings) => {
+      setEnabled(settings.enabled);
+      setPort(String(settings.port));
+    }).catch(() => {});
+
+    window.terminalApi.getAgentBridgeScriptPath().then((path) => {
+      setScriptPath(path);
+    }).catch(() => {});
+  }, []);
+
+  const handleCopy = () => {
+    const config = JSON.stringify({
+      mcpServers: {
+        carogent: {
+          command: 'node',
+          args: [scriptPath || 'scripts/carogent-mcp.mjs']
+        }
+      }
+    }, null, 2);
+    window.terminalApi.writeClipboardText(config);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  const handleSave = (e: React.FormEvent) => {
+    e.preventDefault();
+    const portNumber = parseInt(port, 10);
+    if (isNaN(portNumber) || portNumber < 1024 || portNumber > 65535) {
+      setErrorMsg('Port must be a number between 1024 and 65535.');
+      return;
+    }
+    setErrorMsg('');
+
+    window.terminalApi.setAgentBridgeSettings({
+      enabled,
+      port: portNumber
+    }).then(() => {
+      onClose();
+    }).catch((err: any) => {
+      setErrorMsg(err.message || 'Failed to save settings.');
+    });
+  };
+
+  return (
+    <div className="mcp-settings-overlay" onMouseDown={onClose}>
+      <div className="mcp-settings-modal" onMouseDown={(e) => e.stopPropagation()}>
+        <header className="mcp-settings-header">
+          <div className="mcp-settings-title">
+            <span className="mcp-settings-icon" aria-hidden="true">
+              <McpIcon />
+            </span>
+            <div>
+              <h2>Carogent MCP Server</h2>
+              <p>Configure agent integration for terminal automation</p>
+            </div>
+          </div>
+          <button type="button" className="mcp-settings-close-btn" onClick={onClose}>
+            Close
+          </button>
+        </header>
+
+        <form onSubmit={handleSave}>
+          <div className="mcp-settings-body">
+            <div className="mcp-settings-row">
+              <div className="mcp-settings-label-group">
+                <span className="mcp-settings-label">Enable MCP Server</span>
+                <span className="mcp-settings-desc">Allow AI agents to read, split, and run commands in terminal panes</span>
+              </div>
+              <label className="mcp-settings-switch">
+                <input
+                  type="checkbox"
+                  checked={enabled}
+                  onChange={(e) => setEnabled(e.target.checked)}
+                />
+                <span className="mcp-settings-slider"></span>
+              </label>
+            </div>
+
+            <div className="mcp-settings-row">
+              <div className="mcp-settings-label-group">
+                <span className="mcp-settings-label">Port Number</span>
+                <span className="mcp-settings-desc">Local port for the HTTP/MCP bridge connection</span>
+              </div>
+              <input
+                className="mcp-settings-input"
+                type="text"
+                disabled={!enabled}
+                value={port}
+                onChange={(e) => setPort(e.target.value)}
+              />
+            </div>
+
+            {errorMsg && (
+              <div style={{ color: '#ef4444', fontSize: '13px', marginTop: '-4px' }}>
+                {errorMsg}
+              </div>
+            )}
+
+            <div className="mcp-settings-section-title">MCP Client Configuration</div>
+            
+            <div className="mcp-settings-desc" style={{ marginBottom: '8px' }}>
+              Add this configuration to your AI agent's config file (e.g. <code>mcp_config.json</code>):
+            </div>
+
+            <div className="mcp-config-box">
+              <button type="button" className="mcp-copy-btn" onClick={handleCopy}>
+                {copied ? 'Copied!' : 'Copy Config'}
+              </button>
+              <pre className="mcp-config-code">
+{JSON.stringify({
+  mcpServers: {
+    carogent: {
+      command: 'node',
+      args: [scriptPath || 'scripts/carogent-mcp.mjs']
+    }
+  }
+}, null, 2)}
+              </pre>
+            </div>
+          </div>
+
+          <footer className="mcp-settings-footer">
+            <button type="button" className="mcp-btn-secondary" onClick={onClose}>
+              Cancel
+            </button>
+            <button type="submit" className="mcp-btn-primary">
+              Save Settings
+            </button>
+          </footer>
+        </form>
+      </div>
+    </div>
+  );
 }
 
 export default App;

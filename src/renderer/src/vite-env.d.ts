@@ -120,6 +120,9 @@ type AgentBridgeRendererResponse = {
 
 interface Window {
   terminalApi: {
+    getAgentBridgeSettings: () => Promise<{ enabled: boolean; port: number }>;
+    setAgentBridgeSettings: (settings: { enabled: boolean; port: number }) => Promise<{ enabled: boolean; port: number }>;
+    getAgentBridgeScriptPath: () => Promise<string>;
     getShellOptions: () => Promise<TerminalShellOption[]>;
     listDirectory: (request: { path: string }) => Promise<DirectoryListResult>;
     getImagePreview: (request: { path: string }) => Promise<ImagePreviewResult>;

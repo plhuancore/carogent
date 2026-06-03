@@ -1886,6 +1886,26 @@ rect.icon-accent {
   }
 }
 
+/* MCP Settings Modal */
+.mcp-settings-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 120;
+  background: rgba(0, 0, 0, 0.45);
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  padding-top: 56px;
+  backdrop-filter: blur(4px);
+}
+
+.mcp-settings-modal {
+  width: min(580px, calc(100vw - 32px));
+  border: 1px solid #2a3441;
+  border-radius: 8px;
+  background: #11161d;
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.65);
+}
 /* Git Panel Styles */
 .git-panel {
   display: flex;
@@ -2030,6 +2050,249 @@ rect.icon-accent {
   flex-direction: column;
 }
 
+.mcp-settings-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  border-bottom: 1px solid #202a36;
+  padding: 16px;
+}
+
+.mcp-settings-title {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.mcp-settings-icon {
+  display: grid;
+  width: 36px;
+  height: 36px;
+  place-items: center;
+  border: 1px solid #2a394a;
+  border-radius: 8px;
+  background: #0d141d;
+  color: #93c5fd;
+}
+
+.mcp-settings-icon svg {
+  width: 18px;
+  height: 18px;
+}
+
+.mcp-settings-header h2 {
+  margin: 0;
+  color: #f8fafc;
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.mcp-settings-header p {
+  margin: 2px 0 0;
+  color: #64748b;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.mcp-settings-close-btn {
+  background: transparent;
+  border: 1px solid #2a3441;
+  border-radius: 4px;
+  color: #94a3b8;
+  padding: 6px 12px;
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.mcp-settings-close-btn:hover {
+  border-color: #ef4444;
+  color: #ffffff;
+}
+
+.mcp-settings-body {
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  max-height: calc(100vh - 200px);
+  overflow-y: auto;
+}
+
+.mcp-settings-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.mcp-settings-label-group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.mcp-settings-label {
+  color: #f1f5f9;
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.mcp-settings-desc {
+  color: #64748b;
+  font-size: 12px;
+}
+
+.mcp-settings-switch {
+  position: relative;
+  display: inline-block;
+  width: 44px;
+  height: 24px;
+}
+
+.mcp-settings-switch input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.mcp-settings-slider {
+  position: absolute;
+  cursor: pointer;
+  inset: 0;
+  background-color: #334155;
+  transition: .2s;
+  border-radius: 24px;
+}
+
+.mcp-settings-slider:before {
+  position: absolute;
+  content: "";
+  height: 18px;
+  width: 18px;
+  left: 3px;
+  bottom: 3px;
+  background-color: white;
+  transition: .2s;
+  border-radius: 50%;
+}
+
+.mcp-settings-switch input:checked + .mcp-settings-slider {
+  background-color: #10b981;
+}
+
+.mcp-settings-switch input:focus + .mcp-settings-slider {
+  box-shadow: 0 0 1px #10b981;
+}
+
+.mcp-settings-switch input:checked + .mcp-settings-slider:before {
+  transform: translateX(20px);
+}
+
+.mcp-settings-input {
+  width: 100px;
+  background: #0f172a;
+  border: 1px solid #334155;
+  border-radius: 6px;
+  color: #f1f5f9;
+  padding: 6px 10px;
+  font-size: 14px;
+  outline: none;
+  transition: border-color 0.15s ease;
+}
+
+.mcp-settings-input:focus {
+  border-color: #3b82f6;
+}
+
+.mcp-settings-section-title {
+  color: #94a3b8;
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin: 10px 0 6px;
+  border-bottom: 1px solid #1e293b;
+  padding-bottom: 4px;
+}
+
+.mcp-config-box {
+  background: #090d13;
+  border: 1px solid #1e293b;
+  border-radius: 6px;
+  padding: 12px;
+  position: relative;
+}
+
+.mcp-config-code {
+  font-family: 'Fira Code', 'Courier New', Courier, monospace;
+  font-size: 12px;
+  color: #cbd5e1;
+  white-space: pre-wrap;
+  margin: 0;
+}
+
+.mcp-copy-btn {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  background: #1e293b;
+  border: 1px solid #334155;
+  border-radius: 4px;
+  color: #94a3b8;
+  padding: 4px 8px;
+  font-size: 11px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.mcp-copy-btn:hover {
+  background: #334155;
+  color: #ffffff;
+}
+
+.mcp-settings-footer {
+  border-top: 1px solid #202a36;
+  padding: 16px;
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+}
+
+.mcp-btn-secondary {
+  background: transparent;
+  border: 1px solid #334155;
+  border-radius: 6px;
+  color: #cbd5e1;
+  padding: 8px 16px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.mcp-btn-secondary:hover {
+  background: #1e293b;
+  color: #ffffff;
+}
+
+.mcp-btn-primary {
+  background: #3b82f6;
+  border: none;
+  border-radius: 6px;
+  color: #ffffff;
+  padding: 8px 16px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.mcp-btn-primary:hover {
+  background: #2563eb;
+}
 .git-worktree-dropdown-header {
   padding: 6px 12px;
   font-size: 10px;

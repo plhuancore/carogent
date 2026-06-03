@@ -2,11 +2,11 @@ import { app, BrowserWindow, ipcMain, nativeImage, screen, shell as electronShel
 import { spawn } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
 import { delimiter, dirname, extname, join, relative } from 'node:path';
-import { existsSync, mkdirSync, writeFileSync, watch } from 'node:fs';
+import { existsSync, mkdirSync, writeFileSync, watch, readFileSync, unlinkSync } from 'node:fs';
 import type { FSWatcher } from 'node:fs';
 import { readFile, readdir, rm, stat, unlink } from 'node:fs/promises';
 import { createServer } from 'node:http';
-import type { IncomingMessage, ServerResponse } from 'node:http';
+import type { IncomingMessage, ServerResponse, Server } from 'node:http';
 import type { Socket } from 'node:net';
 import os from 'node:os';
 import * as pty from 'node-pty';
@@ -192,7 +192,8 @@ const DEFAULT_BROWSER_URL = 'http://localhost:3000';
 const DEFAULT_BROWSER_DEBUG_URL = 'http://127.0.0.1:9222';
 const BROWSER_BRIDGE_PORT = 17321;
 const BROWSER_BRIDGE_TIMEOUT_MS = 5000;
-const AGENT_BRIDGE_PORT = 17322;
+let agentBridgeSettings = { enabled: true, port: 17322 };
+let agentBridgeServer: Server | null = null;
 const AGENT_BRIDGE_MAX_BODY_BYTES = 64 * 1024;
 const AGENT_BRIDGE_TOKEN = randomUUID();
 const AGENT_BRIDGE_STATE_PATH = '/tmp/carogent-agent-bridge.json';
@@ -425,7 +426,7 @@ function getTerminalEnv(shell: string, paneId?: string): NodeJS.ProcessEnv {
   env.TERM = 'xterm-256color';
   env.COLORTERM = 'truecolor';
   env.TERM_PROGRAM = 'Carogent';
-  env.CAROGENT_BRIDGE_URL = `http://127.0.0.1:${AGENT_BRIDGE_PORT}`;
+  env.CAROGENT_BRIDGE_URL = `http://127.0.0.1:${agentBridgeSettings.port}`;
   env.CAROGENT_AGENT_TOKEN = AGENT_BRIDGE_TOKEN;
   if (paneId) {
     env.CAROGENT_PANE_ID = paneId;
@@ -1428,11 +1429,20 @@ async function handleAgentBridgeAction(body: AgentBridgeRequest): Promise<unknow
   }
 }
 
-function startAgentBridgeServer(): void {
+function startAgentBridgeServer(port: number): void {
+  if (agentBridgeServer) {
+    try {
+      agentBridgeServer.close();
+    } catch (e) {
+      // ignore
+    }
+    agentBridgeServer = null;
+  }
+
   writeFileSync(
     AGENT_BRIDGE_STATE_PATH,
     JSON.stringify({
-      bridgeUrl: `http://127.0.0.1:${AGENT_BRIDGE_PORT}`,
+      bridgeUrl: `http://127.0.0.1:${port}`,
       agentToken: AGENT_BRIDGE_TOKEN
     }),
     { encoding: 'utf8', mode: 0o600 }
@@ -1465,13 +1475,78 @@ function startAgentBridgeServer(): void {
     // Another Carogent instance may own the agent bridge port.
   });
 
-  server.listen(AGENT_BRIDGE_PORT, '127.0.0.1');
+  agentBridgeServer = server;
+  server.listen(port, '127.0.0.1');
+}
+
+function stopAgentBridgeServer(): void {
+  if (agentBridgeServer) {
+    try {
+      agentBridgeServer.close();
+    } catch (e) {
+      // ignore
+    }
+    agentBridgeServer = null;
+  }
+
+  if (existsSync(AGENT_BRIDGE_STATE_PATH)) {
+    try {
+      unlinkSync(AGENT_BRIDGE_STATE_PATH);
+    } catch (e) {
+      // ignore
+    }
+  }
 }
 
 app.whenReady().then(() => {
   showDockIcon();
   startBrowserBridgeServer();
-  startAgentBridgeServer();
+
+  // Load agent bridge settings
+  const settingsPath = join(app.getPath('userData'), 'mcp-settings.json');
+  try {
+    if (existsSync(settingsPath)) {
+      const data = readFileSync(settingsPath, 'utf8');
+      const parsed = JSON.parse(data);
+      if (parsed && typeof parsed.enabled === 'boolean' && typeof parsed.port === 'number') {
+        agentBridgeSettings = parsed;
+      }
+    }
+  } catch (e) {
+    // ignore
+  }
+
+  if (agentBridgeSettings.enabled) {
+    startAgentBridgeServer(agentBridgeSettings.port);
+  }
+
+  ipcMain.handle('agent-bridge:get-settings', () => {
+    return agentBridgeSettings;
+  });
+
+  ipcMain.handle('agent-bridge:set-settings', (_event, settings: { enabled: boolean; port: number }) => {
+    agentBridgeSettings = settings;
+
+    // Save settings
+    const settingsPath = join(app.getPath('userData'), 'mcp-settings.json');
+    try {
+      writeFileSync(settingsPath, JSON.stringify(settings), 'utf8');
+    } catch (e) {
+      // ignore
+    }
+
+    if (settings.enabled) {
+      startAgentBridgeServer(settings.port);
+    } else {
+      stopAgentBridgeServer();
+    }
+
+    return agentBridgeSettings;
+  });
+
+  ipcMain.handle('agent-bridge:get-script-path', () => {
+    return join(app.getAppPath(), 'scripts/carogent-mcp.mjs');
+  });
 
   ipcMain.handle('terminal:get-shell-options', () => getShellOptions());
 

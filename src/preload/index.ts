@@ -116,6 +116,12 @@ type AgentBridgeRendererResponse = {
 };
 
 const terminal = {
+  getAgentBridgeSettings: (): Promise<{ enabled: boolean; port: number }> =>
+    ipcRenderer.invoke('agent-bridge:get-settings'),
+  setAgentBridgeSettings: (settings: { enabled: boolean; port: number }): Promise<{ enabled: boolean; port: number }> =>
+    ipcRenderer.invoke('agent-bridge:set-settings', settings),
+  getAgentBridgeScriptPath: (): Promise<string> =>
+    ipcRenderer.invoke('agent-bridge:get-script-path'),
   getShellOptions: (): Promise<TerminalShellOption[]> =>
     ipcRenderer.invoke('terminal:get-shell-options'),
   listDirectory: (request: { path: string }): Promise<DirectoryListResult> =>
