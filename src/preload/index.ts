@@ -265,6 +265,10 @@ const terminal = {
     ipcRenderer.invoke('git:watch', request),
   gitWorktrees: (request: { cwd: string }): Promise<any> =>
     ipcRenderer.invoke('git:worktrees', request),
+  gitUndoLastCommit: (request: { cwd: string }): Promise<string> =>
+    ipcRenderer.invoke('git:undo-last-commit', request),
+  gitDiscardAll: (request: { cwd: string }): Promise<void> =>
+    ipcRenderer.invoke('git:discard-all', request),
   onGitChange: (callback: () => void): (() => void) => {
     const listener = (): void => {
       callback();

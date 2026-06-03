@@ -165,6 +165,8 @@ interface Window {
     gitInit: (request: { cwd: string }) => Promise<void>;
     gitWatch: (request: { cwd: string }) => Promise<void>;
     gitWorktrees: (request: { cwd: string }) => Promise<any>;
+    gitUndoLastCommit: (request: { cwd: string }) => Promise<string>;
+    gitDiscardAll: (request: { cwd: string }) => Promise<void>;
     onGitChange: (callback: () => void) => () => void;
   };
 }

@@ -2046,6 +2046,10 @@ app.whenReady().then(() => {
   ipcMain.handle('git:unstage', (_event, { cwd, filePath }) => runGitCommand(['reset', 'HEAD', '--', filePath], cwd));
   ipcMain.handle('git:stage-all', (_event, { cwd }) => runGitCommand(['add', '-A'], cwd));
   ipcMain.handle('git:unstage-all', (_event, { cwd }) => runGitCommand(['reset', 'HEAD'], cwd));
+  ipcMain.handle('git:discard-all', async (_event, { cwd }) => {
+    await runGitCommand(['checkout', '--', '.'], cwd);
+    await runGitCommand(['clean', '-fd'], cwd);
+  });
   ipcMain.handle('git:discard', async (_event, { cwd, filePath, isUntracked }) => {
     if (isUntracked) {
       const fullPath = join(cwd, filePath);
@@ -2062,6 +2066,16 @@ app.whenReady().then(() => {
   ipcMain.handle('git:commit', (_event, { cwd, message }) => runGitCommand(['commit', '-m', message], cwd));
   ipcMain.handle('git:history', (_event, { cwd }) => runGitCommand(['log', '--all', '--date-order', '--pretty=format:%H|%P|%d|%s|%an|%cr|%ct', '-n', '100'], cwd));
   ipcMain.handle('git:init', (_event, { cwd }) => runGitCommand(['init'], cwd));
+  ipcMain.handle('git:undo-last-commit', async (_event, { cwd }) => {
+    let message = '';
+    try {
+      message = await runGitCommand(['log', '-1', '--pretty=%B'], cwd);
+    } catch (e) {
+      // ignore
+    }
+    await runGitCommand(['reset', '--soft', 'HEAD~1'], cwd);
+    return message;
+  });
 
   createWindow();
 

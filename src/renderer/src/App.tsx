@@ -1306,6 +1306,28 @@ function App(): JSX.Element {
           setIsGitSidebarOpen(true);
           closeQuickAccess();
         }
+      },
+      {
+        id: 'git-undo-last-commit',
+        title: 'Git: Undo Last Commit',
+        subtitle: 'Undo the last commit (soft reset HEAD~1, keep changes staged)',
+        keywords: 'git undo last commit reset soft head changes staged repository',
+        icon: 'git',
+        run: async () => {
+          const activeCwd = sessions.current.get(activePaneId)?.cwd || activePane?.cwd;
+          if (!activeCwd) return;
+          try {
+            const undoneMessage = await window.terminalApi.gitUndoLastCommit({ cwd: activeCwd });
+            if (undoneMessage) {
+              window.dispatchEvent(new CustomEvent('git-undone-commit', { detail: { message: undoneMessage } }));
+            }
+            setGitRefreshTrigger((prev) => prev + 1);
+            setIsGitSidebarOpen(true);
+          } catch (err: any) {
+            alert('Failed to undo last commit: ' + (err?.message || err));
+          }
+          closeQuickAccess();
+        }
       }
     ];
 

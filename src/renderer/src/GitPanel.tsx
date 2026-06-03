@@ -227,6 +227,66 @@ export const GitPanel: React.FC<GitPanelProps> = ({ cwd, onClose, width, onResiz
   const statusPromiseRef = useRef<Promise<void> | null>(null);
   const diffRequestIdRef = useRef(0);
 
+  const { historyWithUncommitted, graphRows, maxTracks, hashToIndexMap } = useMemo(() => {
+    const stagedCount = status?.staged?.length || 0;
+    const unstagedCount = status?.unstaged?.length || 0;
+
+    let historyWithUncommitted = [...history];
+    const uncommittedItems: CommitHistoryItem[] = [];
+    const actualHeadCommit = history.find((item) => item.isHEAD);
+    const headHash = actualHeadCommit ? actualHeadCommit.hash : (history[0]?.hash || 'HEAD');
+
+    const baseTime = Date.now() / 1000;
+
+    if (unstagedCount > 0) {
+      uncommittedItems.push({
+        hash: 'unstaged',
+        parents: [stagedCount > 0 ? 'staged' : headHash],
+        decorations: '',
+        subject: `untracked files on ${status?.branch || 'main'}`,
+        author: '*',
+        date: 'Now',
+        timestamp: baseTime + 2,
+        isUncommitted: true
+      });
+    }
+
+    if (stagedCount > 0) {
+      uncommittedItems.push({
+        hash: 'staged',
+        parents: [headHash],
+        decorations: '',
+        subject: `Index on ${status?.branch || 'main'}`,
+        author: '*',
+        date: 'Now',
+        timestamp: baseTime + 1,
+        isUncommitted: true
+      });
+    }
+
+    if (uncommittedItems.length > 0) {
+      historyWithUncommitted = [...uncommittedItems, ...history];
+    }
+
+    const graphRows = computeGraphData(historyWithUncommitted);
+    let maxTracks = 1;
+    graphRows.forEach(row => {
+      maxTracks = Math.max(maxTracks, row.incomingTracks.length, row.outgoingTracks.length);
+    });
+
+    const hashToIndexMap = new Map<string, { index: number; isHEAD: boolean }>();
+    historyWithUncommitted.forEach((item, index) => {
+      hashToIndexMap.set(item.hash, { index, isHEAD: !!item.isHEAD });
+    });
+
+    return {
+      historyWithUncommitted,
+      graphRows,
+      maxTracks,
+      hashToIndexMap
+    };
+  }, [history, status?.staged, status?.unstaged, status?.branch]);
+
   const { parsedLines, hiddenDiffLineCount } = useMemo(() => {
     if (!diff) return { parsedLines: [], hiddenDiffLineCount: 0 };
     const lines = diff.split('\n');
@@ -278,6 +338,19 @@ export const GitPanel: React.FC<GitPanelProps> = ({ cwd, onClose, width, onResiz
   useEffect(() => {
     selectedFileRef.current = selectedFile;
   }, [selectedFile]);
+
+  useEffect(() => {
+    const handleUndone = (e: Event) => {
+      const customEvent = e as CustomEvent;
+      if (customEvent.detail?.message) {
+        setCommitMessage(customEvent.detail.message);
+      }
+    };
+    window.addEventListener('git-undone-commit', handleUndone);
+    return () => {
+      window.removeEventListener('git-undone-commit', handleUndone);
+    };
+  }, []);
 
   useEffect(() => {
     if (isDropdownOpen) {
@@ -637,6 +710,18 @@ export const GitPanel: React.FC<GitPanelProps> = ({ cwd, onClose, width, onResiz
     }
   };
 
+  const handleDiscardAll = async () => {
+    if (!confirm('Are you sure you want to discard ALL unstaged changes? This cannot be undone.')) {
+      return;
+    }
+    try {
+      await window.terminalApi.gitDiscardAll({ cwd });
+      await loadStatus();
+    } catch (err) {
+      alert('Failed to discard all changes: ' + err);
+    }
+  };
+
   const handleStageAll = async () => {
     try {
       await window.terminalApi.gitStageAll({ cwd });
@@ -675,6 +760,13 @@ export const GitPanel: React.FC<GitPanelProps> = ({ cwd, onClose, width, onResiz
       alert('Failed to commit: ' + err);
     } finally {
       setCommitLoading(false);
+    }
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+      e.preventDefault();
+      handleCommit(e);
     }
   };
 
@@ -774,6 +866,14 @@ export const GitPanel: React.FC<GitPanelProps> = ({ cwd, onClose, width, onResiz
   const RefreshIcon = () => (
     <svg className={`git-svg-icon ${isRefreshing ? 'spin' : ''}`} viewBox="0 0 16 16" width="14" height="14">
       <path fill="currentColor" d="M8 3a5 5 0 1 0 4.546 2.914.75.75 0 0 1 1.364-.628A6.5 6.5 0 1 1 8 1.5c1.479 0 2.87.492 4 1.332V1.25a.75.75 0 0 1 1.5 0v3.75a.75.75 0 0 1-.75.75h-3.75a.75.75 0 0 1 0-1.5h1.86A4.985 4.985 0 0 0 8 3z"/>
+    </svg>
+  );
+
+  const SparklesIcon = () => (
+    <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ opacity: 0.6 }}>
+      <path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z" />
+      <path d="m5 3 1 2.5L8.5 6 6 7 5 9.5 4 7 1.5 6 4 5.5z" />
+      <path d="m19 17 1 2.5 2.5.5-2.5 1-1 2.5-1-2.5-2.5-1 2.5-1z" />
     </svg>
   );
 
@@ -899,13 +999,50 @@ export const GitPanel: React.FC<GitPanelProps> = ({ cwd, onClose, width, onResiz
 
       {activeTab === 'changes' ? (
         <div className="git-tab-content">
+          <form className="git-commit-container" onSubmit={handleCommit}>
+            <div className="git-commit-input-wrapper">
+              <textarea
+                className="git-commit-input"
+                value={commitMessage}
+                onChange={(e) => setCommitMessage(e.target.value)}
+                onKeyDown={handleKeyDown}
+                placeholder={`Message (${navigator.platform.toUpperCase().indexOf('MAC') >= 0 ? '⌘Enter' : 'Ctrl+Enter'} to commit on "${status?.branch || 'master'}")`}
+                rows={1}
+              />
+              <div className="git-commit-input-icon">
+                <SparklesIcon />
+              </div>
+            </div>
+            <button
+              type="submit"
+              className="git-commit-btn"
+              disabled={commitLoading || !commitMessage.trim()}
+            >
+              {commitLoading ? (
+                <span>Committing...</span>
+              ) : (
+                <>
+                  <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', paddingLeft: '20px' }}>
+                    <svg className="git-commit-btn-check" viewBox="0 0 16 16" width="14" height="14" fill="currentColor">
+                      <path d="M13.78 4.22a.75.75 0 0 1 0 1.06l-7.25 7.25a.75.75 0 0 1-1.06 0L2.22 9.28a.75.75 0 0 1 1.06-1.06L6 10.94l6.72-6.72a.75.75 0 0 1 1.06 0z"/>
+                    </svg>
+                    <span>Commit</span>
+                  </div>
+                  <div className="git-commit-btn-divider" style={{ width: '1px', height: '100%', background: 'rgba(255, 255, 255, 0.2)', margin: '0 8px' }} />
+                  <svg className="git-commit-btn-chevron" viewBox="0 0 16 16" width="12" height="12" fill="currentColor" style={{ marginRight: '4px' }}>
+                    <path d="M4.47 5.47a.75.75 0 0 1 1.06 0L8 7.94l2.47-2.47a.75.75 0 1 1 1.06 1.06l-3 3a.75.75 0 0 1-1.06 0l-3-3a.75.75 0 0 1 0-1.06z"/>
+                  </svg>
+                </>
+              )}
+            </button>
+          </form>
           {/* Changes content wrapper */}
           <div className="git-changes-scroll-area" style={{ height: fileListHeight, flex: 'none' }}>
             {/* STAGED SECTION */}
             <div className="git-section-header" onClick={() => setIsStagedCollapsed(!isStagedCollapsed)}>
               <div className="git-section-header-left">
                 <ChevronIcon collapsed={isStagedCollapsed} />
-                <span>STAGED</span>
+                <span>Staged Changes</span>
                 <span className="git-section-count">{stagedCount}</span>
               </div>
               {stagedCount > 0 && (
@@ -963,20 +1100,32 @@ export const GitPanel: React.FC<GitPanelProps> = ({ cwd, onClose, width, onResiz
             <div className="git-section-header" onClick={() => setIsUnstagedCollapsed(!isUnstagedCollapsed)}>
               <div className="git-section-header-left">
                 <ChevronIcon collapsed={isUnstagedCollapsed} />
-                <span>CHANGES</span>
+                <span>Changes</span>
                 <span className="git-section-count">{unstagedCount}</span>
               </div>
               {unstagedCount > 0 && (
-                <button
-                  className="git-section-action-btn"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleStageAll();
-                  }}
-                  title="Stage all"
-                >
-                  <PlusIcon />
-                </button>
+                <div className="git-section-actions" onClick={(e) => e.stopPropagation()}>
+                  <button
+                    className="git-section-action-btn"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleDiscardAll();
+                    }}
+                    title="Discard all changes"
+                  >
+                    <MinusIcon />
+                  </button>
+                  <button
+                    className="git-section-action-btn"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleStageAll();
+                    }}
+                    title="Stage all"
+                  >
+                    <PlusIcon />
+                  </button>
+                </div>
               )}
             </div>
 
@@ -1006,7 +1155,7 @@ export const GitPanel: React.FC<GitPanelProps> = ({ cwd, onClose, width, onResiz
                               onClick={(e) => handleDiscardFile(e, file.path, file.status === '?')}
                               title="Discard changes"
                             >
-                              <RollbackIcon />
+                              <MinusIcon />
                             </button>
                             <button
                               className="git-row-action-btn stage"
@@ -1072,43 +1221,6 @@ export const GitPanel: React.FC<GitPanelProps> = ({ cwd, onClose, width, onResiz
       ) : (
         /* HISTORY TAB CONTENT */
         (() => {
-          const stagedCount = status.staged?.length || 0;
-          const unstagedCount = status.unstaged?.length || 0;
-
-          let historyWithUncommitted = [...history];
-          const uncommittedItems: CommitHistoryItem[] = [];
-          const headHash = history[0]?.hash || 'HEAD';
-
-          if (unstagedCount > 0) {
-            uncommittedItems.push({
-              hash: 'unstaged',
-              parents: [stagedCount > 0 ? 'staged' : headHash],
-              decorations: '',
-              subject: `untracked files on ${status.branch || 'main'}`,
-              author: '*',
-              date: 'Now',
-              timestamp: Date.now() / 1000 + 2,
-              isUncommitted: true
-            });
-          }
-
-          if (stagedCount > 0) {
-            uncommittedItems.push({
-              hash: 'staged',
-              parents: [headHash],
-              decorations: '',
-              subject: `Index on ${status.branch || 'main'}`,
-              author: '*',
-              date: 'Now',
-              timestamp: Date.now() / 1000 + 1,
-              isUncommitted: true
-            });
-          }
-
-          if (uncommittedItems.length > 0) {
-            historyWithUncommitted = [...uncommittedItems, ...history];
-          }
-
           if (historyLoading) {
             return (
               <div className="git-tab-content history-tab">
@@ -1129,12 +1241,6 @@ export const GitPanel: React.FC<GitPanelProps> = ({ cwd, onClose, width, onResiz
               </div>
             );
           }
-
-          const graphRows = computeGraphData(historyWithUncommitted);
-          let maxTracks = 1;
-          graphRows.forEach(row => {
-            maxTracks = Math.max(maxTracks, row.incomingTracks.length, row.outgoingTracks.length);
-          });
 
           const colWidth = 14;
           const paddingX = 24;
@@ -1193,6 +1299,8 @@ export const GitPanel: React.FC<GitPanelProps> = ({ cwd, onClose, width, onResiz
                                 colWidth={colWidth}
                                 paddingX={paddingX}
                                 getColorForHash={getColorForHash}
+                                rowIdx={i}
+                                hashToIndexMap={hashToIndexMap}
                               />
                             </td>
                             <td className="col-desc" style={{ width: columnWidths.desc, minWidth: columnWidths.desc, maxWidth: columnWidths.desc }} title={commit.subject}>
@@ -1244,7 +1352,7 @@ const hashColors = new Map<string, string>();
 let colorCounter = 0;
 
 function getColorForHash(hash: string): string {
-  if (!hash || hash === 'uncommitted') return '#8b949e';
+  if (!hash || hash === 'uncommitted' || hash === 'unstaged' || hash === 'staged') return '#8b949e';
   if (!hashColors.has(hash)) {
     const color = TRACK_COLORS[colorCounter % TRACK_COLORS.length];
     hashColors.set(hash, color);
@@ -1640,6 +1748,8 @@ interface GraphCellProps {
   colWidth: number;
   paddingX: number;
   getColorForHash: (hash: string) => string;
+  rowIdx: number;
+  hashToIndexMap: Map<string, { index: number; isHEAD: boolean }>;
 }
 
 const GraphCell: React.FC<GraphCellProps> = ({
@@ -1652,7 +1762,9 @@ const GraphCell: React.FC<GraphCellProps> = ({
   rowHeight,
   colWidth,
   paddingX,
-  getColorForHash
+  getColorForHash,
+  rowIdx,
+  hashToIndexMap
 }) => {
   const yMid = rowHeight / 2;
   const xDot = col * colWidth + paddingX;
@@ -1662,7 +1774,17 @@ const GraphCell: React.FC<GraphCellProps> = ({
 
   incomingTracks.forEach((hash, idx) => {
     const xStart = idx * colWidth + paddingX;
-    const color = getColorForHash(hash);
+    
+    // Determine if this incoming track is part of the uncommitted segments above the HEAD commit
+    const lookup = hashToIndexMap.get(hash);
+    const commitIdx = lookup ? lookup.index : -1;
+    const isHEAD = lookup ? lookup.isHEAD : false;
+
+    const color = (hash === 'unstaged' || hash === 'staged' || hash === 'uncommitted')
+      ? '#8b949e'
+      : (commitIdx !== -1 && isHEAD && rowIdx < commitIdx)
+        ? '#8b949e'
+        : getColorForHash(hash);
 
     if (idx === col) {
       if (!isBranchHead) {
@@ -1674,7 +1796,7 @@ const GraphCell: React.FC<GraphCellProps> = ({
             x2={xStart}
             y2={yMid}
             stroke={color}
-            strokeWidth={2}
+            strokeWidth={color === '#8b949e' ? 1.5 : 2}
             strokeLinecap="round"
           />
         );
@@ -1689,7 +1811,7 @@ const GraphCell: React.FC<GraphCellProps> = ({
             d={`M ${xStart} 0 C ${xStart} ${yMid}, ${xEnd} ${yMid}, ${xEnd} ${rowHeight}`}
             stroke={color}
             fill="none"
-            strokeWidth={2}
+            strokeWidth={color === '#8b949e' ? 1.5 : 2}
             strokeLinecap="round"
           />
         );
@@ -1702,7 +1824,11 @@ const GraphCell: React.FC<GraphCellProps> = ({
     const outIdx = outgoingTracks.indexOf(parentHash);
     if (outIdx !== -1) {
       const xEnd = outIdx * colWidth + paddingX;
-      const color = getColorForHash(parentHash);
+      
+      // Determine parent connection line color: if the commit itself is uncommitted, the link to its parent is grey
+      const color = commit.isUncommitted
+        ? '#8b949e'
+        : getColorForHash(parentHash);
 
       paths.push(
         <path
@@ -1710,7 +1836,7 @@ const GraphCell: React.FC<GraphCellProps> = ({
           d={`M ${xDot} ${yMid} C ${xDot} ${yMid + 8}, ${xEnd} ${yMid + 8}, ${xEnd} ${rowHeight}`}
           stroke={color}
           fill="none"
-          strokeWidth={2}
+          strokeWidth={color === '#8b949e' ? 1.5 : 2.2}
           strokeLinecap="round"
         />
       );
