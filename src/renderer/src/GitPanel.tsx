@@ -1298,7 +1298,6 @@ export const GitPanel: React.FC<GitPanelProps> = ({ cwd, onClose, width, onResiz
                                 rowHeight={rowHeight}
                                 colWidth={colWidth}
                                 paddingX={paddingX}
-                                getColorForHash={getColorForHash}
                                 rowIdx={i}
                                 hashToIndexMap={hashToIndexMap}
                               />
@@ -1359,6 +1358,10 @@ function getColorForHash(hash: string): string {
     colorCounter++;
   }
   return hashColors.get(hash)!;
+}
+
+function getColorForCol(colIndex: number): string {
+  return TRACK_COLORS[colIndex % TRACK_COLORS.length];
 }
 
 interface RefDecoration {
@@ -1747,7 +1750,6 @@ interface GraphCellProps {
   rowHeight: number;
   colWidth: number;
   paddingX: number;
-  getColorForHash: (hash: string) => string;
   rowIdx: number;
   hashToIndexMap: Map<string, { index: number; isHEAD: boolean }>;
 }
@@ -1762,13 +1764,12 @@ const GraphCell: React.FC<GraphCellProps> = ({
   rowHeight,
   colWidth,
   paddingX,
-  getColorForHash,
   rowIdx,
   hashToIndexMap
 }) => {
   const yMid = rowHeight / 2;
   const xDot = col * colWidth + paddingX;
-  const dotColor = commit.isUncommitted ? '#8b949e' : getColorForHash(commit.hash);
+  const dotColor = commit.isUncommitted ? '#8b949e' : getColorForCol(col);
 
   const paths: React.ReactNode[] = [];
 
@@ -1784,7 +1785,7 @@ const GraphCell: React.FC<GraphCellProps> = ({
       ? '#8b949e'
       : (commitIdx !== -1 && isHEAD && rowIdx < commitIdx)
         ? '#8b949e'
-        : getColorForHash(hash);
+        : getColorForCol(idx);
 
     if (idx === col) {
       if (!isBranchHead) {
@@ -1828,7 +1829,7 @@ const GraphCell: React.FC<GraphCellProps> = ({
       // Determine parent connection line color: if the commit itself is uncommitted, the link to its parent is grey
       const color = commit.isUncommitted
         ? '#8b949e'
-        : getColorForHash(parentHash);
+        : getColorForCol(col);
 
       paths.push(
         <path
