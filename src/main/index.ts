@@ -5,7 +5,7 @@ import { delimiter, dirname, extname, join } from 'node:path';
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { readFile, readdir, stat } from 'node:fs/promises';
 import { createServer } from 'node:http';
-import type { IncomingMessage } from 'node:http';
+import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { Socket } from 'node:net';
 import os from 'node:os';
 import * as pty from 'node-pty';
@@ -13,6 +13,7 @@ import * as pty from 'node-pty';
 type TerminalCreateRequest = {
   cwd?: string;
   shell?: string;
+  paneId?: string;
 };
 
 type TerminalShellOption = {
@@ -102,9 +103,62 @@ type AgentOpenPaneRequest = {
   workspaceId: string;
 };
 
+type AgentBridgePane = {
+  paneId: string;
+  workspaceId: string;
+  workspaceName: string;
+  title: string;
+  cwd?: string;
+  shell?: string;
+  browserUrl?: string;
+  active: boolean;
+  pinned: boolean;
+  running: boolean;
+};
+
+type AgentBridgeWorkspace = {
+  id: string;
+  name: string;
+  active: boolean;
+};
+
+type AgentBridgeSnapshot = {
+  activeWorkspaceId: string;
+  activePaneId: string;
+  workspaces: AgentBridgeWorkspace[];
+  panes: AgentBridgePane[];
+};
+
+type AgentBridgeRequest = {
+  action?: string;
+  paneId?: string;
+  workspaceId?: string;
+  text?: string;
+  url?: string;
+  direction?: 'row' | 'column';
+  title?: string;
+};
+
+type AgentBridgeRendererRequest = {
+  id: string;
+  action: 'notifyDone' | 'focusPane' | 'splitPane';
+  paneId: string;
+  workspaceId?: string;
+  direction?: 'row' | 'column';
+  title?: string;
+};
+
+type AgentBridgeRendererResponse = {
+  id: string;
+  result?: unknown;
+  error?: string;
+};
+
 const terminals = new Map<string, pty.IPty>();
 const terminalCwds = new Map<string, string>();
 const terminalOscBuffers = new Map<string, string>();
+const paneTerminalIds = new Map<string, string>();
+const terminalPaneIds = new Map<string, string>();
 let mainWindow: BrowserWindow | null = null;
 let agentDoneOverlayWindow: BrowserWindow | null = null;
 let agentDoneOverlayItems: AgentDoneOverlayItem[] = [];
@@ -137,10 +191,21 @@ const DEFAULT_BROWSER_URL = 'http://localhost:3000';
 const DEFAULT_BROWSER_DEBUG_URL = 'http://127.0.0.1:9222';
 const BROWSER_BRIDGE_PORT = 17321;
 const BROWSER_BRIDGE_TIMEOUT_MS = 5000;
+const AGENT_BRIDGE_PORT = 17322;
+const AGENT_BRIDGE_MAX_BODY_BYTES = 64 * 1024;
+const AGENT_BRIDGE_TOKEN = randomUUID();
+const AGENT_BRIDGE_STATE_PATH = '/tmp/carogent-agent-bridge.json';
 const browserBridgeClients = new Set<BrowserBridgeClient>();
 const browserBridgePending = new Map<string, (result: BrowserBridgeCommandResult) => void>();
 let browserBridgeLastError: string | undefined;
 let browserBridgeEnabled = true;
+let agentBridgeSnapshot: AgentBridgeSnapshot = {
+  activeWorkspaceId: '',
+  activePaneId: '',
+  workspaces: [],
+  panes: []
+};
+const agentBridgePending = new Map<string, (response: AgentBridgeRendererResponse) => void>();
 
 function getAppIconPath(): string {
   return join(__dirname, '../../build/icon.png');
@@ -327,7 +392,7 @@ function getShellArgs(shell: string): string[] {
   return [];
 }
 
-function getTerminalEnv(shell: string): NodeJS.ProcessEnv {
+function getTerminalEnv(shell: string, paneId?: string): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = { ...process.env };
 
   for (const key of Object.keys(env)) {
@@ -359,6 +424,11 @@ function getTerminalEnv(shell: string): NodeJS.ProcessEnv {
   env.TERM = 'xterm-256color';
   env.COLORTERM = 'truecolor';
   env.TERM_PROGRAM = 'Carogent';
+  env.CAROGENT_BRIDGE_URL = `http://127.0.0.1:${AGENT_BRIDGE_PORT}`;
+  env.CAROGENT_AGENT_TOKEN = AGENT_BRIDGE_TOKEN;
+  if (paneId) {
+    env.CAROGENT_PANE_ID = paneId;
+  }
 
   const shellName = shell.split(/[\\/]/).pop()?.toLowerCase();
 
@@ -702,6 +772,11 @@ function killTerminal(id: string): void {
   terminals.delete(id);
   terminalCwds.delete(id);
   terminalOscBuffers.delete(id);
+  const paneId = terminalPaneIds.get(id);
+  if (paneId) {
+    paneTerminalIds.delete(paneId);
+  }
+  terminalPaneIds.delete(id);
 }
 
 async function listDirectory(request: DirectoryListRequest): Promise<{
@@ -1146,9 +1221,256 @@ async function openOrFocusBrowser(request: OpenBrowserRequest): Promise<void> {
   await electronShell.openExternal(targetUrl.href);
 }
 
+function findAgentBridgePane(paneId?: string): AgentBridgePane | undefined {
+  if (!paneId) {
+    return undefined;
+  }
+
+  return agentBridgeSnapshot.panes.find((pane) => pane.paneId === paneId);
+}
+
+function resolveAgentBridgePaneId(request: AgentBridgeRequest): string {
+  const paneId = request.paneId?.trim() || agentBridgeSnapshot.activePaneId;
+
+  if (!paneId) {
+    throw new Error('No target pane. Pass paneId or focus a Carogent pane first.');
+  }
+
+  if (!findAgentBridgePane(paneId)) {
+    throw new Error(`Pane not found: ${paneId}`);
+  }
+
+  return paneId;
+}
+
+function sendJson(response: ServerResponse, statusCode: number, payload: unknown): void {
+  response.writeHead(statusCode, {
+    'content-type': 'application/json; charset=utf-8',
+    'cache-control': 'no-store'
+  });
+  response.end(JSON.stringify(payload));
+}
+
+function isAuthorizedAgentRequest(request: IncomingMessage): boolean {
+  return request.headers.authorization === `Bearer ${AGENT_BRIDGE_TOKEN}`;
+}
+
+function readJsonBody(request: IncomingMessage): Promise<AgentBridgeRequest> {
+  return new Promise((resolve, reject) => {
+    const chunks: Buffer[] = [];
+    let size = 0;
+
+    request.on('data', (chunk: Buffer) => {
+      size += chunk.length;
+
+      if (size > AGENT_BRIDGE_MAX_BODY_BYTES) {
+        reject(new Error('Request body too large.'));
+        request.destroy();
+        return;
+      }
+
+      chunks.push(chunk);
+    });
+
+    request.on('end', () => {
+      if (chunks.length === 0) {
+        resolve({});
+        return;
+      }
+
+      try {
+        resolve(JSON.parse(Buffer.concat(chunks).toString('utf8')) as AgentBridgeRequest);
+      } catch {
+        reject(new Error('Invalid JSON body.'));
+      }
+    });
+
+    request.on('error', reject);
+  });
+}
+
+function dispatchAgentBridgeRendererRequest(
+  payload: Omit<AgentBridgeRendererRequest, 'id'>
+): Promise<unknown> {
+  const window = mainWindow;
+
+  if (!window || window.isDestroyed()) {
+    return Promise.reject(new Error('Carogent renderer is not ready.'));
+  }
+
+  const id = randomUUID();
+  const request: AgentBridgeRendererRequest = { id, ...payload };
+
+  return new Promise((resolve, reject) => {
+    const timeout = setTimeout(() => {
+      agentBridgePending.delete(id);
+      reject(new Error('Timed out waiting for Carogent renderer.'));
+    }, 5000);
+
+    agentBridgePending.set(id, (response) => {
+      clearTimeout(timeout);
+
+      if (response.error) {
+        reject(new Error(response.error));
+        return;
+      }
+
+      resolve(response.result);
+    });
+
+    window.webContents.send('agent-bridge:request', request);
+  });
+}
+
+async function handleAgentBridgeAction(body: AgentBridgeRequest): Promise<unknown> {
+  switch (body.action) {
+    case undefined:
+    case 'status':
+      return {
+        ok: true,
+        version: '1',
+        activeWorkspaceId: agentBridgeSnapshot.activeWorkspaceId,
+        activePaneId: agentBridgeSnapshot.activePaneId,
+        workspaceCount: agentBridgeSnapshot.workspaces.length,
+        paneCount: agentBridgeSnapshot.panes.length
+      };
+
+    case 'list_workspaces':
+      return { workspaces: agentBridgeSnapshot.workspaces };
+
+    case 'list_panes':
+      return { panes: agentBridgeSnapshot.panes };
+
+    case 'insert_text': {
+      const paneId = resolveAgentBridgePaneId(body);
+      const text = body.text;
+
+      if (typeof text !== 'string') {
+        throw new Error('insert_text requires text.');
+      }
+
+      const terminalId = paneTerminalIds.get(paneId);
+
+      if (!terminalId || !terminals.has(terminalId)) {
+        throw new Error(`Pane is not running: ${paneId}`);
+      }
+
+      terminals.get(terminalId)?.write(text);
+      return { paneId, inserted: text.length };
+    }
+
+    case 'focus_pane': {
+      const paneId = resolveAgentBridgePaneId(body);
+      const pane = findAgentBridgePane(paneId);
+
+      if (!pane) {
+        throw new Error(`Pane not found: ${paneId}`);
+      }
+
+      if (mainWindow?.isMinimized()) {
+        mainWindow.restore();
+      }
+
+      mainWindow?.show();
+      mainWindow?.focus();
+      await dispatchAgentBridgeRendererRequest({
+        action: 'focusPane',
+        paneId,
+        workspaceId: body.workspaceId || pane.workspaceId
+      });
+      return { paneId, workspaceId: body.workspaceId || pane.workspaceId };
+    }
+
+    case 'notify_done': {
+      const paneId = resolveAgentBridgePaneId(body);
+      const pane = findAgentBridgePane(paneId);
+
+      if (!pane) {
+        throw new Error(`Pane not found: ${paneId}`);
+      }
+
+      return dispatchAgentBridgeRendererRequest({
+        action: 'notifyDone',
+        paneId,
+        workspaceId: body.workspaceId || pane.workspaceId
+      });
+    }
+
+    case 'open_browser': {
+      const pane = findAgentBridgePane(body.paneId);
+      await openOrFocusBrowser({ url: body.url || pane?.browserUrl });
+      return { opened: body.url || pane?.browserUrl || DEFAULT_BROWSER_URL };
+    }
+
+    case 'open_vscode': {
+      const paneId = resolveAgentBridgePaneId(body);
+      const pane = findAgentBridgePane(paneId);
+      await openVSCode({ path: pane?.cwd });
+      return { paneId, path: pane?.cwd || os.homedir() };
+    }
+
+    case 'split_pane': {
+      const paneId = resolveAgentBridgePaneId(body);
+      const direction = body.direction || 'row';
+      const title = body.title;
+
+      return dispatchAgentBridgeRendererRequest({
+        action: 'splitPane',
+        paneId,
+        direction,
+        title
+      });
+    }
+
+    default:
+      throw new Error(`Unknown action: ${body.action}`);
+  }
+}
+
+function startAgentBridgeServer(): void {
+  writeFileSync(
+    AGENT_BRIDGE_STATE_PATH,
+    JSON.stringify({
+      bridgeUrl: `http://127.0.0.1:${AGENT_BRIDGE_PORT}`,
+      agentToken: AGENT_BRIDGE_TOKEN
+    }),
+    { encoding: 'utf8', mode: 0o600 }
+  );
+
+  const server = createServer(async (request, response) => {
+    if (request.url !== '/mcp' || request.method !== 'POST') {
+      sendJson(response, 404, { error: 'Not found.' });
+      return;
+    }
+
+    if (!isAuthorizedAgentRequest(request)) {
+      sendJson(response, 401, { error: 'Unauthorized.' });
+      return;
+    }
+
+    try {
+      const body = await readJsonBody(request);
+      const result = await handleAgentBridgeAction(body);
+      sendJson(response, 200, { ok: true, result });
+    } catch (error) {
+      sendJson(response, 400, {
+        ok: false,
+        error: error instanceof Error ? error.message : String(error)
+      });
+    }
+  });
+
+  server.on('error', () => {
+    // Another Carogent instance may own the agent bridge port.
+  });
+
+  server.listen(AGENT_BRIDGE_PORT, '127.0.0.1');
+}
+
 app.whenReady().then(() => {
   showDockIcon();
   startBrowserBridgeServer();
+  startAgentBridgeServer();
 
   ipcMain.handle('terminal:get-shell-options', () => getShellOptions());
 
@@ -1157,6 +1479,19 @@ app.whenReady().then(() => {
   ipcMain.handle('workspace:open-vscode', (_event, request: OpenVSCodeRequest = {}) => openVSCode(request));
   ipcMain.handle('browser:open-or-focus', (_event, request: OpenBrowserRequest = {}) => openOrFocusBrowser(request));
   ipcMain.handle('browser:get-bridge-status', () => getBrowserBridgeStatus());
+  ipcMain.handle('agent-bridge:update-snapshot', (_event, snapshot: AgentBridgeSnapshot) => {
+    agentBridgeSnapshot = snapshot;
+  });
+  ipcMain.handle('agent-bridge:complete-request', (_event, response: AgentBridgeRendererResponse) => {
+    const resolve = agentBridgePending.get(response.id);
+
+    if (!resolve) {
+      return;
+    }
+
+    agentBridgePending.delete(response.id);
+    resolve(response);
+  });
   ipcMain.handle('agent-overlay:get-items', () => agentDoneOverlayItems);
   ipcMain.handle('agent-overlay:get-visible', () => agentDoneOverlayEnabled);
   ipcMain.handle('agent-overlay:show-done', (_event, item: AgentDoneOverlayItem) => {
@@ -1206,11 +1541,15 @@ app.whenReady().then(() => {
       cols: 100,
       rows: 30,
       cwd,
-      env: getTerminalEnv(shell)
+      env: getTerminalEnv(shell, request.paneId)
     });
 
     terminals.set(id, terminal);
     terminalCwds.set(id, cwd);
+    if (request.paneId) {
+      paneTerminalIds.set(request.paneId, id);
+      terminalPaneIds.set(id, request.paneId);
+    }
 
     terminal.onData((data) => {
       parseTerminalCwdReports(id, data);
@@ -1221,6 +1560,11 @@ app.whenReady().then(() => {
       terminals.delete(id);
       terminalCwds.delete(id);
       terminalOscBuffers.delete(id);
+      const paneId = terminalPaneIds.get(id);
+      if (paneId) {
+        paneTerminalIds.delete(paneId);
+      }
+      terminalPaneIds.delete(id);
       mainWindow?.webContents.send('terminal:exit', { id, exitCode, signal });
     });
 

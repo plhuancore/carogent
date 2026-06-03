@@ -455,6 +455,23 @@ function isImageFile(entry: DirectoryEntry): boolean {
   return entry.type === 'file' && /\.(png|jpe?g|gif|webp|bmp|svg)$/i.test(entry.name);
 }
 
+function getTerminalPreviewLines(session: TerminalSession): string[] {
+  const buffer = session.terminal.buffer.active;
+  const lines: string[] = [];
+  const end = Math.min(buffer.length - 1, Math.max(6, buffer.baseY + buffer.cursorY));
+  const start = Math.max(0, end - 6);
+
+  for (let index = start; index <= end; index += 1) {
+    const line = buffer.getLine(index);
+
+    if (line) {
+      lines.push(line.translateToString(true));
+    }
+  }
+
+  return lines;
+}
+
 function App(): JSX.Element {
   const initialStore = useMemo(() => loadWorkspaceStore(), []);
   const [workspaces, setWorkspaces] = useState<WorkspaceState[]>(() => initialStore.workspaces);
@@ -574,20 +591,7 @@ function App(): JSX.Element {
       if (doneItem) {
         const session = sessions.current.get(paneId);
         if (session) {
-          const term = session.terminal;
-          const buffer = term.buffer.active;
-          const lines: string[] = [];
-          
-          // Use cursor-aware positioning to grab active lines instead of empty terminal viewport bottom (7 lines)
-          const end = Math.min(buffer.length - 1, Math.max(6, buffer.baseY + buffer.cursorY));
-          const start = Math.max(0, end - 6);
-          for (let i = start; i <= end; i++) {
-            const line = buffer.getLine(i);
-            if (line) {
-              lines.push(line.translateToString(true));
-            }
-          }
-          doneItem.lines = lines;
+          doneItem.lines = getTerminalPreviewLines(session);
         }
         window.terminalApi
           .showAgentDoneOverlay(doneItem)
@@ -637,20 +641,7 @@ function App(): JSX.Element {
         if (doneItem) {
           const session = sessions.current.get(paneId);
           if (session) {
-            const term = session.terminal;
-            const buffer = term.buffer.active;
-            const lines: string[] = [];
-            
-            // Grab 7 lines of active terminal preview
-            const end = Math.min(buffer.length - 1, Math.max(6, buffer.baseY + buffer.cursorY));
-            const start = Math.max(0, end - 6);
-            for (let i = start; i <= end; i++) {
-              const line = buffer.getLine(i);
-              if (line) {
-                lines.push(line.translateToString(true));
-              }
-            }
-            doneItem.lines = lines;
+            doneItem.lines = getTerminalPreviewLines(session);
           }
           window.terminalApi
             .showAgentDoneOverlay(doneItem)
@@ -712,6 +703,141 @@ function App(): JSX.Element {
 
     return window.terminalApi.onBrowserBridgeStatus(setBrowserBridgeStatus);
   }, []);
+
+  useEffect(() => {
+    const panes: AgentBridgePane[] = [];
+
+    for (const workspace of workspaces) {
+      for (const paneId of listPaneIds(workspace.layout)) {
+        const pane = findPane(workspace.layout, paneId);
+
+        if (!pane) {
+          continue;
+        }
+
+        const session = sessions.current.get(paneId);
+        const title =
+          pane.customTitle ||
+          pane.title ||
+          (shellOptions?.length ? getShellTitle(shellOptions, pane.shell) : 'terminal');
+
+        panes.push({
+          paneId,
+          workspaceId: workspace.id,
+          workspaceName: workspace.name,
+          title,
+          cwd: session?.cwd || pane.cwd,
+          shell: session?.shell || pane.shell,
+          browserUrl: pane.browserUrl,
+          active: workspace.id === activeWorkspaceId && paneId === activePaneId,
+          pinned: pinnedPaneIds.has(paneId),
+          running: session?.status === 'running'
+        });
+      }
+    }
+
+    window.terminalApi
+      .updateAgentBridgeSnapshot({
+        activeWorkspaceId,
+        activePaneId,
+        workspaces: workspaces.map((workspace) => ({
+          id: workspace.id,
+          name: workspace.name,
+          active: workspace.id === activeWorkspaceId
+        })),
+        panes
+      })
+      .catch(() => {});
+  }, [activePaneId, activeWorkspaceId, pinnedPaneIds, shellOptions, workspaces]);
+
+  useEffect(() => {
+    return window.terminalApi.onAgentBridgeRequest((request) => {
+      const complete = (response: Omit<AgentBridgeRendererResponse, 'id'>): void => {
+        window.terminalApi.completeAgentBridgeRequest({ id: request.id, ...response }).catch(() => {});
+      };
+
+      try {
+        if (request.action === 'focusPane') {
+          setActiveWorkspaceId(request.workspaceId || activeWorkspaceId);
+          setWorkspaces((current) =>
+            current.map((workspace) =>
+              workspace.id === (request.workspaceId || activeWorkspaceId)
+                ? { ...workspace, activePaneId: request.paneId }
+                : workspace
+            )
+          );
+          complete({ result: { paneId: request.paneId, workspaceId: request.workspaceId || activeWorkspaceId } });
+          return;
+        }
+
+        if (request.action === 'notifyDone') {
+          const doneItem = getAgentDoneItem(request.paneId);
+
+          if (!doneItem) {
+            complete({ error: `Pane not found: ${request.paneId}` });
+            return;
+          }
+
+          const session = sessions.current.get(request.paneId);
+
+          if (session) {
+            doneItem.lines = getTerminalPreviewLines(session);
+          }
+
+          window.terminalApi
+            .showAgentDoneOverlay(doneItem)
+            .then((paneIds) => {
+              const nextIds = new Set(paneIds);
+              pinnedPaneIdsRef.current = nextIds;
+              setPinnedPaneIds(nextIds);
+              complete({ result: { paneId: request.paneId, pinnedPaneIds: paneIds } });
+            })
+            .catch((error: unknown) => complete({ error: String(error) }));
+          return;
+        }
+
+        if (request.action === 'splitPane') {
+          const targetPaneId = request.paneId;
+          const direction = request.direction || 'row';
+          const title = request.title;
+
+          let newPaneId = '';
+          updateActiveWorkspace((workspace) => {
+            const runtimeCwd = sessions.current.get(targetPaneId)?.cwd;
+            const layoutForSplit = runtimeCwd
+              ? updatePane(workspace.layout, targetPaneId, (pane) => ({
+                  ...pane,
+                  cwd: runtimeCwd
+                }))
+              : workspace.layout;
+            const result = splitPane(layoutForSplit, targetPaneId, direction);
+            newPaneId = result.newPaneId;
+
+            let nextLayout = result.layout;
+            if (title) {
+              nextLayout = updatePane(nextLayout, newPaneId, (pane) => ({
+                ...pane,
+                customTitle: title
+              }));
+            }
+
+            return {
+              ...workspace,
+              layout: nextLayout,
+              activePaneId: newPaneId
+            };
+          });
+
+          complete({ result: { paneId: newPaneId } });
+          return;
+        }
+
+        complete({ error: `Unknown renderer action: ${request.action}` });
+      } catch (error) {
+        complete({ error: error instanceof Error ? error.message : String(error) });
+      }
+    });
+  }, [activeWorkspaceId, getAgentDoneItem, updateActiveWorkspace]);
 
   useEffect(() => {
     const stopData = window.terminalApi.onData(({ id, data }) => {
@@ -850,7 +976,7 @@ function App(): JSX.Element {
     const requestedShell = getPaneShell(shellOptions, pane);
 
     window.terminalApi
-      .create({ cwd: pane.cwd, shell: requestedShell })
+      .create({ cwd: pane.cwd, shell: requestedShell, paneId: pane.paneId })
       .then(({ id, cwd, shell }) => {
         session.terminalId = id;
         session.cwd = cwd;

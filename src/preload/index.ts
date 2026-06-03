@@ -3,6 +3,7 @@ import { clipboard, contextBridge, ipcRenderer, webUtils } from 'electron';
 type TerminalCreateRequest = {
   cwd?: string;
   shell?: string;
+  paneId?: string;
 };
 
 type TerminalCreated = {
@@ -75,6 +76,45 @@ type AgentOpenPaneRequest = {
   workspaceId: string;
 };
 
+type AgentBridgePane = {
+  paneId: string;
+  workspaceId: string;
+  workspaceName: string;
+  title: string;
+  cwd?: string;
+  shell?: string;
+  browserUrl?: string;
+  active: boolean;
+  pinned: boolean;
+  running: boolean;
+};
+
+type AgentBridgeWorkspace = {
+  id: string;
+  name: string;
+  active: boolean;
+};
+
+type AgentBridgeSnapshot = {
+  activeWorkspaceId: string;
+  activePaneId: string;
+  workspaces: AgentBridgeWorkspace[];
+  panes: AgentBridgePane[];
+};
+
+type AgentBridgeRendererRequest = {
+  id: string;
+  action: 'notifyDone' | 'focusPane';
+  paneId: string;
+  workspaceId?: string;
+};
+
+type AgentBridgeRendererResponse = {
+  id: string;
+  result?: unknown;
+  error?: string;
+};
+
 const terminal = {
   getShellOptions: (): Promise<TerminalShellOption[]> =>
     ipcRenderer.invoke('terminal:get-shell-options'),
@@ -106,6 +146,10 @@ const terminal = {
     ipcRenderer.invoke('agent-overlay:set-visible', visible),
   focusCarogentApp: (): Promise<void> =>
     ipcRenderer.invoke('agent-overlay:focus-app'),
+  updateAgentBridgeSnapshot: (snapshot: AgentBridgeSnapshot): Promise<void> =>
+    ipcRenderer.invoke('agent-bridge:update-snapshot', snapshot),
+  completeAgentBridgeRequest: (response: AgentBridgeRendererResponse): Promise<void> =>
+    ipcRenderer.invoke('agent-bridge:complete-request', response),
   create: (request?: TerminalCreateRequest): Promise<TerminalCreated> =>
     ipcRenderer.invoke('terminal:create', request),
   resize: (request: { id: string; cols: number; rows: number }): Promise<void> =>
@@ -178,6 +222,15 @@ const terminal = {
     ipcRenderer.on('agent:open-pane', listener);
 
     return () => ipcRenderer.removeListener('agent:open-pane', listener);
+  },
+  onAgentBridgeRequest: (callback: (request: AgentBridgeRendererRequest) => void): (() => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, payload: AgentBridgeRendererRequest): void => {
+      callback(payload);
+    };
+
+    ipcRenderer.on('agent-bridge:request', listener);
+
+    return () => ipcRenderer.removeListener('agent-bridge:request', listener);
   },
   onExit: (callback: (event: TerminalExitEvent) => void): (() => void) => {
     const listener = (_event: Electron.IpcRendererEvent, payload: TerminalExitEvent): void => {

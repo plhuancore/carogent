@@ -3,6 +3,7 @@
 type TerminalCreateRequest = {
   cwd?: string;
   shell?: string;
+  paneId?: string;
 };
 
 type TerminalCreated = {
@@ -76,6 +77,47 @@ type AgentOpenPaneRequest = {
   workspaceId: string;
 };
 
+type AgentBridgePane = {
+  paneId: string;
+  workspaceId: string;
+  workspaceName: string;
+  title: string;
+  cwd?: string;
+  shell?: string;
+  browserUrl?: string;
+  active: boolean;
+  pinned: boolean;
+  running: boolean;
+};
+
+type AgentBridgeWorkspace = {
+  id: string;
+  name: string;
+  active: boolean;
+};
+
+type AgentBridgeSnapshot = {
+  activeWorkspaceId: string;
+  activePaneId: string;
+  workspaces: AgentBridgeWorkspace[];
+  panes: AgentBridgePane[];
+};
+
+type AgentBridgeRendererRequest = {
+  id: string;
+  action: 'notifyDone' | 'focusPane' | 'splitPane';
+  paneId: string;
+  workspaceId?: string;
+  direction?: 'row' | 'column';
+  title?: string;
+};
+
+type AgentBridgeRendererResponse = {
+  id: string;
+  result?: unknown;
+  error?: string;
+};
+
 interface Window {
   terminalApi: {
     getShellOptions: () => Promise<TerminalShellOption[]>;
@@ -93,6 +135,8 @@ interface Window {
     setAgentDoneOverlayExpanded: (expanded: boolean) => Promise<void>;
     setAgentDoneOverlayVisible: (visible: boolean) => Promise<boolean>;
     focusCarogentApp: () => Promise<void>;
+    updateAgentBridgeSnapshot: (snapshot: AgentBridgeSnapshot) => Promise<void>;
+    completeAgentBridgeRequest: (response: AgentBridgeRendererResponse) => Promise<void>;
     create: (request?: TerminalCreateRequest) => Promise<TerminalCreated>;
     resize: (request: { id: string; cols: number; rows: number }) => Promise<void>;
     write: (request: { id: string; data: string }) => Promise<void>;
@@ -107,6 +151,7 @@ interface Window {
     onAgentDoneOverlayVisible: (callback: (visible: boolean) => void) => () => void;
     onAgentDoneOverlayPinnedPaneIds: (callback: (paneIds: string[]) => void) => () => void;
     onOpenAgentPane: (callback: (request: AgentOpenPaneRequest) => void) => () => void;
+    onAgentBridgeRequest: (callback: (request: AgentBridgeRendererRequest) => void) => () => void;
     onExit: (callback: (event: TerminalExitEvent) => void) => () => void;
   };
 }

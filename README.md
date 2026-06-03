@@ -171,6 +171,42 @@ Use `Pin Current Shell to Floating Bar` from command mode or the pane toolbar to
 - Click the Carogent logo in the floating bar to focus the app.
 - Use the settings menu in the top-right corner and toggle `Floating Bar` to show or hide the floating bar. A checkmark appears when it is enabled.
 
+## Agent MCP
+
+Carogent exposes a local MCP control plane for agents launched from a Carogent terminal pane.
+
+Run the MCP server:
+
+```sh
+npm run mcp
+```
+
+MCP client config example (registered in your `mcp_config.json`):
+
+```json
+{
+  "mcpServers": {
+    "carogent": {
+      "command": "node",
+      "args": ["/Users/huanpham/MyProjects/carogent/scripts/carogent-mcp.mjs"]
+    }
+  }
+}
+```
+
+Available tools:
+
+- `carogent_status`: Check bridge connection status and active workspace/pane.
+- `list_workspaces`: List workspaces.
+- `list_panes`: List terminal panes with metadata (title, cwd, shell, browser URL, etc.).
+- `insert_text`: Insert text/keystrokes directly into a terminal pane without pressing Enter.
+- `focus_pane`: Focus Carogent and activate a specific pane.
+- `notify_done`: Pin or update a pane in the Carogent floating bar.
+- `open_browser`: Open or focus a browser URL (defaults to the pane's browser URL).
+- `open_vscode`: Open VS Code at a pane's current working directory.
+
+The app injects `CAROGENT_BRIDGE_URL`, `CAROGENT_AGENT_TOKEN`, and `CAROGENT_PANE_ID` into each Carogent shell. Run MCP clients from inside a Carogent pane so requests target the calling pane by default. The localhost bridge only accepts the current app-session token.
+
 For repository-specific setup, place the same content in:
 
 ```text
@@ -180,8 +216,8 @@ For repository-specific setup, place the same content in:
 Optional reusable skills can also live at:
 
 ```text
-~/.gemini/skills/carogent-agent-notify/SKILL.md
-~/.gemini/antigravity-cli/skills/carogent-agent-notify/SKILL.md
+~/.gemini/skills/carogent-terminal-control/SKILL.md
+~/.gemini/antigravity-cli/skills/carogent-terminal-control/SKILL.md
 ```
 
 The global `~/.gemini/GEMINI.md` file is the reliable automatic trigger for short prompts such as `say hi`. Skill metadata alone may not activate for every request.
