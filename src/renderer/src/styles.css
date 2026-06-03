@@ -3107,6 +3107,11 @@ rect.icon-accent {
   color: #8b949e;
 }
 
+.git-history-row.uncommitted-row .git-commit-subject {
+  color: #f0f6fc;
+  font-weight: 700;
+}
+
 .git-history-hash-label {
   color: #58a6ff;
   font-weight: 700;
@@ -3249,6 +3254,15 @@ rect.icon-accent {
 }
 
 .git-history-row:hover .git-graph-node-head {
+  fill: #161b22;
+}
+
+.git-graph-node-stash {
+  fill: #050607;
+  transition: fill 0.1s;
+}
+
+.git-history-row:hover .git-graph-node-stash {
   fill: #161b22;
 }
 

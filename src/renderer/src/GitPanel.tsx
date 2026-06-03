@@ -227,65 +227,40 @@ export const GitPanel: React.FC<GitPanelProps> = ({ cwd, onClose, width, onResiz
   const statusPromiseRef = useRef<Promise<void> | null>(null);
   const diffRequestIdRef = useRef(0);
 
-  const { historyWithUncommitted, graphRows, maxTracks, hashToIndexMap } = useMemo(() => {
+  const { historyForGraph, graphRows, hashToIndexMap } = useMemo(() => {
     const stagedCount = status?.staged?.length || 0;
     const unstagedCount = status?.unstaged?.length || 0;
-
-    let historyWithUncommitted = [...history];
-    const uncommittedItems: CommitHistoryItem[] = [];
+    const changeCount = stagedCount + unstagedCount;
     const actualHeadCommit = history.find((item) => item.isHEAD);
     const headHash = actualHeadCommit ? actualHeadCommit.hash : (history[0]?.hash || 'HEAD');
-
-    const baseTime = Date.now() / 1000;
-
-    if (unstagedCount > 0) {
-      uncommittedItems.push({
-        hash: 'unstaged',
-        parents: [stagedCount > 0 ? 'staged' : headHash],
-        decorations: '',
-        subject: `untracked files on ${status?.branch || 'main'}`,
-        author: '*',
-        date: 'Now',
-        timestamp: baseTime + 2,
-        isUncommitted: true
-      });
-    }
-
-    if (stagedCount > 0) {
-      uncommittedItems.push({
-        hash: 'staged',
-        parents: [headHash],
-        decorations: '',
-        subject: `Index on ${status?.branch || 'main'}`,
-        author: '*',
-        date: 'Now',
-        timestamp: baseTime + 1,
-        isUncommitted: true
-      });
-    }
-
-    if (uncommittedItems.length > 0) {
-      historyWithUncommitted = [...uncommittedItems, ...history];
-    }
-
-    const graphRows = computeGraphData(historyWithUncommitted);
-    let maxTracks = 1;
-    graphRows.forEach(row => {
-      maxTracks = Math.max(maxTracks, row.incomingTracks.length, row.outgoingTracks.length);
-    });
+    const historyForGraph = changeCount > 0
+      ? [
+          {
+            hash: 'uncommitted',
+            parents: [headHash],
+            decorations: '',
+            subject: `Uncommitted Changes (${changeCount})`,
+            author: '',
+            date: '',
+            timestamp: Date.now() / 1000,
+            isUncommitted: true
+          },
+          ...history
+        ]
+      : [...history];
+    const graphRows = computeGraphData(historyForGraph);
 
     const hashToIndexMap = new Map<string, { index: number; isHEAD: boolean }>();
-    historyWithUncommitted.forEach((item, index) => {
+    historyForGraph.forEach((item, index) => {
       hashToIndexMap.set(item.hash, { index, isHEAD: !!item.isHEAD });
     });
 
     return {
-      historyWithUncommitted,
+      historyForGraph,
       graphRows,
-      maxTracks,
       hashToIndexMap
     };
-  }, [history, status?.staged, status?.unstaged, status?.branch]);
+  }, [history, status?.staged, status?.unstaged]);
 
   const { parsedLines, hiddenDiffLineCount } = useMemo(() => {
     if (!diff) return { parsedLines: [], hiddenDiffLineCount: 0 };
@@ -576,8 +551,20 @@ export const GitPanel: React.FC<GitPanelProps> = ({ cwd, onClose, width, onResiz
             isHEAD
           };
         });
-      items.sort((a, b) => b.timestamp - a.timestamp);
-      setHistory(items);
+      const hiddenStashHelperHashes = new Set(
+        items
+          .filter(item => /^index on .+: /.test(item.subject) || /^untracked files on .+: /.test(item.subject))
+          .map(item => item.hash)
+      );
+      const visibleItems = items
+        .filter(item => !hiddenStashHelperHashes.has(item.hash))
+        .map(item => ({
+          ...item,
+          parents: item.parents.filter(parent => !hiddenStashHelperHashes.has(parent))
+        }));
+
+      visibleItems.sort((a, b) => b.timestamp - a.timestamp);
+      setHistory(visibleItems);
     } catch (err) {
       console.error('Failed to load history:', err);
     } finally {
@@ -1232,7 +1219,7 @@ export const GitPanel: React.FC<GitPanelProps> = ({ cwd, onClose, width, onResiz
             );
           }
 
-          if (historyWithUncommitted.length === 0) {
+          if (historyForGraph.length === 0) {
             return (
               <div className="git-tab-content history-tab">
                 <div className="git-empty-state">
@@ -1288,7 +1275,7 @@ export const GitPanel: React.FC<GitPanelProps> = ({ cwd, onClose, width, onResiz
                             className={`git-history-row ${isUncommitted ? 'uncommitted-row' : ''}`}
                             style={{ zIndex: 1000 - i }}
                           >
-                            <td className="col-graph" style={{ width: columnWidths.graph, minWidth: columnWidths.graph, maxWidth: columnWidths.graph }}>
+                            <td className="col-graph" style={{ width: columnWidths.graph, minWidth: columnWidths.graph, maxWidth: columnWidths.graph, position: 'relative', zIndex: 1000 - i }}>
                               <GraphCell
                                 col={row.col}
                                 incomingTracks={row.incomingTracks}
@@ -1771,6 +1758,14 @@ const GraphCell: React.FC<GraphCellProps> = ({
   const yMid = rowHeight / 2;
   const xDot = col * colWidth + paddingX;
   const dotColor = commit.isUncommitted ? '#8b949e' : getColorForCol(col);
+  const isStashCommit = commit.decorations.includes('refs/stash') || commit.subject.startsWith('WIP on ');
+  const stashColor = dotColor;
+  const nodeRadius = commit.isUncommitted || commit.isHEAD ? 5 : 4.5;
+  const branchStartY = yMid + nodeRadius;
+  const branchBendY = yMid + 7;
+  const nextNodeTopY = rowHeight + yMid - nodeRadius;
+  const nextBranchStartY = yMid + 8;
+  const nextBranchControlY = nextNodeTopY - 6;
 
   const paths: React.ReactNode[] = [];
 
@@ -1781,10 +1776,11 @@ const GraphCell: React.FC<GraphCellProps> = ({
     const lookup = hashToIndexMap.get(hash);
     const commitIdx = lookup ? lookup.index : -1;
     const isHEAD = lookup ? lookup.isHEAD : false;
+    const isUncommittedHeadSegment = hashToIndexMap.has('uncommitted') && isHEAD && rowIdx <= commitIdx;
 
     const color = (hash === 'unstaged' || hash === 'staged' || hash === 'uncommitted')
       ? '#8b949e'
-      : (commitIdx !== -1 && isHEAD && rowIdx < commitIdx)
+      : (commitIdx !== -1 && isUncommittedHeadSegment)
         ? '#8b949e'
         : getColorForCol(idx);
 
@@ -1807,10 +1803,13 @@ const GraphCell: React.FC<GraphCellProps> = ({
       const outIdx = outgoingTracks.indexOf(hash);
       if (outIdx !== -1) {
         const xEnd = outIdx * colWidth + paddingX;
+        const cpY = xStart < xEnd ? yMid - 7 : yMid;
         paths.push(
           <path
             key={`in-pass-${idx}-${outIdx}`}
-            d={`M ${xStart} 0 C ${xStart} ${yMid}, ${xEnd} ${yMid}, ${xEnd} ${rowHeight}`}
+            d={xStart > xEnd
+              ? `M ${xStart} 0 L ${xStart} ${nextBranchStartY} C ${xStart} ${nextBranchControlY}, ${xEnd} ${nextBranchControlY}, ${xEnd} ${nextNodeTopY}`
+              : `M ${xStart} 0 C ${xStart} ${cpY}, ${xEnd} ${cpY}, ${xEnd} ${rowHeight}`}
             stroke={color}
             fill="none"
             strokeWidth={color === '#8b949e' ? 1.5 : 2}
@@ -1830,12 +1829,14 @@ const GraphCell: React.FC<GraphCellProps> = ({
       // Determine parent connection line color: if the commit itself is uncommitted, the link to its parent is grey
       const color = commit.isUncommitted
         ? '#8b949e'
-        : getColorForCol(col);
+        : getColorForCol(parents.length > 1 ? outIdx : col);
 
       paths.push(
         <path
           key={`out-parent-${outIdx}`}
-          d={`M ${xDot} ${yMid} C ${xDot} ${yMid + 8}, ${xEnd} ${yMid + 8}, ${xEnd} ${rowHeight}`}
+          d={xEnd === xDot
+            ? `M ${xDot} ${yMid} L ${xEnd} ${rowHeight}`
+            : `M ${xDot} ${branchStartY} C ${xDot} ${branchBendY}, ${xEnd} ${branchBendY}, ${xEnd} ${rowHeight}`}
           stroke={color}
           fill="none"
           strokeWidth={color === '#8b949e' ? 1.5 : 2.2}
@@ -1866,6 +1867,23 @@ const GraphCell: React.FC<GraphCellProps> = ({
           strokeWidth={3}
           r={5}
         />
+      ) : isStashCommit ? (
+        <>
+          <circle
+            cx={xDot}
+            cy={yMid}
+            className="git-graph-node-stash"
+            stroke={stashColor}
+            strokeWidth={2}
+            r={4.5}
+          />
+          <circle
+            cx={xDot}
+            cy={yMid}
+            r={1.5}
+            fill={stashColor}
+          />
+        </>
       ) : (
         <circle
           cx={xDot}
