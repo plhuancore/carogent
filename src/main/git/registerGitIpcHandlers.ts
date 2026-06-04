@@ -3,7 +3,7 @@ import { spawn } from 'node:child_process';
 import { existsSync, watch } from 'node:fs';
 import type { FSWatcher } from 'node:fs';
 import { readFile, readdir, rm, stat, unlink } from 'node:fs/promises';
-import { dirname, join, relative } from 'node:path';
+import { dirname, join, relative, resolve } from 'node:path';
 
 export function registerGitIpcHandlers(): void {
   // Git Helper Functions and IPC Handlers
@@ -424,36 +424,159 @@ export function registerGitIpcHandlers(): void {
       }, GIT_WATCH_DEBOUNCE_MS);
     };
 
-    try {
-      const directories = await getGitWatchDirectories(cwd);
+    const isRecursiveSupported = process.platform === 'darwin' || process.platform === 'win32';
+
+    if (isRecursiveSupported) {
+      let gitDir: string;
+      try {
+        const gitDirRel = await runGitCommand(['rev-parse', '--git-dir'], cwd);
+        gitDir = resolve(cwd, gitDirRel.trim());
+      } catch {
+        gitDir = join(cwd, '.git');
+      }
+
       if (gitWatchers.get(webContentsId) !== state) return;
 
-      for (const directory of directories) {
+      // 1. Watch gitDir recursively for internal git status changes (HEAD, index, refs)
+      if (existsSync(gitDir)) {
         try {
-          const watcher = watch(directory, (eventType, filename) => {
+          const watcher = watch(gitDir, { recursive: true }, (eventType, filename) => {
             if (!filename) {
               sendChange();
               return;
             }
-
-            const absolutePath = join(directory, filename.toString());
-            const relativePath = relative(cwd, absolutePath);
-            if (relativePath.startsWith('..') || shouldIgnoreWatchedPath(relativePath)) {
-              return;
+            const name = filename.toString().replace(/\\/g, '/');
+            if (name === 'HEAD' || name === 'index' || name.startsWith('refs/')) {
+              sendChange();
             }
-
-            sendChange();
           });
           watcher.on('error', (err: any) => {
-            console.error('Git watcher error:', err);
+            console.error(`Git folder watcher error for ${gitDir}:`, err);
           });
           state.watchers.push(watcher);
         } catch (err) {
-          console.error(`Failed to watch git directory ${directory}:`, err);
+          console.error(`Failed to watch gitDir ${gitDir}:`, err);
         }
       }
-    } catch (err) {
-      console.error('Failed to start git watcher:', err);
+
+      if (gitWatchers.get(webContentsId) !== state) return;
+
+      // 2. Watch cwd non-recursively for top-level additions/deletions/changes
+      try {
+        const watcher = watch(cwd, { recursive: false }, (eventType, filename) => {
+          if (!filename) {
+            sendChange();
+            return;
+          }
+          const name = filename.toString();
+          if (name !== 'node_modules' && name !== '.git' && name !== '.venv' && name !== 'venv' && !name.startsWith('.')) {
+            sendChange();
+          }
+        });
+        watcher.on('error', (err: any) => {
+          console.error(`Cwd watcher error for ${cwd}:`, err);
+        });
+        state.watchers.push(watcher);
+      } catch (err) {
+        console.error(`Failed to watch cwd ${cwd}:`, err);
+      }
+
+      if (gitWatchers.get(webContentsId) !== state) return;
+
+      // 3. Find git-tracked/untracked top-level directories to watch recursively (excluding ignored ones)
+      const topLevelDirs = new Set<string>();
+      try {
+        const filesText = await runGitCommand(['ls-files', '--cached', '--others', '--exclude-standard', '-z'], cwd);
+        if (gitWatchers.get(webContentsId) !== state) return;
+
+        const files = filesText.split('\0').filter(Boolean);
+        for (const file of files) {
+          const normalized = file.replace(/\\/g, '/');
+          if (!normalized.includes('/')) {
+            continue;
+          }
+          const firstPart = normalized.split('/')[0];
+          if (firstPart && firstPart !== 'node_modules' && firstPart !== '.git' && !firstPart.startsWith('.')) {
+            topLevelDirs.add(firstPart);
+          }
+        }
+      } catch (err) {
+        console.error('Failed to get git-tracked top-level directories:', err);
+        // Fallback: read all directories from filesystem
+        if (gitWatchers.get(webContentsId) !== state) return;
+        try {
+          const entries = await readdir(cwd, { withFileTypes: true });
+          for (const entry of entries) {
+            if (entry.isDirectory()) {
+              const name = entry.name;
+              if (name !== 'node_modules' && name !== '.git' && name !== '.venv' && name !== 'venv' && !name.startsWith('.')) {
+                topLevelDirs.add(name);
+              }
+            }
+          }
+        } catch {}
+      }
+
+      if (gitWatchers.get(webContentsId) !== state) return;
+
+      // 4. Watch the resolved top-level directories recursively
+      for (const dirName of topLevelDirs) {
+        if (gitWatchers.get(webContentsId) !== state) break;
+        const dirPath = join(cwd, dirName);
+        try {
+          const watcher = watch(dirPath, { recursive: true }, (eventType, filename) => {
+            if (!filename) {
+              sendChange();
+              return;
+            }
+            const absolutePath = join(dirPath, filename.toString());
+            const relativePath = relative(cwd, absolutePath);
+            if (shouldIgnoreWatchedPath(relativePath)) {
+              return;
+            }
+            sendChange();
+          });
+          watcher.on('error', (err: any) => {
+            console.error(`Recursive watcher error for ${dirPath}:`, err);
+          });
+          state.watchers.push(watcher);
+        } catch (err) {
+          console.error(`Failed to watch directory ${dirPath} recursively:`, err);
+        }
+      }
+    } else {
+      // Fallback for Linux or platforms where recursive watch is not natively supported
+      try {
+        const directories = await getGitWatchDirectories(cwd);
+        if (gitWatchers.get(webContentsId) !== state) return;
+
+        for (const directory of directories) {
+          try {
+            const watcher = watch(directory, (eventType, filename) => {
+              if (!filename) {
+                sendChange();
+                return;
+              }
+
+              const absolutePath = join(directory, filename.toString());
+              const relativePath = relative(cwd, absolutePath);
+              if (relativePath.startsWith('..') || shouldIgnoreWatchedPath(relativePath)) {
+                return;
+              }
+
+              sendChange();
+            });
+            watcher.on('error', (err: any) => {
+              console.error('Git watcher error:', err);
+            });
+            state.watchers.push(watcher);
+          } catch (err) {
+            console.error(`Failed to watch git directory ${directory}:`, err);
+          }
+        }
+      } catch (err) {
+        console.error('Failed to start git watcher:', err);
+      }
     }
   });
 
