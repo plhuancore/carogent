@@ -374,13 +374,12 @@ export function computeGraphData(commits: CommitHistoryItem[]) {
       isBranchHead = true;
     }
 
-    const outgoingTracks = [...activeTracks];
-    outgoingTracks.splice(col, 1);
+    const outgoingTracks = activeTracks.filter((h) => h !== commit.hash);
 
     const parents = commit.parents || [];
     for (let pIdx = 0; pIdx < parents.length; pIdx++) {
       const parent = parents[pIdx];
-      if (parent && !outgoingTracks.includes(parent)) {
+      if (parent) {
         if (pIdx === 0) {
           outgoingTracks.splice(col, 0, parent);
         } else {
@@ -444,6 +443,42 @@ export const GraphCell: React.FC<GraphCellProps> = ({
   const nextBranchControlY = nextNodeTopY - 6;
 
   const paths: React.ReactNode[] = [];
+  const parents = commit.parents || [];
+
+  // Map to trace exactly where each incoming track maps to in the outgoing tracks
+  const incomingToOutgoingMap = new Map<number, number>();
+  const parentIndices: number[] = [];
+  const tempTracks = incomingTracks.filter((h) => h !== commit.hash);
+
+  if (parents.length > 0 && parents[0]) {
+    tempTracks.splice(col, 0, parents[0]);
+    parentIndices.push(col);
+  } else if (parents.length > 0) {
+    parentIndices.push(-1);
+  }
+
+  for (let p = 1; p < parents.length; p++) {
+    if (parents[p]) {
+      tempTracks.push(parents[p]);
+      parentIndices.push(tempTracks.length - 1);
+    } else {
+      parentIndices.push(-1);
+    }
+  }
+
+  let filteredCount = 0;
+  for (let idx = 0; idx < incomingTracks.length; idx++) {
+    if (incomingTracks[idx] === commit.hash) {
+      incomingToOutgoingMap.set(idx, -1);
+    } else {
+      let finalIdx = filteredCount;
+      if (parents.length > 0 && parents[0] && col <= finalIdx) {
+        finalIdx++;
+      }
+      incomingToOutgoingMap.set(idx, finalIdx);
+      filteredCount++;
+    }
+  }
 
   incomingTracks.forEach((hash, idx) => {
     const xStart = idx * colWidth + paddingX;
@@ -460,24 +495,39 @@ export const GraphCell: React.FC<GraphCellProps> = ({
         ? '#8b949e'
         : getColorForCol(idx);
 
-    if (idx === col) {
-      if (!isBranchHead) {
+    if (hash === commit.hash) {
+      if (idx === col) {
+        if (!isBranchHead) {
+          paths.push(
+            <line
+              key={`in-commit-${idx}`}
+              x1={xStart}
+              y1={0}
+              x2={xStart}
+              y2={yMid}
+              stroke={color}
+              strokeWidth={color === '#8b949e' ? 1.5 : 2}
+              strokeLinecap="round"
+            />
+          );
+        }
+      } else {
+        // This is a branch track that terminates and merges into the node at col
+        const xEnd = col * colWidth + paddingX;
         paths.push(
-          <line
-            key={`in-commit-${idx}`}
-            x1={xStart}
-            y1={0}
-            x2={xStart}
-            y2={yMid}
+          <path
+            key={`in-merge-${idx}-${col}`}
+            d={`M ${xStart} 0 C ${xStart} ${yMid - 6}, ${xEnd} ${yMid - 6}, ${xEnd} ${yMid}`}
             stroke={color}
+            fill="none"
             strokeWidth={color === '#8b949e' ? 1.5 : 2}
             strokeLinecap="round"
           />
         );
       }
     } else {
-      const outIdx = outgoingTracks.indexOf(hash);
-      if (outIdx !== -1) {
+      const outIdx = incomingToOutgoingMap.get(idx);
+      if (outIdx !== undefined && outIdx !== -1) {
         const xEnd = outIdx * colWidth + paddingX;
         const cpY = xStart < xEnd ? yMid - 7 : yMid;
         paths.push(
@@ -496,10 +546,9 @@ export const GraphCell: React.FC<GraphCellProps> = ({
     }
   });
 
-  const parents = commit.parents || [];
-  parents.forEach((parentHash) => {
-    const outIdx = outgoingTracks.indexOf(parentHash);
-    if (outIdx !== -1) {
+  parents.forEach((parentHash, pIdx) => {
+    const outIdx = parentIndices[pIdx];
+    if (outIdx !== undefined && outIdx !== -1) {
       const xEnd = outIdx * colWidth + paddingX;
       
       // Determine parent connection line color: if the commit itself is uncommitted, the link to its parent is grey
@@ -509,7 +558,7 @@ export const GraphCell: React.FC<GraphCellProps> = ({
 
       paths.push(
         <path
-          key={`out-parent-${outIdx}`}
+          key={`out-parent-${pIdx}-${outIdx}`}
           d={xEnd === xDot
             ? `M ${xDot} ${yMid} L ${xEnd} ${rowHeight}`
             : `M ${xDot} ${branchStartY} C ${xDot} ${branchBendY}, ${xEnd} ${branchBendY}, ${xEnd} ${rowHeight}`}
