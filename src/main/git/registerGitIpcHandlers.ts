@@ -9,6 +9,7 @@ export function registerGitIpcHandlers(): void {
   // Git Helper Functions and IPC Handlers
   const GIT_DIFF_PREVIEW_MAX_BYTES = 1024 * 1024;
   const GIT_DIFF_PREVIEW_MAX_LINES = 5000;
+  const GIT_COMMIT_FILES_PREVIEW_LIMIT = 400;
   const GIT_WATCH_DEBOUNCE_MS = 450;
   const GIT_WATCH_MAX_DIRECTORIES = 2000;
   const GIT_UNTRACKED_DIRECTORY_PREVIEW_LIMIT = 200;
@@ -21,20 +22,52 @@ export function registerGitIpcHandlers(): void {
 
   const gitWatchers = new Map<number, GitWatchState>();
 
-  function runGitCommand(args: string[], cwd: string): Promise<string> {
+  function runGitCommand(
+    args: string[],
+    cwd: string,
+    options: { maxStdoutBytes?: number; truncatedMessage?: string } = {}
+  ): Promise<string> {
     return new Promise((resolve, reject) => {
       const child = spawn('git', args, { cwd });
       let stdout = '';
       let stderr = '';
+      let stdoutBytes = 0;
+      let stdoutTruncated = false;
       child.stdout.on('data', (data) => {
-        stdout += data.toString();
+        const chunk = Buffer.isBuffer(data) ? data : Buffer.from(data);
+        if (!options.maxStdoutBytes) {
+          stdout += chunk.toString();
+          return;
+        }
+
+        const remainingBytes = options.maxStdoutBytes - stdoutBytes;
+        if (remainingBytes <= 0) {
+          if (!stdoutTruncated) {
+            stdoutTruncated = true;
+            child.kill();
+          }
+          return;
+        }
+
+        const clippedChunk = chunk.subarray(0, remainingBytes);
+        stdout += clippedChunk.toString();
+        stdoutBytes += clippedChunk.length;
+        if (clippedChunk.length < chunk.length) {
+          if (!stdoutTruncated) {
+            stdoutTruncated = true;
+            child.kill();
+          }
+        }
       });
       child.stderr.on('data', (data) => {
         stderr += data.toString();
       });
       child.on('close', (code) => {
-        if (code === 0) {
-          resolve(stdout.trimEnd());
+        if (code === 0 || stdoutTruncated) {
+          const truncatedMessage = stdoutTruncated && options.truncatedMessage
+            ? `\n\n${options.truncatedMessage}`
+            : '';
+          resolve(`${stdout.trimEnd()}${truncatedMessage}`);
         } else {
           reject(new Error(stderr.trim() || `Git command failed with exit code ${code}`));
         }
@@ -299,6 +332,105 @@ export function registerGitIpcHandlers(): void {
     }
   }
 
+  function getNewPathFromRename(path: string): string {
+    if (!path.includes('=>')) return path;
+    const match = path.match(/^(.*)\{(.*)\s*=>\s*(.*)\}(.*)$/);
+    if (match) {
+      const prefix = match[1];
+      const newPart = match[3].trim();
+      const suffix = match[4];
+      return `${prefix}${newPart}${suffix}`.replace(/\/+/g, '/');
+    }
+    const parts = path.split('=>');
+    return parts[parts.length - 1].trim();
+  }
+
+  function parseNumstatLine(line: string): { additions: number; deletions: number; path: string } | null {
+    const trimmed = line.trim();
+    if (!trimmed) return null;
+    const parts = trimmed.split('\t');
+    if (parts.length < 3) return null;
+    const additions = parts[0] === '-' ? 0 : parseInt(parts[0], 10) || 0;
+    const deletions = parts[1] === '-' ? 0 : parseInt(parts[1], 10) || 0;
+    return { additions, deletions, path: parts[2] };
+  }
+
+  function getGitCommitFiles(cwd: string, hash: string): Promise<{ files: { additions: number; deletions: number; path: string }[]; hasMore: boolean }> {
+    return new Promise<{ files: { additions: number; deletions: number; path: string }[]; hasMore: boolean }>((resolve, reject) => {
+      const child = spawn('git', ['show', '--numstat', '--pretty=format:', hash], { cwd });
+      const files: { additions: number; deletions: number; path: string }[] = [];
+      let stderr = '';
+      let pending = '';
+      let hasMore = false;
+
+      const parseCompleteLines = () => {
+        let newlineIndex = pending.indexOf('\n');
+        while (newlineIndex !== -1) {
+          const line = pending.slice(0, newlineIndex);
+          pending = pending.slice(newlineIndex + 1);
+          const parsed = parseNumstatLine(line);
+          if (parsed) {
+            if (files.length < GIT_COMMIT_FILES_PREVIEW_LIMIT) {
+              files.push(parsed);
+            } else {
+              hasMore = true;
+              child.kill();
+              return;
+            }
+          }
+          newlineIndex = pending.indexOf('\n');
+        }
+      };
+
+      child.stdout.on('data', (data) => {
+        if (hasMore) return;
+        pending += data.toString();
+        parseCompleteLines();
+      });
+      child.stderr.on('data', (data) => {
+        stderr += data.toString();
+      });
+      child.on('close', (code) => {
+        if (!hasMore && pending) {
+          const parsed = parseNumstatLine(pending);
+          if (parsed) {
+            if (files.length < GIT_COMMIT_FILES_PREVIEW_LIMIT) {
+              files.push(parsed);
+            } else {
+              hasMore = true;
+            }
+          }
+        }
+        if (code === 0 || hasMore) {
+          resolve({ files, hasMore });
+        } else {
+          reject(new Error(stderr.trim() || `Git command failed with exit code ${code}`));
+        }
+      });
+      child.on('error', reject);
+    }).catch((err: any) => {
+      console.error('Failed to get commit files:', err);
+      return { files: [], hasMore: false };
+    });
+  }
+
+  async function getGitCommitFileDiff(cwd: string, hash: string, filePath: string) {
+    try {
+      const actualPath = getNewPathFromRename(filePath);
+      const diff = await runGitCommand(
+        ['show', '-m', '--pretty=format:', hash, '--', actualPath],
+        cwd,
+        {
+          maxStdoutBytes: GIT_DIFF_PREVIEW_MAX_BYTES,
+          truncatedMessage: '... Diff truncated: file diff is too large.'
+        }
+      );
+      return { diff };
+    } catch (err: any) {
+      return { error: err.message || String(err) };
+    }
+  }
+
   function closeGitWatchState(webContentsId: number) {
     const state = gitWatchers.get(webContentsId);
     if (!state) return;
@@ -460,6 +592,8 @@ export function registerGitIpcHandlers(): void {
   ipcMain.handle('git:worktrees', (_event, { cwd }) => getGitWorktrees(cwd));
   ipcMain.handle('git:status', (_event, { cwd }) => getGitStatus(cwd));
   ipcMain.handle('git:diff', (_event, { cwd, filePath, isStaged }) => getGitDiff(cwd, filePath, isStaged));
+  ipcMain.handle('git:commit-files', (_event, { cwd, hash }) => getGitCommitFiles(cwd, hash));
+  ipcMain.handle('git:commit-file-diff', (_event, { cwd, hash, filePath }) => getGitCommitFileDiff(cwd, hash, filePath));
   ipcMain.handle('git:stage', (_event, { cwd, filePath }) => runGitCommand(['add', filePath], cwd));
   ipcMain.handle('git:unstage', (_event, { cwd, filePath }) => runGitCommand(['reset', 'HEAD', '--', filePath], cwd));
   ipcMain.handle('git:stage-all', (_event, { cwd }) => runGitCommand(['add', '-A'], cwd));

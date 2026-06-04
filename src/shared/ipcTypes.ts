@@ -234,5 +234,7 @@ export type TerminalApi = {
   gitWorktrees: (request: { cwd: string }) => Promise<GitWorktree[]>;
   gitUndoLastCommit: (request: { cwd: string }) => Promise<string>;
   gitDiscardAll: (request: { cwd: string }) => Promise<void>;
+  gitCommitFiles: (request: { cwd: string; hash: string }) => Promise<{ files: { additions: number; deletions: number; path: string }[]; hasMore: boolean }>;
+  gitCommitFileDiff: (request: { cwd: string; hash: string; filePath: string }) => Promise<GitDiffResult>;
   onGitChange: (callback: () => void) => () => void;
 };
