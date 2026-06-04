@@ -1140,6 +1140,25 @@ function App(): JSX.Element {
     return () => window.removeEventListener('keydown', handleKeyDown, true);
   }, [openQuickAccess]);
 
+  // Escape key to exit fullscreen shell
+  useEffect(() => {
+    if (!activeWorkspace.maximizedPaneId) {
+      return;
+    }
+
+    const handleKeyDown = (event: KeyboardEvent): void => {
+      if (event.key === 'Escape' && !event.metaKey && !event.ctrlKey && !event.altKey && !event.shiftKey) {
+        updateActiveWorkspace((workspace) => ({
+          ...workspace,
+          maximizedPaneId: undefined
+        }));
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown, true);
+    return () => window.removeEventListener('keydown', handleKeyDown, true);
+  }, [activeWorkspace.maximizedPaneId, updateActiveWorkspace]);
+
   useEffect(() => {
     if (!quickAccessOpen) {
       return;
@@ -1291,14 +1310,6 @@ function App(): JSX.Element {
                 aria-hidden="true"
               />
               Open in Browser
-            </button>
-            <button
-              className="topbar-button topbar-button-secondary"
-              type="button"
-              onClick={handleOpenInVSCode}
-              title="Open active pane folder in VS Code"
-            >
-              Open in VS Code
             </button>
             <button
               className={`topbar-button topbar-button-secondary ${isGitSidebarOpen ? 'is-active' : ''}`}
