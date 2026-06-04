@@ -86,6 +86,8 @@ type AgentDoneItem = {
   title: string;
   cwd?: string;
   lines?: string[];
+  notifyTimestamp?: number;
+  hasUnreadNotification?: boolean;
 };
 
 const WORKSPACE_COLOR_PRESETS = [
@@ -475,6 +477,8 @@ function App(): JSX.Element {
           if (session) {
             doneItem.lines = getTerminalPreviewLines(session);
           }
+
+          doneItem.notifyTimestamp = Date.now();
 
           window.terminalApi
             .showAgentDoneOverlay(doneItem)

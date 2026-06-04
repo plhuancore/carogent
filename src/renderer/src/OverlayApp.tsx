@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import type { AgentDoneOverlayItem } from '../../shared/ipcTypes';
 import carogentLogoUrl from './assets/carogent-logo-v2.png';
 import './styles.css';
@@ -6,6 +6,9 @@ import './styles.css';
 function OverlayApp(): JSX.Element {
   const [items, setItems] = useState<AgentDoneOverlayItem[]>([]);
   const [expanded, setExpanded] = useState(false);
+  const [blinkingPaneIds, setBlinkingPaneIds] = useState<Set<string>>(new Set());
+  const lastTimestamps = useRef<Map<string, number>>(new Map());
+  const timers = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
   const menuItems = items;
 
   useEffect(() => {
@@ -25,8 +28,97 @@ function OverlayApp(): JSX.Element {
     return () => {
       stopItems();
       document.documentElement.classList.remove('is-agent-overlay');
+      for (const timer of timers.current.values()) {
+        clearTimeout(timer);
+      }
+      timers.current.clear();
     };
   }, []);
+
+  useEffect(() => {
+    const now = Date.now();
+    const toAdd = new Set<string>();
+    const toRemove = new Set<string>();
+
+    for (const item of items) {
+      if (!item.hasUnreadNotification) {
+        // Clear any existing blinking timer for this pane
+        const timer = timers.current.get(item.paneId);
+        if (timer) {
+          clearTimeout(timer);
+          timers.current.delete(item.paneId);
+        }
+        toRemove.add(item.paneId);
+        continue;
+      }
+
+      const timestamp = item.notifyTimestamp || 0;
+      const lastTimestamp = lastTimestamps.current.get(item.paneId) || 0;
+
+      if (timestamp > 0 && timestamp > lastTimestamp) {
+        lastTimestamps.current.set(item.paneId, timestamp);
+        
+        const age = now - timestamp;
+        if (age < 5000) {
+          // Clear any existing timer for this pane
+          const existingTimer = timers.current.get(item.paneId);
+          if (existingTimer) {
+            clearTimeout(existingTimer);
+          }
+
+          toAdd.add(item.paneId);
+
+          const remaining = 5000 - age;
+          const paneId = item.paneId;
+          const newTimer = setTimeout(() => {
+            setBlinkingPaneIds((prev) => {
+              const next = new Set(prev);
+              next.delete(paneId);
+              return next;
+            });
+            timers.current.delete(paneId);
+          }, remaining);
+          
+          timers.current.set(paneId, newTimer);
+        } else {
+          // If the notification is older than 5s, remove blinking
+          const timer = timers.current.get(item.paneId);
+          if (timer) {
+            clearTimeout(timer);
+            timers.current.delete(item.paneId);
+          }
+          toRemove.add(item.paneId);
+        }
+      }
+    }
+
+    // Clean up removed items from lastTimestamps and active timers
+    const currentPaneIds = new Set(items.map((i) => i.paneId));
+    for (const key of lastTimestamps.current.keys()) {
+      if (!currentPaneIds.has(key)) {
+        lastTimestamps.current.delete(key);
+        const timer = timers.current.get(key);
+        if (timer) {
+          clearTimeout(timer);
+          timers.current.delete(key);
+        }
+        toRemove.add(key);
+      }
+    }
+
+    if (toAdd.size > 0 || toRemove.size > 0) {
+      setBlinkingPaneIds((prev) => {
+        const next = new Set(prev);
+        for (const id of toAdd) {
+          next.add(id);
+        }
+        for (const id of toRemove) {
+          next.delete(id);
+        }
+        return next;
+      });
+    }
+  }, [items]);
 
   const toggleExpanded = (): void => {
     const nextExpanded = !expanded && items.length > 0;
@@ -56,7 +148,14 @@ function OverlayApp(): JSX.Element {
               className="agent-overlay-current-count"
               title={`${items.length} shells pinned`}
             >
-              <span className="agent-overlay-chip-dot" aria-hidden="true" />
+              {items.some((item) => item.hasUnreadNotification) && (
+                <span
+                  className={`agent-overlay-chip-dot ${
+                    items.some((item) => blinkingPaneIds.has(item.paneId)) ? 'is-blinking' : ''
+                  }`}
+                  aria-hidden="true"
+                />
+              )}
               <span className="agent-overlay-chip-title">{items.length} Pinned</span>
             </div>
           ) : (
@@ -91,7 +190,14 @@ function OverlayApp(): JSX.Element {
                 onClick={() => handleOpenPane(item)}
               >
                 <div className="agent-overlay-item-header">
-                  <span className="agent-overlay-chip-dot" aria-hidden="true" />
+                  {item.hasUnreadNotification && (
+                    <span
+                      className={`agent-overlay-chip-dot ${
+                        blinkingPaneIds.has(item.paneId) ? 'is-blinking' : ''
+                      }`}
+                      aria-hidden="true"
+                    />
+                  )}
                   <span className="agent-overlay-menu-title">{item.title}</span>
                   <span className="agent-overlay-chip-workspace">{item.workspaceName}</span>
                 </div>

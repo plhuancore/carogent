@@ -601,9 +601,21 @@ function showAgentDoneOverlay(item: AgentDoneOverlayItem): string[] {
   }
 
   if (existingIndex !== -1) {
+    const existing = agentDoneOverlayItems[existingIndex];
+    if (item.notifyTimestamp !== undefined) {
+      item.hasUnreadNotification = true;
+    } else {
+      item.notifyTimestamp = existing.notifyTimestamp;
+      item.hasUnreadNotification = existing.hasUnreadNotification;
+    }
     // Preserve order and update in-place to avoid reordering stuttering
     agentDoneOverlayItems[existingIndex] = item;
   } else {
+    if (item.notifyTimestamp !== undefined) {
+      item.hasUnreadNotification = true;
+    } else {
+      item.hasUnreadNotification = false;
+    }
     agentDoneOverlayItems = [item, ...agentDoneOverlayItems].slice(0, 4);
     sizeChanged = true;
   }
@@ -1060,6 +1072,12 @@ app.whenReady().then(() => {
     mainWindow?.show();
     mainWindow?.focus();
     mainWindow?.webContents.send('agent:open-pane', request);
+
+    const existing = agentDoneOverlayItems.find((item) => item.paneId === request.paneId);
+    if (existing) {
+      existing.hasUnreadNotification = false;
+      sendAgentDoneOverlayItems();
+    }
   });
   ipcMain.handle('agent-overlay:close', () => {
     agentDoneOverlayEnabled = false;

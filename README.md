@@ -230,12 +230,16 @@ For repository-specific setup, place the same content in:
 <repo>/GEMINI.md
 ```
 
-Optional reusable skills can also live at:
+### Skill Setup
 
-```text
-~/.gemini/skills/carogent-terminal-control/SKILL.md
-~/.gemini/antigravity-cli/skills/carogent-terminal-control/SKILL.md
+To enable AI agents to automatically use these tools, you can copy the reusable skill from this repository:
+
+```bash
+mkdir -p ~/.gemini/antigravity-cli/skills/carogent-terminal-control
+cp skills/carogent-terminal-control/SKILL.md ~/.gemini/antigravity-cli/skills/carogent-terminal-control/
 ```
+
+*(Or for standard Gemini CLI, copy to `~/.gemini/skills/carogent-terminal-control/SKILL.md`)*
 
 The global `~/.gemini/GEMINI.md` file is the reliable automatic trigger for short prompts such as `say hi`. Skill metadata alone may not activate for every request.
 

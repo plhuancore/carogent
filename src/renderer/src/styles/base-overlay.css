@@ -124,6 +124,21 @@ button {
     0 0 10px rgba(52, 211, 153, 0.86);
 }
 
+@keyframes agent-dot-blink {
+  0%, 100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.35;
+    transform: scale(0.8);
+  }
+}
+
+.agent-overlay-chip-dot.is-blinking {
+  animation: agent-dot-blink 1s ease-in-out infinite;
+}
+
 .agent-overlay-chip-title,
 .agent-overlay-chip-workspace {
   min-width: 0;

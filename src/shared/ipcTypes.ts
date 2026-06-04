@@ -95,6 +95,8 @@ export type AgentDoneOverlayItem = {
   title: string;
   cwd?: string;
   lines?: string[];
+  notifyTimestamp?: number;
+  hasUnreadNotification?: boolean;
 };
 
 export type AgentOpenPaneRequest = {
