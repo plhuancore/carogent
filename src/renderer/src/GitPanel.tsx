@@ -1026,7 +1026,7 @@ export const GitPanel: React.FC<GitPanelProps> = ({ cwd, onClose, width, onResiz
   );
 
   return (
-    <aside className="git-panel" style={{ width }}>
+    <aside className="git-panel" style={{ width, zIndex: isDiffMaximized ? 30 : undefined }}>
       <div className="git-sidebar-resize-handle" onPointerDown={handleResizeStart} />
       {/* 1. Header with Branch Name and Repo info */}
       <div className="git-panel-header">
@@ -1397,8 +1397,8 @@ export const GitPanel: React.FC<GitPanelProps> = ({ cwd, onClose, width, onResiz
                                   outgoingColors={row.outgoingColors}
                                 />
                               </td>
-                              <td className="col-desc" style={{ width: columnWidths.desc, minWidth: columnWidths.desc, maxWidth: columnWidths.desc }} title={commit.subject}>
-                                <div style={{ display: 'flex', alignItems: 'center', minWidth: 0 }}>
+                              <td className="col-desc" style={{ width: columnWidths.desc, minWidth: columnWidths.desc, maxWidth: columnWidths.desc, overflow: 'hidden' }} title={commit.subject}>
+                                <div style={{ display: 'flex', alignItems: 'center', minWidth: 0, width: '100%', overflow: 'hidden' }}>
                                   {renderRefBadges(commit.decorations)}
                                   <span className="git-commit-subject">{commit.subject}</span>
                                 </div>

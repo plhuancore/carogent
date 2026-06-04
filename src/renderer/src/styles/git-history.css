@@ -69,6 +69,8 @@
   color: #c9d1d9;
   white-space: nowrap;
   vertical-align: middle;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .git-history-row {
