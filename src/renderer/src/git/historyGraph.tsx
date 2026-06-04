@@ -511,7 +511,7 @@ export const GraphCell = React.memo<GraphCellProps>(({
     const lookup = hashToIndexMap.get(hash);
     const commitIdx = lookup ? lookup.index : -1;
     const isHEAD = lookup ? lookup.isHEAD : false;
-    const isUncommittedHeadSegment = hashToIndexMap.has('uncommitted') && isHEAD && rowIdx <= commitIdx;
+    const isUncommittedHeadSegment = hashToIndexMap.has('uncommitted') && isHEAD && rowIdx <= commitIdx && incomingColors[idx] === 0;
 
     const color = (hash === 'unstaged' || hash === 'staged' || hash === 'uncommitted')
       ? '#8b949e'
