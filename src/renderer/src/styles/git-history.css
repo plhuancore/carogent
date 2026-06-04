@@ -19,6 +19,7 @@
   min-width: 130px;
   padding: 0;
   vertical-align: middle;
+  border-bottom: none;
 }
 
 .git-history-table th.col-desc,
