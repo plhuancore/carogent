@@ -417,7 +417,7 @@ interface GraphCellProps {
   hashToIndexMap: Map<string, { index: number; isHEAD: boolean }>;
 }
 
-export const GraphCell: React.FC<GraphCellProps> = ({
+export const GraphCell = React.memo<GraphCellProps>(({
   col,
   incomingTracks,
   outgoingTracks,
@@ -445,38 +445,11 @@ export const GraphCell: React.FC<GraphCellProps> = ({
   const paths: React.ReactNode[] = [];
   const parents = commit.parents || [];
 
-  // Map to trace exactly where each incoming track maps to in the outgoing tracks
-  const incomingToOutgoingMap = new Map<number, number>();
-  const parentIndices: number[] = [];
-  const tempTracks = incomingTracks.filter((h) => h !== commit.hash);
-
-  if (parents.length > 0 && parents[0]) {
-    tempTracks.splice(col, 0, parents[0]);
-    parentIndices.push(col);
-  } else if (parents.length > 0) {
-    parentIndices.push(-1);
-  }
-
-  for (let p = 1; p < parents.length; p++) {
-    if (parents[p]) {
-      tempTracks.push(parents[p]);
-      parentIndices.push(tempTracks.length - 1);
-    } else {
-      parentIndices.push(-1);
-    }
-  }
-
-  let filteredCount = 0;
-  for (let idx = 0; idx < incomingTracks.length; idx++) {
-    if (incomingTracks[idx] === commit.hash) {
-      incomingToOutgoingMap.set(idx, -1);
-    } else {
-      let finalIdx = filteredCount;
-      if (parents.length > 0 && parents[0] && col <= finalIdx) {
-        finalIdx++;
-      }
-      incomingToOutgoingMap.set(idx, finalIdx);
-      filteredCount++;
+  // Compute remaining tracks count without allocating an array
+  let remainingCount = 0;
+  for (let i = 0; i < incomingTracks.length; i++) {
+    if (incomingTracks[i] !== commit.hash) {
+      remainingCount++;
     }
   }
 
@@ -526,29 +499,47 @@ export const GraphCell: React.FC<GraphCellProps> = ({
         );
       }
     } else {
-      const outIdx = incomingToOutgoingMap.get(idx);
-      if (outIdx !== undefined && outIdx !== -1) {
-        const xEnd = outIdx * colWidth + paddingX;
-        const cpY = xStart < xEnd ? yMid - 7 : yMid;
-        paths.push(
-          <path
-            key={`in-pass-${idx}-${outIdx}`}
-            d={xStart > xEnd
-              ? `M ${xStart} 0 L ${xStart} ${nextBranchStartY} C ${xStart} ${nextBranchControlY}, ${xEnd} ${nextBranchControlY}, ${xEnd} ${nextNodeTopY}`
-              : `M ${xStart} 0 C ${xStart} ${cpY}, ${xEnd} ${cpY}, ${xEnd} ${rowHeight}`}
-            stroke={color}
-            fill="none"
-            strokeWidth={color === '#8b949e' ? 1.5 : 2}
-            strokeLinecap="round"
-          />
-        );
+      // Compute outIdx on the fly without Map or array allocation
+      let outIdx = 0;
+      for (let i = 0; i < idx; i++) {
+        if (incomingTracks[i] !== commit.hash) {
+          outIdx++;
+        }
       }
+      if (parents.length > 0 && parents[0] && col <= outIdx) {
+        outIdx++;
+      }
+
+      const xEnd = outIdx * colWidth + paddingX;
+      const cpY = xStart < xEnd ? yMid - 7 : yMid;
+      paths.push(
+        <path
+          key={`in-pass-${idx}-${outIdx}`}
+          d={xStart > xEnd
+            ? `M ${xStart} 0 L ${xStart} ${nextBranchStartY} C ${xStart} ${nextBranchControlY}, ${xEnd} ${nextBranchControlY}, ${xEnd} ${nextNodeTopY}`
+            : `M ${xStart} 0 C ${xStart} ${cpY}, ${xEnd} ${cpY}, ${xEnd} ${rowHeight}`}
+          stroke={color}
+          fill="none"
+          strokeWidth={color === '#8b949e' ? 1.5 : 2}
+          strokeLinecap="round"
+        />
+      );
     }
   });
 
   parents.forEach((parentHash, pIdx) => {
-    const outIdx = parentIndices[pIdx];
-    if (outIdx !== undefined && outIdx !== -1) {
+    let outIdx = -1;
+    if (pIdx === 0) {
+      if (parents[0]) {
+        outIdx = col;
+      }
+    } else {
+      if (parents[pIdx]) {
+        outIdx = remainingCount + (parents[0] ? 1 : 0) + (pIdx - 1);
+      }
+    }
+
+    if (outIdx !== -1) {
       const xEnd = outIdx * colWidth + paddingX;
       
       // Determine parent connection line color: if the commit itself is uncommitted, the link to its parent is grey
@@ -619,5 +610,6 @@ export const GraphCell: React.FC<GraphCellProps> = ({
       )}
     </svg>
   );
-};
+});
+GraphCell.displayName = 'GraphCell';
 
