@@ -1955,7 +1955,7 @@ rect.icon-accent {
   width: 6px;
   height: 100%;
   cursor: col-resize;
-  z-index: 100;
+  z-index: 5000;
   transition: background 0.15s;
 }
 
