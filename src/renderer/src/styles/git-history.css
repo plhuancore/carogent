@@ -1,0 +1,347 @@
+
+.git-history-table {
+  border-collapse: collapse;
+  width: max-content;
+  min-width: 100%;
+  table-layout: fixed;
+}
+
+/* Define column widths */
+.git-history-table th.col-graph {
+  width: 130px;
+  min-width: 130px;
+  padding: 8px 10px 8px 24px;
+  vertical-align: middle;
+}
+
+.git-history-table td.col-graph {
+  width: 130px;
+  min-width: 130px;
+  padding: 0;
+  vertical-align: middle;
+}
+
+.git-history-table th.col-desc,
+.git-history-table td.col-desc {
+  width: 520px;
+  min-width: 520px;
+  max-width: 520px;
+}
+
+.git-history-table th.col-date,
+.git-history-table td.col-date {
+  width: 110px;
+  min-width: 110px;
+}
+
+.git-history-table th.col-author,
+.git-history-table td.col-author {
+  width: 150px;
+  min-width: 150px;
+}
+
+.git-history-table th.col-commit,
+.git-history-table td.col-commit {
+  width: 90px;
+  min-width: 90px;
+  font-family: monospace;
+}
+
+.git-history-table th {
+  position: sticky;
+  top: 0;
+  background: #080a0d;
+  border-bottom: 1px solid #21262d;
+  color: #8b949e;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 8px 10px;
+  text-align: left;
+  z-index: 5;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.git-history-table td {
+  padding: 6px 10px;
+  font-size: 14px;
+  border-bottom: 1px solid #161b22;
+  color: #c9d1d9;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+
+.git-history-row {
+  height: 36px;
+  transition: background 0.1s;
+  position: relative;
+}
+
+.git-history-row:hover {
+  background: #161b22;
+}
+
+.git-history-row.uncommitted-row {
+  background: rgba(139, 148, 158, 0.04);
+}
+
+.git-history-row.uncommitted-row:hover {
+  background: rgba(139, 148, 158, 0.08);
+}
+
+.git-history-row.uncommitted-row .git-commit-subject,
+.git-history-row.uncommitted-row .git-history-date-time,
+.git-history-row.uncommitted-row .git-history-author-name {
+  color: #8b949e;
+}
+
+.git-history-row.uncommitted-row .git-commit-subject {
+  color: #f0f6fc;
+  font-weight: 700;
+}
+
+.git-history-hash-label {
+  color: #58a6ff;
+  font-weight: 700;
+  background: rgba(88, 166, 255, 0.1);
+  padding: 2px 5px;
+  border-radius: 4px;
+}
+
+.git-history-author-name {
+  color: #c9d1d9;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  display: block;
+}
+
+.git-history-date-time {
+  color: #8b949e;
+}
+
+.git-commit-subject {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #c9d1d9;
+  font-weight: 500;
+  font-size: 14px;
+}
+
+/* Branch Ref Badges */
+.git-ref-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+  line-height: 1.2;
+  border: 1px solid transparent;
+}
+
+.git-badge-head-fix {
+  background: #2b1f3d;
+  border-color: #a371f7;
+  color: #d3b3ff;
+}
+
+.git-badge-head-feat {
+  background: #3b182d;
+  border-color: #db61a2;
+  color: #ff9bce;
+}
+
+.git-badge-head-other {
+  background: #25281b;
+  border-color: #5a6639;
+  color: #a3be5c;
+}
+
+.git-badge-remote-main {
+  background: #1b3a24;
+  border-color: #2ea043;
+  color: #56d364;
+}
+
+.git-badge-remote-dev {
+  background: #3c1e1e;
+  border-color: #f85149;
+  color: #ff7b72;
+}
+
+.git-badge-remote-other {
+  background: #1f2d3d;
+  border-color: #388bfd;
+  color: #79c0ff;
+}
+
+.git-badge-stash {
+  background: #3b182d;
+  border-color: #db61a2;
+  color: #ff9bce;
+}
+
+.git-badge-tag {
+  background: #282e38;
+  border-color: #8b949e;
+  color: #c9d1d9;
+}
+
+/* History Column Drag Resizer */
+.git-history-table th {
+  position: relative;
+}
+
+.git-col-resizer {
+  position: absolute;
+  right: 0;
+  top: 0;
+  width: 5px;
+  height: 100%;
+  cursor: col-resize;
+  z-index: 10;
+  background: transparent;
+  transition: background 0.1s;
+}
+
+.git-col-resizer:hover,
+.git-col-resizer:active {
+  background: rgba(163, 190, 92, 0.4);
+}
+
+/* Active checkout branch styling */
+.git-badge-head-active {
+  background: rgba(227, 179, 65, 0.08);
+  border-color: #e3b341;
+  color: #f0f6fc;
+  font-weight: 700;
+}
+
+.git-badge-divider {
+  width: 1px;
+  height: 10px;
+  background: currentColor;
+  opacity: 0.3;
+  margin: 0 5px;
+  align-self: center;
+}
+
+.git-badge-remote-names {
+  font-style: italic;
+  opacity: 0.85;
+  font-weight: 400;
+}
+
+/* Hollow node styling for HEAD commit */
+.git-graph-node-head {
+  fill: #050607;
+  transition: fill 0.1s;
+}
+
+.git-history-row:hover .git-graph-node-head {
+  fill: #161b22;
+}
+
+.git-graph-node-stash {
+  fill: #050607;
+  transition: fill 0.1s;
+}
+
+.git-history-row:hover .git-graph-node-stash {
+  fill: #161b22;
+}
+
+/* Commit Section Styling */
+.git-commit-container {
+  display: flex;
+  flex-direction: column;
+  padding: 10px;
+  gap: 8px;
+  background: #0d1117;
+  border-bottom: 1px solid #21262d;
+  flex-shrink: 0;
+}
+
+.git-commit-input-wrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+  width: 100%;
+}
+
+.git-commit-input {
+  width: 100%;
+  min-height: 32px;
+  padding: 6px 30px 6px 8px;
+  background: #161b22;
+  border: 1px solid #30363d;
+  border-radius: 4px;
+  color: #c9d1d9;
+  font-family: inherit;
+  font-size: 13px;
+  resize: vertical;
+  outline: none;
+  box-sizing: border-box;
+  transition: border-color 0.15s ease;
+}
+
+.git-commit-input:focus {
+  border-color: #58a6ff;
+}
+
+.git-commit-input-icon {
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #8b949e;
+  pointer-events: none;
+}
+
+.git-commit-btn {
+  display: flex;
+  align-items: center;
+  background: #1f6feb;
+  color: #ffffff;
+  border: none;
+  border-radius: 4px;
+  height: 32px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  width: 100%;
+  padding: 0;
+  transition: background-color 0.15s ease;
+  box-sizing: border-box;
+}
+
+.git-commit-btn:hover:not(:disabled) {
+  background: #388bfd;
+}
+
+.git-commit-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.git-commit-btn-check {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.git-commit-btn-divider {
+  align-self: stretch;
+}
+
+.git-commit-btn-chevron {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}

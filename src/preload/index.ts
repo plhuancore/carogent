@@ -1,121 +1,23 @@
 import { clipboard, contextBridge, ipcRenderer, webUtils } from 'electron';
+import type {
+  AgentBridgeRendererRequest,
+  AgentBridgeRendererResponse,
+  AgentBridgeSnapshot,
+  AgentDoneOverlayItem,
+  AgentOpenPaneRequest,
+  BrowserBridgeStatusEvent,
+  DirectoryListResult,
+  ImagePreviewResult,
+  TerminalApi,
+  TerminalCreated,
+  TerminalCreateRequest,
+  TerminalCwdEvent,
+  TerminalDataEvent,
+  TerminalExitEvent,
+  TerminalShellOption
+} from '../shared/ipcTypes';
 
-type TerminalCreateRequest = {
-  cwd?: string;
-  shell?: string;
-  paneId?: string;
-};
-
-type TerminalCreated = {
-  id: string;
-  cwd: string;
-  shell: string;
-};
-
-type TerminalShellOption = {
-  shell: string;
-  label: string;
-  title: string;
-  icon: string;
-  shortcut?: string;
-  isDefault?: boolean;
-};
-
-type TerminalDataEvent = {
-  id: string;
-  data: string;
-};
-
-type TerminalCwdEvent = {
-  id: string;
-  cwd: string;
-};
-
-type TerminalExitEvent = {
-  id: string;
-  exitCode: number;
-  signal?: number;
-};
-
-type DirectoryEntry = {
-  name: string;
-  path: string;
-  type: 'file' | 'directory';
-  size?: number;
-  createdAt?: number;
-  modifiedAt?: number;
-};
-
-type DirectoryListResult = {
-  path: string;
-  parentPath?: string;
-  entries: DirectoryEntry[];
-};
-
-type ImagePreviewResult = {
-  dataUrl: string;
-};
-
-type BrowserBridgeStatusEvent = {
-  connected: boolean;
-  clientCount: number;
-  enabled: boolean;
-  lastError?: string;
-};
-
-type AgentDoneOverlayItem = {
-  paneId: string;
-  workspaceId: string;
-  workspaceName: string;
-  title: string;
-  cwd?: string;
-};
-
-type AgentOpenPaneRequest = {
-  paneId: string;
-  workspaceId: string;
-};
-
-type AgentBridgePane = {
-  paneId: string;
-  workspaceId: string;
-  workspaceName: string;
-  title: string;
-  cwd?: string;
-  shell?: string;
-  browserUrl?: string;
-  active: boolean;
-  pinned: boolean;
-  running: boolean;
-};
-
-type AgentBridgeWorkspace = {
-  id: string;
-  name: string;
-  active: boolean;
-};
-
-type AgentBridgeSnapshot = {
-  activeWorkspaceId: string;
-  activePaneId: string;
-  workspaces: AgentBridgeWorkspace[];
-  panes: AgentBridgePane[];
-};
-
-type AgentBridgeRendererRequest = {
-  id: string;
-  action: 'notifyDone' | 'focusPane';
-  paneId: string;
-  workspaceId?: string;
-};
-
-type AgentBridgeRendererResponse = {
-  id: string;
-  result?: unknown;
-  error?: string;
-};
-
-const terminal = {
+const terminal: TerminalApi = {
   getAgentBridgeSettings: (): Promise<{ enabled: boolean; port: number }> =>
     ipcRenderer.invoke('agent-bridge:get-settings'),
   setAgentBridgeSettings: (settings: { enabled: boolean; port: number }): Promise<{ enabled: boolean; port: number }> =>

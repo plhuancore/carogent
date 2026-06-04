@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import type { AgentDoneOverlayItem } from '../../shared/ipcTypes';
 import carogentLogoUrl from './assets/carogent-logo-v2.png';
 import './styles.css';
 
