@@ -177,6 +177,10 @@ const terminal: TerminalApi = {
     ipcRenderer.invoke('git:undo-last-commit', request),
   gitDiscardAll: (request: { cwd: string }): Promise<void> =>
     ipcRenderer.invoke('git:discard-all', request),
+  gitCommitFiles: (request: { cwd: string; hash: string }): Promise<{ files: { additions: number; deletions: number; path: string }[]; hasMore: boolean }> =>
+    ipcRenderer.invoke('git:commit-files', request),
+  gitCommitFileDiff: (request: { cwd: string; hash: string; filePath: string }): Promise<any> =>
+    ipcRenderer.invoke('git:commit-file-diff', request),
   onGitChange: (callback: () => void): (() => void) => {
     const listener = (): void => {
       callback();

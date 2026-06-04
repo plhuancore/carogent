@@ -24,7 +24,7 @@ function getColorForHash(hash: string): string {
   return hashColors.get(hash)!;
 }
 
-function getColorForCol(colIndex: number): string {
+export function getColorForCol(colIndex: number): string {
   return TRACK_COLORS[colIndex % TRACK_COLORS.length];
 }
 
