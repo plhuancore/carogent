@@ -870,3 +870,48 @@
   min-width: 100%;
   width: max-content;
 }
+
+/* Maximized Diff View Overlay Styles */
+.git-diff-container.maximized {
+  background: #181818; /* Match terminal bg / VS Code editor bg */
+  display: flex;
+  flex-direction: column;
+  border: none;
+  box-shadow: 0 4px 30px rgba(0, 0, 0, 0.5);
+  z-index: 101;
+}
+
+.git-diff-container.maximized .git-diff-filename {
+  max-width: none;
+  font-size: 13px;
+}
+
+.git-diff-container.maximized .git-diff-header {
+  padding: 10px 16px;
+  background: #0f141c;
+  border-bottom: 1px solid #21262d;
+}
+
+.git-diff-container.maximized .git-diff-body {
+  padding: 12px 16px;
+  font-size: 14px;
+}
+
+.git-diff-maximized-placeholder {
+  border: 1px dashed #30363d;
+  background: rgba(8, 10, 13, 0.4);
+  margin: 8px;
+  border-radius: 6px;
+  flex: 1;
+  min-height: 120px;
+}
+
+.git-diff-maximize-btn svg {
+  width: 14px;
+  height: 14px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.45;
+}

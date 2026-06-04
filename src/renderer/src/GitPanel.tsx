@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useLayoutEffect, useRef, useCallback, useMemo } from 'react';
 import type { GitStatus, GitWorktree } from '../../shared/ipcTypes';
 import 'prism-themes/themes/prism-vsc-dark-plus.css';
 import { FileIcon } from './FileIcon';
@@ -6,8 +6,17 @@ import { parseDiffLines, type HighlightedDiffLine } from './git/diffParser';
 import { computeGraphData, GraphCell, renderRefBadges, getColorForCol } from './git/historyGraph';
 import { highlightCodeLine } from './git/syntaxHighlight';
 import type { CommitHistoryItem } from './git/types';
+import { MaximizeIcon, MinimizeIcon } from './components/AppIcons';
 
 const MAX_RENDERED_DIFF_LINES = 5000;
+const IS_MAC = navigator.platform.toUpperCase().indexOf('MAC') >= 0;
+
+type MaximizedDiffRect = {
+  top: number;
+  left: number;
+  width: number;
+  height: number;
+};
 
 interface GitPanelProps {
   cwd: string;
@@ -53,6 +62,8 @@ export const GitPanel: React.FC<GitPanelProps> = ({ cwd, onClose, width, onResiz
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [worktrees, setWorktrees] = useState<GitWorktree[]>([]);
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
+  const [isDiffMaximized, setIsDiffMaximized] = useState(false);
+  const [maximizedDiffRect, setMaximizedDiffRect] = useState<MaximizedDiffRect | null>(null);
   const selectedFileRef = useRef<{ path: string; isStaged: boolean } | null>(null);
   const statusInFlightRef = useRef(false);
   const pendingStatusRef = useRef(false);
@@ -578,6 +589,73 @@ export const GitPanel: React.FC<GitPanelProps> = ({ cwd, onClose, width, onResiz
     }
   }, [refreshTrigger, loadStatus, loadHistory, activeTab]);
 
+  // Keyboard shortcuts (Escape to restore, Cmd+Shift+D to toggle maximized diff view)
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // 1. Escape to restore (only when maximized)
+      if (isDiffMaximized && e.key === 'Escape') {
+        setIsDiffMaximized(false);
+        return;
+      }
+
+      // 2. Cmd+Shift+D (Mac) or Ctrl+Shift+D (Windows/Linux) to toggle
+      const modifier = IS_MAC ? e.metaKey : e.ctrlKey;
+      if (modifier && e.shiftKey && e.key.toLowerCase() === 'd') {
+        e.preventDefault();
+        setIsDiffMaximized((prev) => !prev);
+      }
+    };
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [isDiffMaximized]);
+
+  useLayoutEffect(() => {
+    if (!isDiffMaximized) {
+      setMaximizedDiffRect(null);
+      return;
+    }
+
+    const terminalCanvas = document.querySelector<HTMLElement>('.terminal-canvas');
+    if (!terminalCanvas) {
+      setMaximizedDiffRect(null);
+      return;
+    }
+
+    const updateRect = () => {
+      const rect = terminalCanvas.getBoundingClientRect();
+      setMaximizedDiffRect((prev) => {
+        const next = {
+          top: rect.top,
+          left: rect.left,
+          width: rect.width,
+          height: rect.height
+        };
+        if (
+          prev &&
+          prev.top === next.top &&
+          prev.left === next.left &&
+          prev.width === next.width &&
+          prev.height === next.height
+        ) {
+          return prev;
+        }
+        return next;
+      });
+    };
+
+    updateRect();
+    window.addEventListener('resize', updateRect);
+    const resizeObserver = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(updateRect);
+    resizeObserver?.observe(terminalCanvas);
+
+    return () => {
+      window.removeEventListener('resize', updateRect);
+      resizeObserver?.disconnect();
+    };
+  }, [isDiffMaximized]);
+
   // File Actions
   const handleStageFile = async (e: React.MouseEvent, filePath: string) => {
     e.stopPropagation();
@@ -834,6 +912,118 @@ export const GitPanel: React.FC<GitPanelProps> = ({ cwd, onClose, width, onResiz
   const stagedCount = status.staged?.length || 0;
   const unstagedCount = status.unstaged?.length || 0;
   const totalChanges = stagedCount + unstagedCount;
+
+  const maximizedPlaceholder = (
+    <div className="git-diff-container git-diff-maximized-placeholder">
+      <div className="git-diff-placeholder" style={{ display: 'flex', flexDirection: 'column', gap: '8px', justifyContent: 'center', alignItems: 'center', height: '100%' }}>
+        <span style={{ fontSize: '12px', color: '#8b949e', textAlign: 'center' }}>Diff is maximized over terminals</span>
+        <button
+          type="button"
+          onClick={() => setIsDiffMaximized(false)}
+          style={{
+            background: '#21262d',
+            border: '1px solid #30363d',
+            borderRadius: '6px',
+            color: '#c9d1d9',
+            padding: '4px 10px',
+            fontSize: '11px',
+            cursor: 'pointer'
+          }}
+        >
+          Restore View
+        </button>
+      </div>
+    </div>
+  );
+
+  const activeFile = activeTab === 'changes' ? selectedFile : selectedCommitFile;
+
+  const inlineStyles: React.CSSProperties = isDiffMaximized && maximizedDiffRect ? {
+    position: 'fixed',
+    top: maximizedDiffRect.top,
+    left: maximizedDiffRect.left,
+    width: maximizedDiffRect.width,
+    height: maximizedDiffRect.height
+  } : {};
+
+  const diffElement = (
+    <div className={`git-diff-container ${isDiffMaximized ? 'maximized' : ''}`} style={{ flex: 1, ...inlineStyles }}>
+      {activeFile ? (
+        <>
+          <div className="git-diff-header">
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
+              <button
+                type="button"
+                className="git-icon-btn git-diff-maximize-btn"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setIsDiffMaximized((v) => !v);
+                }}
+                title={isDiffMaximized ? "Restore to sidebar (Cmd+Shift+D / Esc)" : "Show on top of terminal (Cmd+Shift+D)"}
+              >
+                {isDiffMaximized ? <MinimizeIcon /> : <MaximizeIcon />}
+              </button>
+              <span className="git-diff-filename" title={activeFile.path}>{activeFile.path}</span>
+            </div>
+            <span className="git-diff-status">
+              {activeTab === 'changes'
+                ? (selectedFile?.isStaged ? 'staged' : 'working tree')
+                : `commit ${selectedCommit?.hash.substring(0, 8)}`}
+            </span>
+          </div>
+          <div className="git-diff-body">
+            {diffError ? (
+              <div className="git-diff-error">{diffError}</div>
+            ) : diff === null ? (
+              <div className="git-diff-loading">Loading diff...</div>
+            ) : (
+              <pre className="git-diff-pre">
+                <code>
+                  {parsedLines.map((lineInfo, i) => renderDiffLine(lineInfo, i))}
+                  {hiddenDiffLineCount > 0 && renderDiffLine({
+                    raw: `... Preview truncated: ${hiddenDiffLineCount} more lines not shown.`,
+                    className: 'diff-line-meta',
+                    prefix: '',
+                    oldLineNumber: '',
+                    newLineNumber: '',
+                    isCodeLine: false,
+                    dataLang: 'text',
+                    highlightedCode: `... Preview truncated: ${hiddenDiffLineCount} more lines not shown.`
+                  }, parsedLines.length)}
+                </code>
+              </pre>
+            )}
+          </div>
+        </>
+      ) : (
+        <>
+          {isDiffMaximized && (
+            <div className="git-diff-header">
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <button
+                  type="button"
+                  className="git-icon-btn git-diff-maximize-btn"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setIsDiffMaximized(false);
+                  }}
+                  title="Restore to sidebar (Cmd+Shift+D / Esc)"
+                >
+                  <MinimizeIcon />
+                </button>
+                <span className="git-diff-filename">No file selected</span>
+              </div>
+            </div>
+          )}
+          <div className="git-diff-placeholder">
+            {activeTab === 'changes'
+              ? 'Select a file to view differences'
+              : 'Select a file in the expanded commit to view differences'}
+          </div>
+        </>
+      )}
+    </div>
+  );
 
   return (
     <aside className="git-panel" style={{ width }}>
@@ -1112,45 +1302,8 @@ export const GitPanel: React.FC<GitPanelProps> = ({ cwd, onClose, width, onResiz
           <div className="git-vertical-resizer" onPointerDown={handleVerticalResizeStart} />
 
           {/* 3. Diff View */}
-          <div className="git-diff-container" style={{ flex: 1 }}>
-            {selectedFile ? (
-              <>
-                <div className="git-diff-header">
-                  <span className="git-diff-filename">{selectedFile.path}</span>
-                  <span className="git-diff-status">
-                    {selectedFile.isStaged ? 'staged' : 'working tree'}
-                  </span>
-                </div>
-                <div className="git-diff-body">
-                  {diffError ? (
-                    <div className="git-diff-error">{diffError}</div>
-                  ) : diff === null ? (
-                    <div className="git-diff-loading">Loading diff...</div>
-                  ) : (
-                    <pre className="git-diff-pre">
-                      <code>
-                        {parsedLines.map((lineInfo, i) => renderDiffLine(lineInfo, i))}
-                        {hiddenDiffLineCount > 0 && renderDiffLine({
-                          raw: `... Preview truncated: ${hiddenDiffLineCount} more lines not shown.`,
-                          className: 'diff-line-meta',
-                          prefix: '',
-                          oldLineNumber: '',
-                          newLineNumber: '',
-                          isCodeLine: false,
-                          dataLang: 'text',
-                          highlightedCode: `... Preview truncated: ${hiddenDiffLineCount} more lines not shown.`
-                        }, parsedLines.length)}
-                      </code>
-                    </pre>
-                  )}
-                </div>
-              </>
-            ) : (
-              <div className="git-diff-placeholder">
-                Select a file to view differences
-              </div>
-            )}
-          </div>
+          {isDiffMaximized && maximizedPlaceholder}
+          {diffElement}
         </div>
       ) : (
         /* HISTORY TAB CONTENT */
@@ -1367,45 +1520,8 @@ export const GitPanel: React.FC<GitPanelProps> = ({ cwd, onClose, width, onResiz
               <div className="git-vertical-resizer" onPointerDown={handleVerticalResizeStart} />
 
               {/* 3. Diff View */}
-              <div className="git-diff-container" style={{ flex: 1 }}>
-                {selectedCommitFile ? (
-                  <>
-                    <div className="git-diff-header">
-                      <span className="git-diff-filename">{selectedCommitFile.path}</span>
-                      <span className="git-diff-status">
-                        commit {selectedCommit?.hash.substring(0, 8)}
-                      </span>
-                    </div>
-                    <div className="git-diff-body">
-                      {diffError ? (
-                        <div className="git-diff-error">{diffError}</div>
-                      ) : diff === null ? (
-                        <div className="git-diff-loading">Loading diff...</div>
-                      ) : (
-                        <pre className="git-diff-pre">
-                          <code>
-                            {parsedLines.map((lineInfo, i) => renderDiffLine(lineInfo, i))}
-                            {hiddenDiffLineCount > 0 && renderDiffLine({
-                              raw: `... Preview truncated: ${hiddenDiffLineCount} more lines not shown.`,
-                              className: 'diff-line-meta',
-                              prefix: '',
-                              oldLineNumber: '',
-                              newLineNumber: '',
-                              isCodeLine: false,
-                              dataLang: 'text',
-                              highlightedCode: `... Preview truncated: ${hiddenDiffLineCount} more lines not shown.`
-                            }, parsedLines.length)}
-                          </code>
-                        </pre>
-                      )}
-                    </div>
-                  </>
-                ) : (
-                  <div className="git-diff-placeholder">
-                    Select a file in the expanded commit to view differences
-                  </div>
-                )}
-              </div>
+              {isDiffMaximized && maximizedPlaceholder}
+              {diffElement}
             </div>
           );
         })()
