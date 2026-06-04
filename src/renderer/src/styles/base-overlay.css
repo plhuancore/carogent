@@ -1,5 +1,5 @@
 :root {
-  color: #e5e7eb;
+  color: #f1f5f9;
   background: #050607;
   font-family:
     Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
@@ -29,6 +29,51 @@ html.is-agent-overlay #root {
 
 button {
   font: inherit;
+  border: none;
+  background: none;
+  padding: 0;
+  margin: 0;
+}
+
+/* Animations */
+@keyframes agent-shell-fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes agent-menu-slide-down {
+  from {
+    opacity: 0;
+    transform: translateY(-8px) scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes agent-dot-blink {
+  0%, 100% {
+    opacity: 1;
+    transform: scale(1);
+    box-shadow: 
+      0 0 0 1px rgba(15, 23, 42, 0.9), 
+      0 0 8px rgba(16, 185, 129, 0.8),
+      0 0 15px rgba(16, 185, 129, 0.4);
+  }
+  50% {
+    opacity: 0.35;
+    transform: scale(0.85);
+    box-shadow: 
+      0 0 0 1px rgba(15, 23, 42, 0.9), 
+      0 0 2px rgba(16, 185, 129, 0.2);
+  }
 }
 
 .agent-overlay-shell {
@@ -42,6 +87,7 @@ button {
   padding: 3px;
   user-select: none;
   -webkit-app-region: drag;
+  animation: agent-shell-fade-in 0.35s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
 
 .agent-overlay-dropdown {
@@ -57,17 +103,30 @@ button {
 .agent-overlay-trigger {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   width: max-content;
   max-width: 100%;
   min-width: 0;
   overflow: hidden;
-  border: 1px solid rgba(45, 212, 191, 0.56);
+  border: none;
   border-radius: 999px;
-  background: #090d12;
-  box-shadow: none;
-  padding: 5px 7px;
+  background: linear-gradient(to bottom, rgba(13, 20, 30, 0.88), rgba(8, 12, 18, 0.94));
+  backdrop-filter: blur(12px);
+  padding: 6px 9px;
   -webkit-app-region: drag;
+  box-shadow: 
+    0 2px 6px rgba(0, 0, 0, 0.4), 
+    0 0 4px rgba(45, 212, 191, 0.08), 
+    inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  transition: box-shadow 0.25s ease, background-color 0.25s ease;
+}
+
+.agent-overlay-trigger:hover {
+  background: linear-gradient(to bottom, rgba(16, 25, 38, 0.92), rgba(10, 15, 22, 0.96));
+  box-shadow: 
+    0 3px 10px rgba(0, 0, 0, 0.5), 
+    0 0 6px rgba(45, 212, 191, 0.15), 
+    inset 0 1px 0 rgba(255, 255, 255, 0.12);
 }
 
 .agent-overlay-logo {
@@ -77,17 +136,22 @@ button {
   height: 22px;
   place-items: center;
   overflow: hidden;
-  border: 1px solid rgba(45, 212, 191, 0.35);
+  border: none;
   border-radius: 999px;
-  background: #050607;
+  background: transparent;
   padding: 0;
   cursor: pointer;
   margin-left: 1px;
   -webkit-app-region: no-drag;
+  transition: transform 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275);
 }
 
 .agent-overlay-logo:hover {
-  border-color: #2dd4bf;
+  transform: scale(1.08);
+}
+
+.agent-overlay-logo:active {
+  transform: scale(0.92);
 }
 
 .agent-overlay-logo img {
@@ -107,36 +171,30 @@ button {
   gap: 6px;
   height: 25px;
   min-width: 0;
-  border: 1px solid #243244;
+  border: none;
   border-radius: 999px;
-  background: #10151d;
+  background: transparent;
   color: #e2e8f0;
-  padding: 0 10px;
+  padding: 0 2px;
+  transition: color 0.2s ease;
+}
+
+.agent-overlay-current-count:hover {
+  color: #ffffff;
 }
 
 .agent-overlay-chip-dot {
-  width: 7px;
-  height: 7px;
+  width: 6px;
+  height: 6px;
   border-radius: 999px;
-  background: #34d399;
+  background: #10b981;
   box-shadow:
     0 0 0 1px rgba(15, 23, 42, 0.9),
-    0 0 10px rgba(52, 211, 153, 0.86);
-}
-
-@keyframes agent-dot-blink {
-  0%, 100% {
-    opacity: 1;
-    transform: scale(1);
-  }
-  50% {
-    opacity: 0.35;
-    transform: scale(0.8);
-  }
+    0 0 8px rgba(16, 185, 129, 0.8);
 }
 
 .agent-overlay-chip-dot.is-blinking {
-  animation: agent-dot-blink 1s ease-in-out infinite;
+  animation: agent-dot-blink 1.2s ease-in-out infinite;
 }
 
 .agent-overlay-chip-title,
@@ -149,22 +207,25 @@ button {
 
 .agent-overlay-chip-title {
   font-size: 11px;
-  font-weight: 750;
+  font-weight: 600;
+  letter-spacing: 0.1px;
 }
 
 .agent-overlay-chip-workspace {
   max-width: 72px;
   color: #94a3b8;
   font-size: 10px;
-  font-weight: 650;
+  font-weight: 500;
 }
 
 .agent-overlay-empty {
   min-width: 30px;
-  color: #94a3b8;
-  font-size: 12px;
-  font-weight: 650;
+  color: #64748b;
+  font-size: 10px;
+  font-weight: 600;
   line-height: 25px;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
 }
 
 .agent-overlay-menu-button,
@@ -173,38 +234,47 @@ button {
   width: 22px;
   height: 22px;
   place-items: center;
-  border: 1px solid #243244;
+  border: none;
   border-radius: 999px;
-  background: #10151d;
+  background: transparent;
   color: #94a3b8;
   cursor: pointer;
-  font-size: 14px;
+  font-size: 13px;
   line-height: 1;
   -webkit-app-region: no-drag;
+  transition: background-color 0.2s ease, color 0.2s ease, transform 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275);
 }
 
 .agent-overlay-menu-button::before {
   content: "";
-  width: 6px;
-  height: 6px;
-  border-right: 1.6px solid currentColor;
-  border-bottom: 1.6px solid currentColor;
+  width: 5px;
+  height: 5px;
+  border-right: 1.5px solid currentColor;
+  border-bottom: 1.5px solid currentColor;
   transform: translateY(-1px) rotate(45deg);
+  transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .agent-overlay-menu-button[aria-expanded='true']::before {
-  transform: translateY(2px) rotate(225deg);
+  transform: translateY(1.5px) rotate(225deg);
 }
 
 .agent-overlay-menu-button:hover:not(:disabled),
 .agent-overlay-close:hover {
-  border-color: #334155;
-  color: #ffffff;
+  background: rgba(148, 163, 184, 0.15);
+  color: #f1f5f9;
+  transform: scale(1.08);
+}
+
+.agent-overlay-menu-button:active:not(:disabled),
+.agent-overlay-close:active {
+  transform: scale(0.92);
 }
 
 .agent-overlay-menu-button:disabled {
-  color: #475569;
-  cursor: default;
+  color: #334155;
+  background: transparent;
+  cursor: not-allowed;
 }
 
 .agent-overlay-menu {
@@ -217,42 +287,55 @@ button {
   gap: 4px;
   min-width: 0;
   overflow: hidden;
-  border: 1px solid rgba(45, 212, 191, 0.38);
-  border-radius: 10px;
-  background: #090d12;
+  border: none;
+  border-radius: 12px;
+  background: linear-gradient(to bottom, rgba(13, 20, 30, 0.95), rgba(8, 12, 18, 0.97));
+  backdrop-filter: blur(16px);
   padding: 5px;
   box-sizing: border-box;
   -webkit-app-region: no-drag;
   z-index: 10;
+  box-shadow: 
+    0 4px 12px rgba(0, 0, 0, 0.5), 
+    0 0 8px rgba(45, 212, 191, 0.05), 
+    inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  animation: agent-menu-slide-down 0.22s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
 
 .agent-overlay-menu-item {
   display: flex;
   flex-direction: column;
-  gap: 3px;
+  gap: 4px;
   width: 100%;
   height: 76px;
   min-width: 0;
-  border: 0;
-  border-radius: 6px;
-  background: transparent;
-  color: #e2e8f0;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.025);
+  color: #cbd5e1;
   padding: 4px 6px;
   text-align: left;
   cursor: pointer;
   box-sizing: border-box;
   overflow: hidden;
+  position: relative;
+  transition: background-color 0.15s ease, color 0.15s ease;
 }
 
 .agent-overlay-menu-item:hover {
-  background: #132026;
+  background: rgba(148, 163, 184, 0.15);
+  border-color: transparent;
   color: #ffffff;
+}
+
+.agent-overlay-menu-item:active {
+  background: rgba(148, 163, 184, 0.25);
 }
 
 .agent-overlay-item-header {
   display: flex;
   align-items: center;
-  gap: 7px;
+  gap: 6px;
   width: 100%;
   min-width: 0;
 }
@@ -262,9 +345,23 @@ button {
   min-width: 0;
   overflow: hidden;
   font-size: 11px;
-  font-weight: 750;
+  font-weight: 600;
   text-overflow: ellipsis;
   white-space: nowrap;
+  color: #f1f5f9;
+}
+
+.agent-overlay-chip-workspace {
+  max-width: 60px;
+  color: #2dd4bf;
+  background: rgba(45, 212, 191, 0.08);
+  border: 1px solid rgba(45, 212, 191, 0.18);
+  font-size: 8px;
+  font-weight: 600;
+  padding: 0.5px 4px;
+  border-radius: 3px;
+  letter-spacing: 0.1px;
+  text-transform: uppercase;
 }
 
 .agent-overlay-item-terminal {

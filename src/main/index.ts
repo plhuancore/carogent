@@ -514,6 +514,7 @@ function createAgentDoneOverlayWindow(): BrowserWindow {
     }
   });
 
+  agentDoneOverlayWindow.setHasShadow(false);
   agentDoneOverlayWindow.setAlwaysOnTop(true, 'floating');
   agentDoneOverlayWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
   positionAgentDoneOverlay();
@@ -879,11 +880,16 @@ async function handleAgentBridgeAction(body: AgentBridgeRequest): Promise<unknow
         throw new Error(`Pane not found: ${paneId}`);
       }
 
-      return dispatchAgentBridgeRendererRequest({
+      // Fire and forget so we don't block waiting for the renderer response
+      dispatchAgentBridgeRendererRequest({
         action: 'notifyDone',
         paneId,
         workspaceId: body.workspaceId || pane.workspaceId
+      }).catch((err) => {
+        console.error('Failed to notify done in renderer:', err);
       });
+
+      return { paneId, workspaceId: body.workspaceId || pane.workspaceId };
     }
 
     case 'open_browser': {
