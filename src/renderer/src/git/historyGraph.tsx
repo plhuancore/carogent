@@ -353,12 +353,19 @@ export const renderRefBadges = (decorationStr: string) => {
 
 export function computeGraphData(commits: CommitHistoryItem[]) {
   const activeTracks: string[] = [];
+  const trackColors: number[] = [];
+  let colorCounter = 0;
+
   const rows: {
     commit: CommitHistoryItem;
     col: number;
     incomingTracks: string[];
     outgoingTracks: string[];
     isBranchHead: boolean;
+    parentCols: number[];
+    incomingColToOutgoingCol: number[];
+    incomingColors: number[];
+    outgoingColors: number[];
   }[] = [];
 
   for (let i = 0; i < commits.length; i++) {
@@ -369,22 +376,63 @@ export function computeGraphData(commits: CommitHistoryItem[]) {
     let col = activeTracks.indexOf(commit.hash);
     if (col === -1) {
       activeTracks.push(commit.hash);
+      trackColors.push(colorCounter++);
       col = activeTracks.length - 1;
       incomingTracks.push(commit.hash);
       isBranchHead = true;
     }
 
-    const outgoingTracks = activeTracks.filter((h) => h !== commit.hash);
+    const incomingColors = [...trackColors];
+    const commitColorIdx = trackColors[col];
 
     const parents = commit.parents || [];
-    for (let pIdx = 0; pIdx < parents.length; pIdx++) {
+    const tempTracks: { hash: string; origIdx: number; colorIdx: number }[] = [];
+    for (let idx = 0; idx < activeTracks.length; idx++) {
+      if (activeTracks[idx] !== commit.hash) {
+        tempTracks.push({
+          hash: activeTracks[idx],
+          origIdx: idx,
+          colorIdx: trackColors[idx]
+        });
+      }
+    }
+
+    const finalTracks: string[] = tempTracks.map((t) => t.hash);
+    const finalColors: number[] = tempTracks.map((t) => t.colorIdx);
+    const incomingColToOutgoingCol = new Array(activeTracks.length).fill(-1);
+
+    let insertOffset = 0;
+    if (parents.length > 0) {
+      finalTracks.splice(col, 0, parents[0]);
+      finalColors.splice(col, 0, commitColorIdx);
+      insertOffset = 1;
+    }
+
+    tempTracks.forEach((t, idx) => {
+      if (idx < col) {
+        incomingColToOutgoingCol[t.origIdx] = idx;
+      } else {
+        incomingColToOutgoingCol[t.origIdx] = idx + insertOffset;
+      }
+    });
+
+    const parentCols: number[] = [];
+    if (parents.length > 0) {
+      parentCols.push(col);
+    }
+    const seenParents = new Set<string>();
+    if (parents.length > 0) {
+      seenParents.add(parents[0]);
+    }
+    for (let pIdx = 1; pIdx < parents.length; pIdx++) {
       const parent = parents[pIdx];
-      if (parent) {
-        if (pIdx === 0) {
-          outgoingTracks.splice(col, 0, parent);
-        } else {
-          outgoingTracks.push(parent);
-        }
+      if (parent && !seenParents.has(parent)) {
+        seenParents.add(parent);
+        finalTracks.push(parent);
+        finalColors.push(colorCounter++);
+        parentCols.push(finalTracks.length - 1);
+      } else {
+        parentCols.push(-1);
       }
     }
 
@@ -392,12 +440,18 @@ export function computeGraphData(commits: CommitHistoryItem[]) {
       commit,
       col,
       incomingTracks,
-      outgoingTracks: [...outgoingTracks],
-      isBranchHead
+      outgoingTracks: [...finalTracks],
+      isBranchHead,
+      parentCols,
+      incomingColToOutgoingCol,
+      incomingColors,
+      outgoingColors: [...finalColors]
     });
 
     activeTracks.length = 0;
-    activeTracks.push(...outgoingTracks);
+    activeTracks.push(...finalTracks);
+    trackColors.length = 0;
+    trackColors.push(...finalColors);
   }
 
   return rows;
@@ -415,6 +469,10 @@ interface GraphCellProps {
   paddingX: number;
   rowIdx: number;
   hashToIndexMap: Map<string, { index: number; isHEAD: boolean }>;
+  parentCols: number[];
+  incomingColToOutgoingCol: number[];
+  incomingColors: number[];
+  outgoingColors: number[];
 }
 
 export const GraphCell = React.memo<GraphCellProps>(({
@@ -428,32 +486,24 @@ export const GraphCell = React.memo<GraphCellProps>(({
   colWidth,
   paddingX,
   rowIdx,
-  hashToIndexMap
+  hashToIndexMap,
+  parentCols,
+  incomingColToOutgoingCol,
+  incomingColors,
+  outgoingColors
 }) => {
   const yMid = rowHeight / 2;
   const xDot = col * colWidth + paddingX;
-  const dotColor = commit.isUncommitted ? '#8b949e' : getColorForCol(col);
+  const dotColor = commit.isUncommitted ? '#8b949e' : getColorForCol(incomingColors[col]);
   const isStashCommit = commit.decorations.includes('refs/stash') || commit.subject.startsWith('WIP on ');
   const stashColor = dotColor;
   const nodeRadius = commit.isUncommitted || commit.isHEAD ? 5 : 4.5;
   const branchStartY = yMid + nodeRadius;
   const branchBendY = yMid + 7;
-  const nextNodeTopY = rowHeight + yMid - nodeRadius;
-  const nextBranchStartY = yMid + 8;
-  const nextBranchControlY = nextNodeTopY - 6;
 
   const paths: React.ReactNode[] = [];
   const parents = commit.parents || [];
 
-  // Compute remaining tracks count without allocating an array
-  let remainingCount = 0;
-  for (let i = 0; i < incomingTracks.length; i++) {
-    if (incomingTracks[i] !== commit.hash) {
-      remainingCount++;
-    }
-  }
-
-  let outIdxCounter = 0;
   incomingTracks.forEach((hash, idx) => {
     const xStart = idx * colWidth + paddingX;
     
@@ -467,7 +517,7 @@ export const GraphCell = React.memo<GraphCellProps>(({
       ? '#8b949e'
       : (commitIdx !== -1 && isUncommittedHeadSegment)
         ? '#8b949e'
-        : getColorForCol(idx);
+        : getColorForCol(incomingColors[idx]);
 
     if (hash === commit.hash) {
       if (idx === col) {
@@ -488,10 +538,12 @@ export const GraphCell = React.memo<GraphCellProps>(({
       } else {
         // This is a branch track that terminates and merges into the node at col
         const xEnd = col * colWidth + paddingX;
+        const cpY1 = yMid * 0.35;
+        const cpY2 = yMid * 0.7;
         paths.push(
           <path
             key={`in-merge-${idx}-${col}`}
-            d={`M ${xStart} 0 C ${xStart} ${yMid - 6}, ${xEnd} ${yMid - 6}, ${xEnd} ${yMid}`}
+            d={`M ${xStart} 0 C ${xStart} ${cpY1}, ${xEnd} ${cpY2}, ${xEnd} ${yMid}`}
             stroke={color}
             fill="none"
             strokeWidth={color === '#8b949e' ? 1.5 : 2}
@@ -500,56 +552,40 @@ export const GraphCell = React.memo<GraphCellProps>(({
         );
       }
     } else {
-      // Compute outIdx on the fly without nested loop, Map or array allocation
-      let outIdx = outIdxCounter;
-      if (parents.length > 0 && parents[0] && col <= outIdx) {
-        outIdx++;
+      const outIdx = incomingColToOutgoingCol[idx];
+      if (outIdx !== undefined && outIdx !== -1) {
+        const xEnd = outIdx * colWidth + paddingX;
+        const cpY = xStart > xEnd ? yMid + 7 : (xStart < xEnd ? yMid - 7 : yMid);
+        paths.push(
+          <path
+            key={`in-pass-${idx}-${outIdx}`}
+            d={`M ${xStart} 0 C ${xStart} ${cpY}, ${xEnd} ${cpY}, ${xEnd} ${rowHeight}`}
+            stroke={color}
+            fill="none"
+            strokeWidth={color === '#8b949e' ? 1.5 : 2}
+            strokeLinecap="round"
+          />
+        );
       }
-      outIdxCounter++;
-
-      const xEnd = outIdx * colWidth + paddingX;
-      const cpY = xStart < xEnd ? yMid - 7 : yMid;
-      paths.push(
-        <path
-          key={`in-pass-${idx}-${outIdx}`}
-          d={xStart > xEnd
-            ? `M ${xStart} 0 L ${xStart} ${nextBranchStartY} C ${xStart} ${nextBranchControlY}, ${xEnd} ${nextBranchControlY}, ${xEnd} ${nextNodeTopY}`
-            : `M ${xStart} 0 C ${xStart} ${cpY}, ${xEnd} ${cpY}, ${xEnd} ${rowHeight}`}
-          stroke={color}
-          fill="none"
-          strokeWidth={color === '#8b949e' ? 1.5 : 2}
-          strokeLinecap="round"
-        />
-      );
     }
   });
 
   parents.forEach((parentHash, pIdx) => {
-    let outIdx = -1;
-    if (pIdx === 0) {
-      if (parents[0]) {
-        outIdx = col;
-      }
-    } else {
-      if (parents[pIdx]) {
-        outIdx = remainingCount + (parents[0] ? 1 : 0) + (pIdx - 1);
-      }
-    }
-
-    if (outIdx !== -1) {
+    const outIdx = parentCols[pIdx];
+    if (outIdx !== undefined && outIdx !== -1) {
       const xEnd = outIdx * colWidth + paddingX;
       
       // Determine parent connection line color: if the commit itself is uncommitted, the link to its parent is grey
       const color = commit.isUncommitted
         ? '#8b949e'
-        : getColorForCol(parents.length > 1 ? outIdx : col);
+        : getColorForCol(outgoingColors[outIdx]);
 
       paths.push(
         <path
           key={`out-parent-${pIdx}-${outIdx}`}
           d={xEnd === xDot
             ? `M ${xDot} ${yMid} L ${xEnd} ${rowHeight}`
-            : `M ${xDot} ${branchStartY} C ${xDot} ${branchBendY}, ${xEnd} ${branchBendY}, ${xEnd} ${rowHeight}`}
+            : `M ${xDot} ${yMid} C ${xDot} ${yMid + 7}, ${xEnd} ${yMid + 7}, ${xEnd} ${rowHeight}`}
           stroke={color}
           fill="none"
           strokeWidth={color === '#8b949e' ? 1.5 : 2.2}

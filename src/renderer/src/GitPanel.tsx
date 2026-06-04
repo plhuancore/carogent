@@ -1091,7 +1091,7 @@ export const GitPanel: React.FC<GitPanelProps> = ({ cwd, onClose, width, onResiz
                             <td className="col-graph" style={{ width: columnWidths.graph, minWidth: columnWidths.graph, maxWidth: columnWidths.graph, position: 'relative', zIndex: 1000 - i }}>
                               <GraphCell
                                 col={row.col}
-                                incomingTracks={row.incomingTracks}
+                                                               incomingTracks={row.incomingTracks}
                                 outgoingTracks={row.outgoingTracks}
                                 isBranchHead={row.isBranchHead}
                                 commit={commit}
@@ -1101,6 +1101,10 @@ export const GitPanel: React.FC<GitPanelProps> = ({ cwd, onClose, width, onResiz
                                 paddingX={paddingX}
                                 rowIdx={i}
                                 hashToIndexMap={hashToIndexMap}
+                                parentCols={row.parentCols}
+                                incomingColToOutgoingCol={row.incomingColToOutgoingCol}
+                                incomingColors={row.incomingColors}
+                                outgoingColors={row.outgoingColors}
                               />
                             </td>
                             <td className="col-desc" style={{ width: columnWidths.desc, minWidth: columnWidths.desc, maxWidth: columnWidths.desc }} title={commit.subject}>
