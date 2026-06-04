@@ -194,3 +194,19 @@ export function McpIcon(): JSX.Element {
     </svg>
   );
 }
+
+export function MaximizeIcon(): JSX.Element {
+  return (
+    <svg aria-hidden="true" viewBox="0 0 16 16">
+      <path d="M1.5 5.5v-4h4M10.5 1.5h4v4M14.5 10.5v4h-4M5.5 14.5h-4v-4" />
+    </svg>
+  );
+}
+
+export function MinimizeIcon(): JSX.Element {
+  return (
+    <svg aria-hidden="true" viewBox="0 0 16 16">
+      <path d="M4.5 1.5v3h-3M11.5 1.5v3h3M11.5 14.5v-3h3M4.5 14.5v-3h-3" />
+    </svg>
+  );
+}

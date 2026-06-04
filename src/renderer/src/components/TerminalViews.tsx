@@ -3,13 +3,16 @@ import type { CSSProperties, DragEvent as ReactDragEvent, PointerEvent as ReactP
 import type { ISearchOptions } from '@xterm/addon-search';
 import type { TerminalShellOption } from '../../../shared/ipcTypes';
 import type { LayoutNode, PaneNode, SplitDirection } from '../layout';
+import { findPane } from '../layout';
 import {
   AgentOverlayIcon,
   ChevronDownIcon,
   SearchIcon,
   ShellIcon,
   SplitDownIcon,
-  SplitRightIcon
+  SplitRightIcon,
+  MaximizeIcon,
+  MinimizeIcon
 } from './AppIcons';
 import {
   captureTerminalScroll,
@@ -60,6 +63,7 @@ function escapeTerminalPath(path: string): string {
   return `'${path.replace(/'/g, "'\\''")}'`;
 }
 
+
 type NodeViewProps = {
   node: LayoutNode;
   path: string;
@@ -77,9 +81,38 @@ type NodeViewProps = {
   shellOptions: TerminalShellOption[];
   onPushToOverlay: (paneId: string) => void;
   pinnedPaneIds: Set<string>;
+  maximizedPaneId?: string | null;
+  onToggleMaximize?: (paneId: string) => void;
 };
 
 export function NodeView(props: NodeViewProps): JSX.Element {
+  if (props.maximizedPaneId) {
+    const maximizedPane = findPane(props.node, props.maximizedPaneId);
+    if (maximizedPane) {
+      return (
+        <TerminalPane
+          key={maximizedPane.paneId}
+          pane={maximizedPane}
+          active={maximizedPane.paneId === props.activePaneId}
+          workspaceFocusColor={props.workspaceFocusColor}
+          canClose={props.paneCount > 1}
+          ensureSession={props.ensureSession}
+          onActivate={props.onActivate}
+          onSplit={props.onSplit}
+          onClose={props.onClose}
+          onUpdatePane={props.onUpdatePane}
+          onChangeShell={props.onChangeShell}
+          onOpenBrowser={props.onOpenBrowser}
+          shellOptions={props.shellOptions}
+          onPushToOverlay={props.onPushToOverlay}
+          pinnedPaneIds={props.pinnedPaneIds}
+          maximizedPaneId={props.maximizedPaneId}
+          onToggleMaximize={props.onToggleMaximize}
+        />
+      );
+    }
+  }
+
   if (props.node.type === 'pane') {
     return (
       <TerminalPane
@@ -98,6 +131,8 @@ export function NodeView(props: NodeViewProps): JSX.Element {
         shellOptions={props.shellOptions}
         onPushToOverlay={props.onPushToOverlay}
         pinnedPaneIds={props.pinnedPaneIds}
+        maximizedPaneId={props.maximizedPaneId}
+        onToggleMaximize={props.onToggleMaximize}
       />
     );
   }
@@ -130,7 +165,9 @@ function SplitView({
   onOpenBrowser,
   shellOptions,
   onPushToOverlay,
-  pinnedPaneIds
+  pinnedPaneIds,
+  maximizedPaneId,
+  onToggleMaximize
 }: SplitViewProps): JSX.Element {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const directionClass = node.direction === 'row' ? 'split-row' : 'split-column';
@@ -189,6 +226,8 @@ function SplitView({
           shellOptions={shellOptions}
           onPushToOverlay={onPushToOverlay}
           pinnedPaneIds={pinnedPaneIds}
+          maximizedPaneId={maximizedPaneId}
+          onToggleMaximize={onToggleMaximize}
         />
       </div>
       <div className="divider" role="separator" onPointerDown={beginResize} />
@@ -210,11 +249,14 @@ function SplitView({
           shellOptions={shellOptions}
           onPushToOverlay={onPushToOverlay}
           pinnedPaneIds={pinnedPaneIds}
+          maximizedPaneId={maximizedPaneId}
+          onToggleMaximize={onToggleMaximize}
         />
       </div>
     </div>
   );
 }
+
 
 type TerminalPaneProps = {
   pane: PaneNode;
@@ -231,6 +273,8 @@ type TerminalPaneProps = {
   shellOptions: TerminalShellOption[];
   onPushToOverlay: (paneId: string) => void;
   pinnedPaneIds: Set<string>;
+  maximizedPaneId?: string | null;
+  onToggleMaximize?: (paneId: string) => void;
 };
 
 function TerminalPane({
@@ -247,7 +291,9 @@ function TerminalPane({
   onOpenBrowser,
   shellOptions,
   onPushToOverlay,
-  pinnedPaneIds
+  pinnedPaneIds,
+  maximizedPaneId,
+  onToggleMaximize
 }: TerminalPaneProps): JSX.Element {
   const hostRef = useRef<HTMLDivElement | null>(null);
   const editorRef = useRef<HTMLDivElement | null>(null);
@@ -630,6 +676,17 @@ function TerminalPane({
               </div>
             )}
           </div>
+          {onToggleMaximize && (
+            <button
+              className={`pane-maximize-button ${maximizedPaneId === pane.paneId ? 'is-maximized' : ''}`}
+              type="button"
+              title={maximizedPaneId === pane.paneId ? 'Exit full screen' : 'Full screen'}
+              onMouseDown={(event) => event.stopPropagation()}
+              onClick={() => onToggleMaximize(pane.paneId)}
+            >
+              {maximizedPaneId === pane.paneId ? <MinimizeIcon /> : <MaximizeIcon />}
+            </button>
+          )}
           {browserUrlLabel && (
             <button
               className="pane-domain"

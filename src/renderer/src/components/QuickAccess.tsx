@@ -103,7 +103,6 @@ export function QuickAccessPalette({
               key={item.id}
               className={`quick-access-result ${index === selectedIndex ? 'is-selected' : ''}`}
               type="button"
-              onMouseEnter={() => onSelectedIndexChange(index)}
               onClick={() => onOpenItem(item)}
             >
               <span className="quick-access-result-icon" aria-hidden="true">
