@@ -453,6 +453,7 @@ export const GraphCell = React.memo<GraphCellProps>(({
     }
   }
 
+  let outIdxCounter = 0;
   incomingTracks.forEach((hash, idx) => {
     const xStart = idx * colWidth + paddingX;
     
@@ -499,16 +500,12 @@ export const GraphCell = React.memo<GraphCellProps>(({
         );
       }
     } else {
-      // Compute outIdx on the fly without Map or array allocation
-      let outIdx = 0;
-      for (let i = 0; i < idx; i++) {
-        if (incomingTracks[i] !== commit.hash) {
-          outIdx++;
-        }
-      }
+      // Compute outIdx on the fly without nested loop, Map or array allocation
+      let outIdx = outIdxCounter;
       if (parents.length > 0 && parents[0] && col <= outIdx) {
         outIdx++;
       }
+      outIdxCounter++;
 
       const xEnd = outIdx * colWidth + paddingX;
       const cpY = xStart < xEnd ? yMid - 7 : yMid;
