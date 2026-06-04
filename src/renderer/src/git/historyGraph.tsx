@@ -374,13 +374,12 @@ export function computeGraphData(commits: CommitHistoryItem[]) {
       isBranchHead = true;
     }
 
-    const outgoingTracks = [...activeTracks];
-    outgoingTracks.splice(col, 1);
+    const outgoingTracks = activeTracks.filter((h) => h !== commit.hash);
 
     const parents = commit.parents || [];
     for (let pIdx = 0; pIdx < parents.length; pIdx++) {
       const parent = parents[pIdx];
-      if (parent && !outgoingTracks.includes(parent)) {
+      if (parent) {
         if (pIdx === 0) {
           outgoingTracks.splice(col, 0, parent);
         } else {
@@ -418,7 +417,7 @@ interface GraphCellProps {
   hashToIndexMap: Map<string, { index: number; isHEAD: boolean }>;
 }
 
-export const GraphCell: React.FC<GraphCellProps> = ({
+export const GraphCell = React.memo<GraphCellProps>(({
   col,
   incomingTracks,
   outgoingTracks,
@@ -444,7 +443,17 @@ export const GraphCell: React.FC<GraphCellProps> = ({
   const nextBranchControlY = nextNodeTopY - 6;
 
   const paths: React.ReactNode[] = [];
+  const parents = commit.parents || [];
 
+  // Compute remaining tracks count without allocating an array
+  let remainingCount = 0;
+  for (let i = 0; i < incomingTracks.length; i++) {
+    if (incomingTracks[i] !== commit.hash) {
+      remainingCount++;
+    }
+  }
+
+  let outIdxCounter = 0;
   incomingTracks.forEach((hash, idx) => {
     const xStart = idx * colWidth + paddingX;
     
@@ -460,32 +469,29 @@ export const GraphCell: React.FC<GraphCellProps> = ({
         ? '#8b949e'
         : getColorForCol(idx);
 
-    if (idx === col) {
-      if (!isBranchHead) {
-        paths.push(
-          <line
-            key={`in-commit-${idx}`}
-            x1={xStart}
-            y1={0}
-            x2={xStart}
-            y2={yMid}
-            stroke={color}
-            strokeWidth={color === '#8b949e' ? 1.5 : 2}
-            strokeLinecap="round"
-          />
-        );
-      }
-    } else {
-      const outIdx = outgoingTracks.indexOf(hash);
-      if (outIdx !== -1) {
-        const xEnd = outIdx * colWidth + paddingX;
-        const cpY = xStart < xEnd ? yMid - 7 : yMid;
+    if (hash === commit.hash) {
+      if (idx === col) {
+        if (!isBranchHead) {
+          paths.push(
+            <line
+              key={`in-commit-${idx}`}
+              x1={xStart}
+              y1={0}
+              x2={xStart}
+              y2={yMid}
+              stroke={color}
+              strokeWidth={color === '#8b949e' ? 1.5 : 2}
+              strokeLinecap="round"
+            />
+          );
+        }
+      } else {
+        // This is a branch track that terminates and merges into the node at col
+        const xEnd = col * colWidth + paddingX;
         paths.push(
           <path
-            key={`in-pass-${idx}-${outIdx}`}
-            d={xStart > xEnd
-              ? `M ${xStart} 0 L ${xStart} ${nextBranchStartY} C ${xStart} ${nextBranchControlY}, ${xEnd} ${nextBranchControlY}, ${xEnd} ${nextNodeTopY}`
-              : `M ${xStart} 0 C ${xStart} ${cpY}, ${xEnd} ${cpY}, ${xEnd} ${rowHeight}`}
+            key={`in-merge-${idx}-${col}`}
+            d={`M ${xStart} 0 C ${xStart} ${yMid - 6}, ${xEnd} ${yMid - 6}, ${xEnd} ${yMid}`}
             stroke={color}
             fill="none"
             strokeWidth={color === '#8b949e' ? 1.5 : 2}
@@ -493,12 +499,43 @@ export const GraphCell: React.FC<GraphCellProps> = ({
           />
         );
       }
+    } else {
+      // Compute outIdx on the fly without nested loop, Map or array allocation
+      let outIdx = outIdxCounter;
+      if (parents.length > 0 && parents[0] && col <= outIdx) {
+        outIdx++;
+      }
+      outIdxCounter++;
+
+      const xEnd = outIdx * colWidth + paddingX;
+      const cpY = xStart < xEnd ? yMid - 7 : yMid;
+      paths.push(
+        <path
+          key={`in-pass-${idx}-${outIdx}`}
+          d={xStart > xEnd
+            ? `M ${xStart} 0 L ${xStart} ${nextBranchStartY} C ${xStart} ${nextBranchControlY}, ${xEnd} ${nextBranchControlY}, ${xEnd} ${nextNodeTopY}`
+            : `M ${xStart} 0 C ${xStart} ${cpY}, ${xEnd} ${cpY}, ${xEnd} ${rowHeight}`}
+          stroke={color}
+          fill="none"
+          strokeWidth={color === '#8b949e' ? 1.5 : 2}
+          strokeLinecap="round"
+        />
+      );
     }
   });
 
-  const parents = commit.parents || [];
-  parents.forEach((parentHash) => {
-    const outIdx = outgoingTracks.indexOf(parentHash);
+  parents.forEach((parentHash, pIdx) => {
+    let outIdx = -1;
+    if (pIdx === 0) {
+      if (parents[0]) {
+        outIdx = col;
+      }
+    } else {
+      if (parents[pIdx]) {
+        outIdx = remainingCount + (parents[0] ? 1 : 0) + (pIdx - 1);
+      }
+    }
+
     if (outIdx !== -1) {
       const xEnd = outIdx * colWidth + paddingX;
       
@@ -509,7 +546,7 @@ export const GraphCell: React.FC<GraphCellProps> = ({
 
       paths.push(
         <path
-          key={`out-parent-${outIdx}`}
+          key={`out-parent-${pIdx}-${outIdx}`}
           d={xEnd === xDot
             ? `M ${xDot} ${yMid} L ${xEnd} ${rowHeight}`
             : `M ${xDot} ${branchStartY} C ${xDot} ${branchBendY}, ${xEnd} ${branchBendY}, ${xEnd} ${rowHeight}`}
@@ -570,5 +607,6 @@ export const GraphCell: React.FC<GraphCellProps> = ({
       )}
     </svg>
   );
-};
+});
+GraphCell.displayName = 'GraphCell';
 
