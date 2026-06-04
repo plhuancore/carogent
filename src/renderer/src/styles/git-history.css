@@ -288,6 +288,12 @@
   transition: border-color 0.15s ease;
 }
 
+.git-commit-input::placeholder {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .git-commit-input:focus {
   border-color: #58a6ff;
 }
