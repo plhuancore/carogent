@@ -9,6 +9,7 @@ export type WorkspaceState = {
   layout: LayoutNode;
   activePaneId: string;
   color?: string;
+  maximizedPaneId?: string;
 };
 
 export type WorkspaceStore = {
@@ -70,6 +71,7 @@ function isWorkspaceState(value: unknown): value is WorkspaceState {
     typeof workspace.name === 'string' &&
     typeof workspace.activePaneId === 'string' &&
     (workspace.color === undefined || typeof workspace.color === 'string') &&
+    (workspace.maximizedPaneId === undefined || typeof workspace.maximizedPaneId === 'string') &&
     isLayoutNode(workspace.layout)
   );
 }

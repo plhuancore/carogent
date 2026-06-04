@@ -450,7 +450,11 @@ function App(): JSX.Element {
           setWorkspaces((current) =>
             current.map((workspace) =>
               workspace.id === (request.workspaceId || activeWorkspaceId)
-                ? { ...workspace, activePaneId: request.paneId }
+                ? {
+                    ...workspace,
+                    activePaneId: request.paneId,
+                    maximizedPaneId: workspace.maximizedPaneId === request.paneId ? workspace.maximizedPaneId : undefined
+                  }
                 : workspace
             )
           );
@@ -512,7 +516,8 @@ function App(): JSX.Element {
             return {
               ...workspace,
               layout: nextLayout,
-              activePaneId: newPaneId
+              activePaneId: newPaneId,
+              maximizedPaneId: undefined
             };
           });
 
@@ -716,7 +721,8 @@ function App(): JSX.Element {
       return {
         ...workspace,
         layout: result.layout,
-        activePaneId: result.newPaneId
+        activePaneId: result.newPaneId,
+        maximizedPaneId: undefined
       };
     });
   }, [updateActiveWorkspace]);
@@ -732,10 +738,22 @@ function App(): JSX.Element {
       updateActiveWorkspace((workspace) => ({
         ...workspace,
         layout: nextLayout,
-        activePaneId: getFirstPaneId(nextLayout)
+        activePaneId: getFirstPaneId(nextLayout),
+        maximizedPaneId: workspace.maximizedPaneId === paneId ? undefined : workspace.maximizedPaneId
       }));
     },
     [killPaneSession, layout, updateActiveWorkspace]
+  );
+
+  const handleToggleMaximize = useCallback(
+    (paneId: string) => {
+      updateActiveWorkspace((workspace) => ({
+        ...workspace,
+        activePaneId: paneId,
+        maximizedPaneId: workspace.maximizedPaneId === paneId ? undefined : paneId
+      }));
+    },
+    [updateActiveWorkspace]
   );
 
   const handleResize = useCallback((path: string, firstSize: number) => {
@@ -1014,7 +1032,6 @@ function App(): JSX.Element {
         }
       }
     ];
-
     if (activePaneId) {
       const isPinned = pinnedPaneIds.has(activePaneId);
       items.push({
@@ -1025,6 +1042,19 @@ function App(): JSX.Element {
         icon: 'agent-overlay',
         run: () => {
           handleTogglePinShell(activePaneId);
+          closeQuickAccess();
+        }
+      });
+
+      const isMaximized = activeWorkspace.maximizedPaneId === activePaneId;
+      items.push({
+        id: 'toggle-fullscreen-shell',
+        title: isMaximized ? 'Terminal: Exit Full Screen Shell' : 'Terminal: Full Screen Shell',
+        subtitle: activePane?.title || 'Active shell',
+        keywords: `${isMaximized ? 'minimize exit shrink restore normal' : 'maximize zoom expand fullscreen full screen'} current shell active pane terminal`,
+        icon: 'quick-access',
+        run: () => {
+          handleToggleMaximize(activePaneId);
           closeQuickAccess();
         }
       });
@@ -1044,9 +1074,10 @@ function App(): JSX.Element {
     handleTogglePinShell,
     pinnedPaneIds,
     isGitSidebarOpen,
-    setGitRefreshTrigger
+    setGitRefreshTrigger,
+    activeWorkspace.maximizedPaneId,
+    handleToggleMaximize
   ]);
-
   const effectivePaletteMode: PaletteMode = quickAccessQuery.trimStart().startsWith('>')
     ? 'command'
     : paletteMode;
@@ -1356,6 +1387,8 @@ function App(): JSX.Element {
             shellOptions={shellOptions}
             onPushToOverlay={handleTogglePinShell}
             pinnedPaneIds={pinnedPaneIds}
+            maximizedPaneId={activeWorkspace.maximizedPaneId}
+            onToggleMaximize={handleToggleMaximize}
           />
         </div>
       </section>
