@@ -59,7 +59,7 @@ function OverlayApp(): JSX.Element {
         lastTimestamps.current.set(item.paneId, timestamp);
         
         const age = now - timestamp;
-        if (age < 5000) {
+        if (age < 10000) {
           // Clear any existing timer for this pane
           const existingTimer = timers.current.get(item.paneId);
           if (existingTimer) {
@@ -68,7 +68,7 @@ function OverlayApp(): JSX.Element {
 
           toAdd.add(item.paneId);
 
-          const remaining = 5000 - age;
+          const remaining = 10000 - age;
           const paneId = item.paneId;
           const newTimer = setTimeout(() => {
             setBlinkingPaneIds((prev) => {
@@ -81,7 +81,7 @@ function OverlayApp(): JSX.Element {
           
           timers.current.set(paneId, newTimer);
         } else {
-          // If the notification is older than 5s, remove blinking
+          // If the notification is older than 10s, remove blinking
           const timer = timers.current.get(item.paneId);
           if (timer) {
             clearTimeout(timer);
