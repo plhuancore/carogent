@@ -9,6 +9,8 @@ import type { CommitHistoryItem } from './git/types';
 import { MaximizeIcon, MinimizeIcon } from './components/AppIcons';
 
 const MAX_RENDERED_DIFF_LINES = 5000;
+const HISTORY_PAGE_SIZE = 100;
+const MAX_HISTORY_ITEMS = 5000;
 const IS_MAC = navigator.platform.toUpperCase().indexOf('MAC') >= 0;
 
 type MaximizedDiffRect = {
@@ -64,6 +66,26 @@ export const GitPanel: React.FC<GitPanelProps> = ({ cwd, onClose, width, onResiz
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const [isDiffMaximized, setIsDiffMaximized] = useState(false);
   const [maximizedDiffRect, setMaximizedDiffRect] = useState<MaximizedDiffRect | null>(null);
+  const [hasMoreHistory, setHasMoreHistory] = useState(true);
+  const loadedHistoryRawCountRef = useRef(0);
+  const historyRequestIdRef = useRef(0);
+  const historyLoadingRef = useRef(false);
+
+  useEffect(() => {
+    historyRequestIdRef.current += 1;
+    loadedHistoryRawCountRef.current = 0;
+    historyLoadingRef.current = false;
+    setHistoryLoading(false);
+    setHasMoreHistory(true);
+    setHistory([]);
+    setSelectedCommit(null);
+    setCommitFiles([]);
+    setCommitFilesHasMore(false);
+    setSelectedCommitFile(null);
+    setDiff(null);
+    setDiffError(null);
+  }, [cwd]);
+
   const selectedFileRef = useRef<{ path: string; isStaged: boolean } | null>(null);
   const statusInFlightRef = useRef(false);
   const pendingStatusRef = useRef(false);
@@ -71,6 +93,8 @@ export const GitPanel: React.FC<GitPanelProps> = ({ cwd, onClose, width, onResiz
   const diffRequestIdRef = useRef(0);
   const commitFilesRequestIdRef = useRef(0);
   const commitDiffRequestIdRef = useRef(0);
+  const loaderRef = useRef<HTMLTableRowElement | null>(null);
+  const historyContainerRef = useRef<HTMLDivElement | null>(null);
 
   const { historyForGraph, graphRows, hashToIndexMap } = useMemo(() => {
     const stagedCount = status?.staged?.length || 0;
@@ -369,16 +393,26 @@ export const GitPanel: React.FC<GitPanelProps> = ({ cwd, onClose, width, onResiz
     }
   }, [cwd]);
 
-  // Load History
-  const loadHistory = useCallback(async () => {
+  const loadHistory = useCallback(async (reset = false) => {
     if (!cwd) return;
+    if (historyLoadingRef.current && !reset) return;
+    const requestId = ++historyRequestIdRef.current;
+    const skip = reset ? 0 : loadedHistoryRawCountRef.current;
+    if (skip >= MAX_HISTORY_ITEMS) {
+      setHasMoreHistory(false);
+      return;
+    }
+    const limit = Math.min(HISTORY_PAGE_SIZE, MAX_HISTORY_ITEMS - skip);
+    historyLoadingRef.current = true;
     setHistoryLoading(true);
     try {
-      const logText = await window.terminalApi.gitHistory({ cwd });
-      const items: CommitHistoryItem[] = logText
-        .split('\n')
-        .filter(Boolean)
-        .map(line => {
+      const logText = await window.terminalApi.gitHistory({ cwd, limit, skip });
+      if (historyRequestIdRef.current !== requestId) return;
+      const rawLines = logText.split('\n').map(line => line.trim()).filter(Boolean);
+      loadedHistoryRawCountRef.current = skip + rawLines.length;
+      setHasMoreHistory(rawLines.length === limit && loadedHistoryRawCountRef.current < MAX_HISTORY_ITEMS);
+      const items: CommitHistoryItem[] = rawLines
+        .map((line) => {
           const parts = line.split('|');
           const hash = parts[0] || '';
           const parents = parts[1] ? parts[1].trim().split(' ').filter(Boolean) : [];
@@ -415,6 +449,7 @@ export const GitPanel: React.FC<GitPanelProps> = ({ cwd, onClose, width, onResiz
             isHEAD
           };
         });
+
       const hiddenStashHelperHashes = new Set(
         items
           .filter(item => /^index on .+: /.test(item.subject) || /^untracked files on .+: /.test(item.subject))
@@ -428,13 +463,25 @@ export const GitPanel: React.FC<GitPanelProps> = ({ cwd, onClose, width, onResiz
         }));
 
       visibleItems.sort((a, b) => b.timestamp - a.timestamp);
-      setHistory(visibleItems);
+      setHistory(prev => {
+        const combined = reset ? visibleItems : [...prev, ...visibleItems];
+        const seen = new Set<string>();
+        return combined.filter(item => {
+          if (seen.has(item.hash)) return false;
+          seen.add(item.hash);
+          return true;
+        });
+      });
     } catch (err) {
+      if (historyRequestIdRef.current !== requestId) return;
       console.error('Failed to load history:', err);
     } finally {
+      if (historyRequestIdRef.current !== requestId) return;
+      historyLoadingRef.current = false;
       setHistoryLoading(false);
     }
   }, [cwd]);
+
 
   const handleCommitRowClick = useCallback(async (commit: CommitHistoryItem) => {
     if (selectedCommit?.hash === commit.hash) {
@@ -506,7 +553,7 @@ export const GitPanel: React.FC<GitPanelProps> = ({ cwd, onClose, width, onResiz
     }
   }, [cwd, selectedCommit]);
 
-  // Handle Watcher / Initial Load (only when tab is open and app is focused)
+  // Handle Watcher / Initial Load (only when app is focused)
   useEffect(() => {
     if (!cwd) return;
 
@@ -519,9 +566,6 @@ export const GitPanel: React.FC<GitPanelProps> = ({ cwd, onClose, width, onResiz
 
       if (sync) {
         loadStatus(false);
-        if (activeTab === 'history') {
-          loadHistory();
-        }
       }
 
       window.terminalApi.gitWatch({ cwd });
@@ -545,9 +589,6 @@ export const GitPanel: React.FC<GitPanelProps> = ({ cwd, onClose, width, onResiz
 
     // Initial load
     loadStatus(true);
-    if (activeTab === 'history') {
-      loadHistory();
-    }
 
     if (document.hasFocus()) {
       startWatching(false);
@@ -570,7 +611,27 @@ export const GitPanel: React.FC<GitPanelProps> = ({ cwd, onClose, width, onResiz
       window.removeEventListener('focus', handleFocus);
       window.removeEventListener('blur', handleBlur);
     };
-  }, [cwd, activeTab, loadStatus, loadHistory]);
+  }, [cwd, loadStatus]);
+
+  // Load history when tab is history, CWD changes, or window gains focus
+  useEffect(() => {
+    if (activeTab !== 'history' || !cwd) return;
+
+    loadedHistoryRawCountRef.current = 0;
+    setHasMoreHistory(true);
+    setHistory([]);
+    loadHistory(true);
+
+    const handleFocus = () => {
+      loadedHistoryRawCountRef.current = 0;
+      setHasMoreHistory(true);
+      loadHistory(true);
+    };
+    window.addEventListener('focus', handleFocus);
+    return () => {
+      window.removeEventListener('focus', handleFocus);
+    };
+  }, [cwd, activeTab, loadHistory]);
 
   // Load diff when selection changes
   useEffect(() => {
@@ -584,7 +645,7 @@ export const GitPanel: React.FC<GitPanelProps> = ({ cwd, onClose, width, onResiz
     if (refreshTrigger > 0) {
       loadStatus(true);
       if (activeTab === 'history') {
-        loadHistory();
+        loadHistory(true);
       }
     }
   }, [refreshTrigger, loadStatus, loadHistory, activeTab]);
@@ -655,6 +716,35 @@ export const GitPanel: React.FC<GitPanelProps> = ({ cwd, onClose, width, onResiz
       resizeObserver?.disconnect();
     };
   }, [isDiffMaximized]);
+
+  // Infinite scroll intersection observer
+  useEffect(() => {
+    if (!hasMoreHistory || historyLoading || !cwd || activeTab !== 'history') return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting && !historyLoadingRef.current && !historyLoading) {
+          loadHistory(false);
+        }
+      },
+      {
+        root: historyContainerRef.current, // relative to the scroll container
+        rootMargin: '100px', // trigger load 100px before reaching the bottom
+        threshold: 0
+      }
+    );
+
+    const currentLoader = loaderRef.current;
+    if (currentLoader) {
+      observer.observe(currentLoader);
+    }
+
+    return () => {
+      if (currentLoader) {
+        observer.unobserve(currentLoader);
+      }
+    };
+  }, [hasMoreHistory, historyLoading, cwd, activeTab, loadHistory]);
 
   // File Actions
   const handleStageFile = async (e: React.MouseEvent, filePath: string) => {
@@ -742,7 +832,7 @@ export const GitPanel: React.FC<GitPanelProps> = ({ cwd, onClose, width, onResiz
       setCommitMessage('');
       await loadStatus();
       if (activeTab === 'history') {
-        loadHistory();
+        loadHistory(true);
       }
     } catch (err) {
       alert('Failed to commit: ' + err);
@@ -1067,7 +1157,7 @@ export const GitPanel: React.FC<GitPanelProps> = ({ cwd, onClose, width, onResiz
             onClick={async () => {
               await loadStatus(true);
               if (activeTab === 'history') {
-                loadHistory();
+                loadHistory(true);
               }
             }}
             title="Refresh"
@@ -1308,7 +1398,7 @@ export const GitPanel: React.FC<GitPanelProps> = ({ cwd, onClose, width, onResiz
       ) : (
         /* HISTORY TAB CONTENT */
         (() => {
-          if (historyLoading) {
+          if (historyLoading && history.length === 0) {
             return (
               <div className="git-tab-content history-tab">
                 <div className="git-panel-loading">
@@ -1337,7 +1427,7 @@ export const GitPanel: React.FC<GitPanelProps> = ({ cwd, onClose, width, onResiz
           return (
             <div className="git-tab-content history-tab">
               {/* 1. History Graph Table */}
-              <div className="git-history-container" style={{ height: fileListHeight, flex: 'none' }}>
+              <div ref={historyContainerRef} className="git-history-container" style={{ height: fileListHeight, flex: 'none' }}>
                 <div className="git-history-table-wrapper">
                   <table className="git-history-table">
                     <thead>
@@ -1370,15 +1460,17 @@ export const GitPanel: React.FC<GitPanelProps> = ({ cwd, onClose, width, onResiz
                         const isUncommitted = commit.isUncommitted;
                         const shortHash = isUncommitted ? '*' : commit.hash.substring(0, 8);
                         const isSelected = selectedCommit?.hash === commit.hash;
+                        const rowZIndex = (30 - (i % 30)) * 2;
+                        const detailsZIndex = rowZIndex - 1;
 
                         return (
                           <React.Fragment key={commit.hash + '-' + i}>
                             <tr
                               className={`git-history-row ${isUncommitted ? 'uncommitted-row' : ''} ${isSelected ? 'selected' : ''}`}
-                              style={{ zIndex: 1000 - i, cursor: isUncommitted ? 'default' : 'pointer' }}
+                              style={{ zIndex: rowZIndex, cursor: isUncommitted ? 'default' : 'pointer' }}
                               onClick={() => !isUncommitted && handleCommitRowClick(commit)}
                             >
-                              <td className="col-graph" style={{ width: columnWidths.graph, minWidth: columnWidths.graph, maxWidth: columnWidths.graph, position: 'relative', zIndex: 1000 - i }}>
+                              <td className="col-graph" style={{ width: columnWidths.graph, minWidth: columnWidths.graph, maxWidth: columnWidths.graph, position: 'relative', zIndex: rowZIndex }}>
                                 <GraphCell
                                   col={row.col}
                                   incomingTracks={row.incomingTracks}
@@ -1418,8 +1510,8 @@ export const GitPanel: React.FC<GitPanelProps> = ({ cwd, onClose, width, onResiz
                               </td>
                             </tr>
                             {isSelected && (
-                              <tr className="git-history-details-row" style={{ zIndex: 999 - i }}>
-                                <td className="col-graph" style={{ width: columnWidths.graph, minWidth: columnWidths.graph, maxWidth: columnWidths.graph, position: 'relative', zIndex: 999 - i, background: '#0d1117', padding: 0 }}>
+                              <tr className="git-history-details-row" style={{ zIndex: detailsZIndex }}>
+                                <td className="col-graph" style={{ width: columnWidths.graph, minWidth: columnWidths.graph, maxWidth: columnWidths.graph, position: 'relative', zIndex: detailsZIndex, background: '#0d1117', padding: 0 }}>
                                   <svg width={graphWidth} style={{ position: 'absolute', top: 0, bottom: 0, left: 0, display: 'block', overflow: 'visible', height: '100%' }}>
                                     {row.outgoingTracks.map((hash, idx) => {
                                       const x = idx * colWidth + paddingX;
@@ -1511,6 +1603,22 @@ export const GitPanel: React.FC<GitPanelProps> = ({ cwd, onClose, width, onResiz
                           </React.Fragment>
                         );
                       })}
+                      {hasMoreHistory && (
+                        <tr ref={loaderRef} className="git-history-load-more-row" style={{ background: 'transparent' }}>
+                          <td colSpan={5} style={{ textAlign: 'center', padding: '12px 10px', borderBottom: 'none' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', color: '#8b949e', fontSize: '13px' }}>
+                              {historyLoading ? (
+                                <>
+                                  <div className="git-spinner" style={{ width: '14px', height: '14px' }}></div>
+                                  <span>Loading more commits...</span>
+                                </>
+                              ) : (
+                                <span style={{ opacity: 0.3 }}>Scroll to load more</span>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      )}
                     </tbody>
                   </table>
                 </div>

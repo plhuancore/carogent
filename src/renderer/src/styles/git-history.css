@@ -62,7 +62,7 @@
   font-weight: 600;
   padding: 8px 10px;
   text-align: left;
-  z-index: 5;
+  z-index: 80;
   text-transform: uppercase;
   letter-spacing: 0.5px;
 }
@@ -198,9 +198,6 @@
 }
 
 /* History Column Drag Resizer */
-.git-history-table th {
-  position: relative;
-}
 
 .git-col-resizer {
   position: absolute;
@@ -369,4 +366,33 @@
 
 .git-commit-file-item:hover {
   background: rgba(255, 255, 255, 0.06) !important;
+}
+
+.git-history-load-more-row:hover {
+  background: transparent !important;
+}
+
+.git-history-load-more-btn {
+  background: #21262d;
+  border: 1px solid #30363d;
+  border-radius: 6px;
+  color: #c9d1d9;
+  padding: 6px 20px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  outline: none;
+}
+
+.git-history-load-more-btn:hover:not(:disabled) {
+  background: #30363d;
+  border-color: #8b949e;
+  color: #f0f6fc;
+}
+
+.git-history-load-more-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  background: #161b22;
 }

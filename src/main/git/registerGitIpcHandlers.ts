@@ -739,7 +739,15 @@ export function registerGitIpcHandlers(): void {
     }
   });
   ipcMain.handle('git:commit', (_event, { cwd, message }) => runGitCommand(['commit', '-m', message], cwd));
-  ipcMain.handle('git:history', (_event, { cwd }) => runGitCommand(['log', '--all', '--date-order', '--pretty=format:%H|%P|%d|%s|%an|%cr|%ct', '-n', '100'], cwd));
+  ipcMain.handle('git:history', (_event, { cwd, limit, skip }) => {
+    let limitCount = typeof limit === 'number' && !isNaN(limit) ? Math.floor(limit) : 100;
+    let skipCount = typeof skip === 'number' && !isNaN(skip) ? Math.floor(skip) : 0;
+    if (limitCount < 1) limitCount = 100;
+    if (limitCount > 5000) limitCount = 5000;
+    if (skipCount < 0) skipCount = 0;
+    if (skipCount > 5000) skipCount = 5000;
+    return runGitCommand(['log', '--all', '--date-order', '--pretty=format:%H|%P|%d|%s|%an|%cr|%ct', '-n', String(limitCount), '--skip', String(skipCount)], cwd);
+  });
   ipcMain.handle('git:init', (_event, { cwd }) => runGitCommand(['init'], cwd));
   ipcMain.handle('git:undo-last-commit', async (_event, { cwd }) => {
     let message = '';

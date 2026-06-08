@@ -165,7 +165,7 @@ const terminal: TerminalApi = {
     ipcRenderer.invoke('git:discard', request),
   gitCommit: (request: { cwd: string; message: string }): Promise<void> =>
     ipcRenderer.invoke('git:commit', request),
-  gitHistory: (request: { cwd: string }): Promise<string> =>
+  gitHistory: (request: { cwd: string; limit?: number; skip?: number }): Promise<string> =>
     ipcRenderer.invoke('git:history', request),
   gitInit: (request: { cwd: string }): Promise<void> =>
     ipcRenderer.invoke('git:init', request),
