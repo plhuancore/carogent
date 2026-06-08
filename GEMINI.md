@@ -32,9 +32,11 @@ When you run inside a Carogent terminal pane, you can use the following tools:
 
 ## Skill Setup
 
-For AI agents to effectively use these MCP tools, you should install the reusable skill provided in this repository.
+For AI agents to effectively use these MCP tools and commands, you should install the reusable skills provided in this repository.
 
-Copy the skill file from the repository to your Gemini/Antigravity config directory:
+### 1. Terminal Control Skill
+
+Copy the terminal control skill file from the repository to your Gemini/Antigravity config directory:
 
 ```bash
 mkdir -p ~/.gemini/antigravity-cli/skills/carogent-terminal-control
@@ -42,3 +44,34 @@ cp skills/carogent-terminal-control/SKILL.md ~/.gemini/antigravity-cli/skills/ca
 ```
 
 *(Or for standard Gemini CLI: `~/.gemini/skills/carogent-terminal-control/SKILL.md`)*
+
+### 2. Auto-Notify Done Toggle Skill
+
+Copy the auto-notify done skill file from the repository to your config directory:
+
+```bash
+mkdir -p ~/.gemini/antigravity-cli/skills/carogent-done
+cp skills/carogent-done/SKILL.md ~/.gemini/antigravity-cli/skills/carogent-done/
+```
+
+*(Or for standard Gemini CLI: `~/.gemini/skills/carogent-done/SKILL.md`)*
+
+### 3. Auto-Notify Done Hook Setup
+
+To automatically trigger the floating bar notification when any prompt/task completes, add the hook configuration to your Gemini hooks file (usually at `~/.gemini/config/hooks.json`):
+
+```json
+{
+  "carogent-done-hook": {
+    "Stop": [
+      {
+        "type": "command",
+        "command": "node /absolute/path/to/carogent/scripts/carogent-done-hook.js"
+      }
+    ]
+  }
+}
+```
+
+Make sure to replace `/absolute/path/to/carogent/` with the actual path to your cloned repository.
+

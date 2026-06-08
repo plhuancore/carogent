@@ -232,14 +232,44 @@ For repository-specific setup, place the same content in:
 
 ### Skill Setup
 
-To enable AI agents to automatically use these tools, you can copy the reusable skill from this repository:
+To enable AI agents to automatically use these tools, you can copy the reusable skills from this repository:
+
+#### 1. Terminal Control Skill
 
 ```bash
 mkdir -p ~/.gemini/antigravity-cli/skills/carogent-terminal-control
 cp skills/carogent-terminal-control/SKILL.md ~/.gemini/antigravity-cli/skills/carogent-terminal-control/
 ```
 
-*(Or for standard Gemini CLI, copy to `~/.gemini/skills/carogent-terminal-control/SKILL.md`)*
+*(Or for standard Gemini CLI: `~/.gemini/skills/carogent-terminal-control/SKILL.md`)*
+
+#### 2. Auto-Notify Done Toggle Skill
+
+```bash
+mkdir -p ~/.gemini/antigravity-cli/skills/carogent-done
+cp skills/carogent-done/SKILL.md ~/.gemini/antigravity-cli/skills/carogent-done/
+```
+
+*(Or for standard Gemini CLI: `~/.gemini/skills/carogent-done/SKILL.md`)*
+
+#### 3. Auto-Notify Done Hook Setup
+
+To automatically trigger the floating bar notification when any prompt/task completes, add the hook configuration to your Gemini hooks file (usually at `~/.gemini/config/hooks.json`):
+
+```json
+{
+  "carogent-done-hook": {
+    "Stop": [
+      {
+        "type": "command",
+        "command": "node /absolute/path/to/carogent/scripts/carogent-done-hook.js"
+      }
+    ]
+  }
+}
+```
+
+Make sure to replace `/absolute/path/to/carogent/` with the actual path to your cloned repository.
 
 The global `~/.gemini/GEMINI.md` file is the reliable automatic trigger for short prompts such as `say hi`. Skill metadata alone may not activate for every request.
 
