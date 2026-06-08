@@ -243,7 +243,7 @@ export const GitPanel: React.FC<GitPanelProps> = ({ cwd, onClose, width, onResiz
     desc: 480,
     date: 110,
     author: 150,
-    commit: 90
+    commit: 100
   });
 
   const handleColResizeStart = (e: React.PointerEvent, colName: keyof typeof columnWidths) => {

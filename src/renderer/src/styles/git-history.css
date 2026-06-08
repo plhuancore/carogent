@@ -43,9 +43,13 @@
 
 .git-history-table th.col-commit,
 .git-history-table td.col-commit {
-  width: 90px;
-  min-width: 90px;
+  width: 100px;
+  min-width: 100px;
   font-family: monospace;
+}
+
+.git-history-table td.col-commit {
+  text-overflow: clip;
 }
 
 .git-history-table th {
