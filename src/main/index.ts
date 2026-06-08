@@ -56,7 +56,7 @@ let agentBridgeSettings = { enabled: true, port: 17322 };
 let agentBridgeServer: Server | null = null;
 const AGENT_BRIDGE_MAX_BODY_BYTES = 64 * 1024;
 const AGENT_BRIDGE_TOKEN = randomUUID();
-const AGENT_BRIDGE_STATE_PATH = '/tmp/carogent-agent-bridge.json';
+const AGENT_BRIDGE_STATE_PATH = join(os.tmpdir(), 'carogent-agent-bridge.json');
 let agentBridgeSnapshot: AgentBridgeSnapshot = {
   activeWorkspaceId: '',
   activePaneId: '',

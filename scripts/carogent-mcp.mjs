@@ -1,8 +1,10 @@
 #!/usr/bin/env node
 
 import { readFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
-const bridgeStatePath = process.env.CAROGENT_BRIDGE_STATE_PATH || '/tmp/carogent-agent-bridge.json';
+const bridgeStatePath = process.env.CAROGENT_BRIDGE_STATE_PATH || join(tmpdir(), 'carogent-agent-bridge.json');
 const defaultPaneId = process.env.CAROGENT_PANE_ID || '';
 
 function getBridgeConfig() {
