@@ -90,18 +90,6 @@ const tools = [
     }
   },
   {
-    name: 'open_browser',
-    description: 'Open or focus a browser URL, defaulting to the pane browser URL.',
-    inputSchema: {
-      type: 'object',
-      additionalProperties: false,
-      properties: {
-        url: { type: 'string' },
-        paneId: { type: 'string' }
-      }
-    }
-  },
-  {
     name: 'open_vscode',
     description: 'Open VS Code at a pane cwd.',
     inputSchema: {
@@ -135,7 +123,6 @@ function bridgeActionForTool(name) {
     insert_text: 'insert_text',
     focus_pane: 'focus_pane',
     notify_done: 'notify_done',
-    open_browser: 'open_browser',
     open_vscode: 'open_vscode',
     split_pane: 'split_pane'
   }[name];
@@ -153,7 +140,7 @@ async function callBridge(action, args = {}) {
   if (
     !body.paneId &&
     defaultPaneId &&
-    ['insert_text', 'focus_pane', 'notify_done', 'open_browser', 'open_vscode', 'split_pane'].includes(action)
+    ['insert_text', 'focus_pane', 'notify_done', 'open_vscode', 'split_pane'].includes(action)
   ) {
     body.paneId = defaultPaneId;
   }

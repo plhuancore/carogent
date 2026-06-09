@@ -892,12 +892,6 @@ async function handleAgentBridgeAction(body: AgentBridgeRequest): Promise<unknow
       return { paneId, workspaceId: body.workspaceId || pane.workspaceId };
     }
 
-    case 'open_browser': {
-      const pane = findAgentBridgePane(body.paneId);
-      await browserBridge.openOrFocus({ url: body.url || pane?.browserUrl });
-      return { opened: body.url || pane?.browserUrl || DEFAULT_BROWSER_URL };
-    }
-
     case 'open_vscode': {
       const paneId = resolveAgentBridgePaneId(body);
       const pane = findAgentBridgePane(paneId);
