@@ -89,9 +89,16 @@ export const GitPanel: React.FC<GitPanelProps> = ({ cwd, onClose, width, onResiz
     setDiffError(null);
     setStagedLimit(MAX_DISPLAYED_CHANGES);
     setUnstagedLimit(MAX_DISPLAYED_CHANGES);
+    statusInFlightRef.current = false;
+    pendingStatusRef.current = false;
+    statusPromiseRef.current = null;
   }, [cwd]);
 
   const selectedFileRef = useRef<{ path: string; isStaged: boolean } | null>(null);
+  const cwdRef = useRef(cwd);
+  useEffect(() => {
+    cwdRef.current = cwd;
+  }, [cwd]);
   const statusInFlightRef = useRef(false);
   const pendingStatusRef = useRef(false);
   const statusPromiseRef = useRef<Promise<void> | null>(null);
@@ -346,6 +353,9 @@ export const GitPanel: React.FC<GitPanelProps> = ({ cwd, onClose, width, onResiz
         do {
           pendingStatusRef.current = false;
           const gitStatus: GitStatus = await window.terminalApi.gitStatus({ cwd });
+
+          if (cwdRef.current !== cwd) return;
+
           setStatus(gitStatus);
 
           setStagedLimit(prev => Math.max(MAX_DISPLAYED_CHANGES, Math.min(prev, gitStatus.staged?.length || 0)));
@@ -366,9 +376,11 @@ export const GitPanel: React.FC<GitPanelProps> = ({ cwd, onClose, width, onResiz
       } catch (err) {
         console.error('Failed to load git status:', err);
       } finally {
-        statusInFlightRef.current = false;
-        statusPromiseRef.current = null;
-        if (showLoading) setIsRefreshing(false);
+        if (cwdRef.current === cwd) {
+          statusInFlightRef.current = false;
+          statusPromiseRef.current = null;
+          if (showLoading) setIsRefreshing(false);
+        }
       }
     })();
 

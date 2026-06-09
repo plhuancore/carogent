@@ -460,6 +460,12 @@ function App(): JSX.Element {
                 : workspace
             )
           );
+
+          const session = sessions.current.get(request.paneId);
+          if (session) {
+            window.setTimeout(() => session.terminal.focus(), 0);
+          }
+
           complete({ result: { paneId: request.paneId, workspaceId: request.workspaceId || activeWorkspaceId } });
           return;
         }
@@ -1213,6 +1219,11 @@ function App(): JSX.Element {
       setWorkspaces((current) =>
         current.map((workspace) => (workspace.id === workspaceId ? { ...workspace, activePaneId: paneId } : workspace))
       );
+
+      const session = sessions.current.get(paneId);
+      if (session) {
+        window.setTimeout(() => session.terminal.focus(), 0);
+      }
     });
   }, []);
 
