@@ -9,6 +9,7 @@ import type { CommitHistoryItem } from './git/types';
 import { MaximizeIcon, MinimizeIcon } from './components/AppIcons';
 
 const MAX_RENDERED_DIFF_LINES = 5000;
+const MAX_DISPLAYED_CHANGES = 150;
 const HISTORY_PAGE_SIZE = 100;
 const MAX_HISTORY_ITEMS = 5000;
 const IS_MAC = navigator.platform.toUpperCase().indexOf('MAC') >= 0;
@@ -67,6 +68,8 @@ export const GitPanel: React.FC<GitPanelProps> = ({ cwd, onClose, width, onResiz
   const [isDiffMaximized, setIsDiffMaximized] = useState(false);
   const [maximizedDiffRect, setMaximizedDiffRect] = useState<MaximizedDiffRect | null>(null);
   const [hasMoreHistory, setHasMoreHistory] = useState(true);
+  const [stagedLimit, setStagedLimit] = useState(MAX_DISPLAYED_CHANGES);
+  const [unstagedLimit, setUnstagedLimit] = useState(MAX_DISPLAYED_CHANGES);
   const loadedHistoryRawCountRef = useRef(0);
   const historyRequestIdRef = useRef(0);
   const historyLoadingRef = useRef(false);
@@ -84,6 +87,8 @@ export const GitPanel: React.FC<GitPanelProps> = ({ cwd, onClose, width, onResiz
     setSelectedCommitFile(null);
     setDiff(null);
     setDiffError(null);
+    setStagedLimit(MAX_DISPLAYED_CHANGES);
+    setUnstagedLimit(MAX_DISPLAYED_CHANGES);
   }, [cwd]);
 
   const selectedFileRef = useRef<{ path: string; isStaged: boolean } | null>(null);
@@ -342,6 +347,9 @@ export const GitPanel: React.FC<GitPanelProps> = ({ cwd, onClose, width, onResiz
           pendingStatusRef.current = false;
           const gitStatus: GitStatus = await window.terminalApi.gitStatus({ cwd });
           setStatus(gitStatus);
+
+          setStagedLimit(prev => Math.max(MAX_DISPLAYED_CHANGES, Math.min(prev, gitStatus.staged?.length || 0)));
+          setUnstagedLimit(prev => Math.max(MAX_DISPLAYED_CHANGES, Math.min(prev, gitStatus.unstaged?.length || 0)));
 
           const currentSelection = selectedFileRef.current;
           if (currentSelection) {
@@ -1278,34 +1286,83 @@ export const GitPanel: React.FC<GitPanelProps> = ({ cwd, onClose, width, onResiz
                 {stagedCount === 0 ? (
                   <div className="git-file-empty">No staged changes</div>
                 ) : (
-                  status.staged?.map((file) => {
-                    const isSelected = selectedFile?.path === file.path && selectedFile.isStaged;
-                    return (
-                      <div
-                        key={file.path}
-                        className={`git-file-row ${isSelected ? 'selected' : ''}`}
-                        onClick={() => setSelectedFile({ path: file.path, isStaged: true })}
-                      >
-                        <div className="git-file-row-left">
-                          <FileIcon filename={file.name} isDirectory={file.kind === 'directory'} />
-                          <span className="git-file-name" title={file.path}>{file.name}</span>
-                          {file.dir && <span className="git-file-dir">{file.dir}</span>}
-                        </div>
-                        <div className="git-file-row-right">
-                          {getStatusBadge(file.status)}
-                          <div className="git-file-row-actions">
-                            <button
-                              className="git-row-action-btn"
-                              onClick={(e) => handleUnstageFile(e, file.path)}
-                              title="Unstage"
-                            >
-                              <MinusIcon />
-                            </button>
+                  <>
+                    {status.staged?.slice(0, stagedLimit).map((file) => {
+                      const isSelected = selectedFile?.path === file.path && selectedFile.isStaged;
+                      return (
+                        <div
+                          key={file.path}
+                          className={`git-file-row ${isSelected ? 'selected' : ''}`}
+                          onClick={() => setSelectedFile({ path: file.path, isStaged: true })}
+                        >
+                          <div className="git-file-row-left">
+                            <FileIcon filename={file.name} isDirectory={file.kind === 'directory'} />
+                            <span className="git-file-name" title={file.path}>{file.name}</span>
+                            {file.dir && <span className="git-file-dir">{file.dir}</span>}
+                          </div>
+                          <div className="git-file-row-right">
+                            {getStatusBadge(file.status)}
+                            <div className="git-file-row-actions">
+                              <button
+                                className="git-row-action-btn"
+                                onClick={(e) => handleUnstageFile(e, file.path)}
+                                title="Unstage"
+                              >
+                                <MinusIcon />
+                              </button>
+                            </div>
                           </div>
                         </div>
+                      );
+                    })}
+                    {(stagedCount > stagedLimit || stagedLimit > MAX_DISPLAYED_CHANGES) && (
+                      <div className="git-file-limit-message" style={{ display: 'flex', flexDirection: 'column', gap: '6px', padding: '8px 12px', fontSize: '11px', color: '#8b949e', borderTop: '1px solid #21262d' }}>
+                        <span>Showing first {Math.min(stagedLimit, stagedCount)} of {stagedCount} staged changes.</span>
+                        <div style={{ display: 'flex', gap: '8px' }}>
+                          {stagedCount > stagedLimit && (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setStagedLimit(prev => prev + MAX_DISPLAYED_CHANGES);
+                              }}
+                              className="git-show-more-btn"
+                              style={{
+                                background: '#21262d',
+                                border: '1px solid #30363d',
+                                borderRadius: '4px',
+                                color: '#c9d1d9',
+                                padding: '4px 8px',
+                                fontSize: '11px',
+                                cursor: 'pointer'
+                              }}
+                            >
+                              Show More
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setStagedLimit(MAX_DISPLAYED_CHANGES);
+                            }}
+                            className="git-show-less-btn"
+                            style={{
+                              background: '#21262d',
+                              border: '1px solid #30363d',
+                              borderRadius: '4px',
+                              color: '#c9d1d9',
+                              padding: '4px 8px',
+                              fontSize: '11px',
+                              cursor: 'pointer'
+                            }}
+                          >
+                            Collapse
+                          </button>
+                        </div>
                       </div>
-                    );
-                  })
+                    )}
+                  </>
                 )}
               </div>
             )}
@@ -1348,41 +1405,90 @@ export const GitPanel: React.FC<GitPanelProps> = ({ cwd, onClose, width, onResiz
                 {unstagedCount === 0 ? (
                   <div className="git-file-empty">No unstaged changes</div>
                 ) : (
-                  status.unstaged?.map((file) => {
-                    const isSelected = selectedFile?.path === file.path && !selectedFile.isStaged;
-                    return (
-                      <div
-                        key={file.path}
-                        className={`git-file-row ${isSelected ? 'selected' : ''}`}
-                        onClick={() => setSelectedFile({ path: file.path, isStaged: false })}
-                      >
-                        <div className="git-file-row-left">
-                          <FileIcon filename={file.name} isDirectory={file.kind === 'directory'} />
-                          <span className="git-file-name" title={file.path}>{file.name}</span>
-                          {file.dir && <span className="git-file-dir">{file.dir}</span>}
-                        </div>
-                        <div className="git-file-row-right">
-                          {getStatusBadge(file.status)}
-                          <div className="git-file-row-actions">
-                            <button
-                              className="git-row-action-btn discard"
-                              onClick={(e) => handleDiscardFile(e, file.path, file.status === '?')}
-                              title="Discard changes"
-                            >
-                              <MinusIcon />
-                            </button>
-                            <button
-                              className="git-row-action-btn stage"
-                              onClick={(e) => handleStageFile(e, file.path)}
-                              title="Stage changes"
-                            >
-                              <PlusIcon />
-                            </button>
+                  <>
+                    {status.unstaged?.slice(0, unstagedLimit).map((file) => {
+                      const isSelected = selectedFile?.path === file.path && !selectedFile.isStaged;
+                      return (
+                        <div
+                          key={file.path}
+                          className={`git-file-row ${isSelected ? 'selected' : ''}`}
+                          onClick={() => setSelectedFile({ path: file.path, isStaged: false })}
+                        >
+                          <div className="git-file-row-left">
+                            <FileIcon filename={file.name} isDirectory={file.kind === 'directory'} />
+                            <span className="git-file-name" title={file.path}>{file.name}</span>
+                            {file.dir && <span className="git-file-dir">{file.dir}</span>}
+                          </div>
+                          <div className="git-file-row-right">
+                            {getStatusBadge(file.status)}
+                            <div className="git-file-row-actions">
+                              <button
+                                className="git-row-action-btn discard"
+                                onClick={(e) => handleDiscardFile(e, file.path, file.status === '?')}
+                                title="Discard changes"
+                              >
+                                <MinusIcon />
+                              </button>
+                              <button
+                                className="git-row-action-btn stage"
+                                onClick={(e) => handleStageFile(e, file.path)}
+                                title="Stage changes"
+                              >
+                                <PlusIcon />
+                              </button>
+                            </div>
                           </div>
                         </div>
+                      );
+                    })}
+                    {(unstagedCount > unstagedLimit || unstagedLimit > MAX_DISPLAYED_CHANGES) && (
+                      <div className="git-file-limit-message" style={{ display: 'flex', flexDirection: 'column', gap: '6px', padding: '8px 12px', fontSize: '11px', color: '#8b949e', borderTop: '1px solid #21262d' }}>
+                        <span>Showing first {Math.min(unstagedLimit, unstagedCount)} of {unstagedCount} changes.</span>
+                        <div style={{ display: 'flex', gap: '8px' }}>
+                          {unstagedCount > unstagedLimit && (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setUnstagedLimit(prev => prev + MAX_DISPLAYED_CHANGES);
+                              }}
+                              className="git-show-more-btn"
+                              style={{
+                                background: '#21262d',
+                                border: '1px solid #30363d',
+                                borderRadius: '4px',
+                                color: '#c9d1d9',
+                                padding: '4px 8px',
+                                fontSize: '11px',
+                                cursor: 'pointer'
+                              }}
+                            >
+                              Show More
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setUnstagedLimit(MAX_DISPLAYED_CHANGES);
+                            }}
+                            className="git-show-less-btn"
+                            style={{
+                              background: '#21262d',
+                              border: '1px solid #30363d',
+                              borderRadius: '4px',
+                              color: '#c9d1d9',
+                              padding: '4px 8px',
+                              fontSize: '11px',
+                              cursor: 'pointer'
+                            }}
+                          >
+                            Collapse
+                          </button>
+                        </div>
                       </div>
-                    );
-                  })
+                    )}
+                  </>
                 )}
               </div>
             )}

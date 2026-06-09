@@ -10,7 +10,7 @@ export function registerGitIpcHandlers(): void {
   const GIT_DIFF_PREVIEW_MAX_BYTES = 1024 * 1024;
   const GIT_DIFF_PREVIEW_MAX_LINES = 5000;
   const GIT_COMMIT_FILES_PREVIEW_LIMIT = 400;
-  const GIT_WATCH_DEBOUNCE_MS = 450;
+  const GIT_WATCH_DEBOUNCE_MS = 1000;
   const GIT_WATCH_MAX_DIRECTORIES = 2000;
   const GIT_UNTRACKED_DIRECTORY_PREVIEW_LIMIT = 200;
 
@@ -477,13 +477,30 @@ export function registerGitIpcHandlers(): void {
 
     try {
       const filesText = await runGitCommand(['ls-files', '--cached', '--others', '--exclude-standard', '-z'], cwd);
-      const files = filesText.split('\0').filter(Boolean);
-      for (const file of files) {
-        addWatchDirectory(directories, cwd, dirname(file));
-        if (directories.size >= GIT_WATCH_MAX_DIRECTORIES) {
-          console.warn(`Git watcher directory cap reached (${GIT_WATCH_MAX_DIRECTORIES}) for ${cwd}`);
-          break;
+      let index = 0;
+      const len = filesText.length;
+      while (index < len) {
+        let nextNull = filesText.indexOf('\0', index);
+        if (nextNull === -1) nextNull = len;
+
+        if (nextNull > index) {
+          const file = filesText.substring(index, nextNull);
+          const lastSlash = file.lastIndexOf('/');
+          const lastBackslash = file.lastIndexOf('\\');
+          const slashIdx = Math.max(lastSlash, lastBackslash);
+
+          if (slashIdx !== -1) {
+            const dir = file.substring(0, slashIdx);
+            addWatchDirectory(directories, cwd, dir);
+          } else {
+            directories.add(cwd);
+          }
+          if (directories.size >= GIT_WATCH_MAX_DIRECTORIES) {
+            console.warn(`Git watcher directory cap reached (${GIT_WATCH_MAX_DIRECTORIES}) for ${cwd}`);
+            break;
+          }
         }
+        index = nextNull + 1;
       }
     } catch (err) {
       console.error('Failed to enumerate git watch directories:', err);
@@ -621,16 +638,34 @@ export function registerGitIpcHandlers(): void {
         const filesText = await runGitCommand(['ls-files', '--cached', '--others', '--exclude-standard', '-z'], cwd);
         if (gitWatchers.get(webContentsId) !== state) return;
 
-        const files = filesText.split('\0').filter(Boolean);
-        for (const file of files) {
-          const normalized = file.replace(/\\/g, '/');
-          if (!normalized.includes('/')) {
-            continue;
+        let index = 0;
+        const len = filesText.length;
+        while (index < len) {
+          let nextNull = filesText.indexOf('\0', index);
+          if (nextNull === -1) nextNull = len;
+
+          if (nextNull > index) {
+            const firstSlash = filesText.indexOf('/', index);
+            const firstBackslash = filesText.indexOf('\\', index);
+
+            let slashIdx = -1;
+            if (firstSlash !== -1 && firstSlash < nextNull) {
+              slashIdx = firstSlash;
+            }
+            if (firstBackslash !== -1 && firstBackslash < nextNull) {
+              if (slashIdx === -1 || firstBackslash < slashIdx) {
+                slashIdx = firstBackslash;
+              }
+            }
+
+            if (slashIdx !== -1) {
+              const firstPart = filesText.substring(index, slashIdx);
+              if (firstPart && firstPart !== 'node_modules' && firstPart !== '.git' && !firstPart.startsWith('.')) {
+                topLevelDirs.add(firstPart);
+              }
+            }
           }
-          const firstPart = normalized.split('/')[0];
-          if (firstPart && firstPart !== 'node_modules' && firstPart !== '.git' && !firstPart.startsWith('.')) {
-            topLevelDirs.add(firstPart);
-          }
+          index = nextNull + 1;
         }
       } catch (err) {
         console.error('Failed to get git-tracked top-level directories:', err);
