@@ -9,6 +9,7 @@ import type { CommitHistoryItem } from './git/types';
 import { MaximizeIcon, MinimizeIcon } from './components/AppIcons';
 
 const MAX_RENDERED_DIFF_LINES = 5000;
+const MAX_MAXIMIZED_RENDERED_DIFF_LINES = 10000;
 const MAX_DISPLAYED_CHANGES = 150;
 const HISTORY_PAGE_SIZE = 100;
 const MAX_HISTORY_ITEMS = 5000;
@@ -19,6 +20,31 @@ type MaximizedDiffRect = {
   left: number;
   width: number;
   height: number;
+};
+
+type HiddenDiffLinesBlock = {
+  type: 'hidden-lines';
+  key: string;
+  count: number;
+  oldStartLine: number;
+  newStartLine: number;
+};
+
+type RenderableDiffLine = HighlightedDiffLine | HiddenDiffLinesBlock;
+
+type HiddenDiffSnippetState = {
+  loading?: boolean;
+  error?: string;
+  lines?: string[];
+  fullyExpanded?: boolean;
+};
+
+type DiffScrollMarker = {
+  key: string;
+  type: 'addition' | 'deletion' | 'hunk' | 'hidden';
+  targetTop: number;
+  topPercent: number;
+  heightPercent: number;
 };
 
 interface GitPanelProps {
@@ -67,6 +93,8 @@ export const GitPanel: React.FC<GitPanelProps> = ({ cwd, onClose, width, onResiz
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const [isDiffMaximized, setIsDiffMaximized] = useState(false);
   const [maximizedDiffRect, setMaximizedDiffRect] = useState<MaximizedDiffRect | null>(null);
+  const [hiddenDiffSnippets, setHiddenDiffSnippets] = useState<Record<string, HiddenDiffSnippetState>>({});
+  const [diffScrollMarkers, setDiffScrollMarkers] = useState<DiffScrollMarker[]>([]);
   const [hasMoreHistory, setHasMoreHistory] = useState(true);
   const [stagedLimit, setStagedLimit] = useState(MAX_DISPLAYED_CHANGES);
   const [unstagedLimit, setUnstagedLimit] = useState(MAX_DISPLAYED_CHANGES);
@@ -87,6 +115,7 @@ export const GitPanel: React.FC<GitPanelProps> = ({ cwd, onClose, width, onResiz
     setSelectedCommitFile(null);
     setDiff(null);
     setDiffError(null);
+    setHiddenDiffSnippets({});
     setStagedLimit(MAX_DISPLAYED_CHANGES);
     setUnstagedLimit(MAX_DISPLAYED_CHANGES);
     statusInFlightRef.current = false;
@@ -105,6 +134,7 @@ export const GitPanel: React.FC<GitPanelProps> = ({ cwd, onClose, width, onResiz
   const diffRequestIdRef = useRef(0);
   const commitFilesRequestIdRef = useRef(0);
   const commitDiffRequestIdRef = useRef(0);
+  const diffBodyRef = useRef<HTMLDivElement | null>(null);
   const loaderRef = useRef<HTMLTableRowElement | null>(null);
   const historyContainerRef = useRef<HTMLDivElement | null>(null);
 
@@ -143,11 +173,14 @@ export const GitPanel: React.FC<GitPanelProps> = ({ cwd, onClose, width, onResiz
     };
   }, [history, status?.staged, status?.unstaged]);
 
-  const { parsedLines, hiddenDiffLineCount } = useMemo(() => {
-    if (!diff) return { parsedLines: [], hiddenDiffLineCount: 0 };
+  const { parsedLines, hiddenDiffLineCount, foldedDiffLineCount } = useMemo(() => {
+    if (!diff) return { parsedLines: [], hiddenDiffLineCount: 0, foldedDiffLineCount: 0 };
     const lines = diff.split('\n');
-    const visibleLines = lines.slice(0, MAX_RENDERED_DIFF_LINES);
-    const hiddenCount = Math.max(0, lines.length - MAX_RENDERED_DIFF_LINES);
+    const renderLimit = isDiffMaximized
+      ? Math.min(lines.length, MAX_MAXIMIZED_RENDERED_DIFF_LINES)
+      : MAX_RENDERED_DIFF_LINES;
+    const visibleLines = lines.slice(0, renderLimit);
+    const hiddenCount = Math.max(0, lines.length - renderLimit);
     const parsed = parseDiffLines(visibleLines);
 
     const activePath = selectedFile?.path || selectedCommitFile?.path || '';
@@ -163,13 +196,19 @@ export const GitPanel: React.FC<GitPanelProps> = ({ cwd, onClose, width, onResiz
       dataLang = 'html';
     }
 
-    const highlighted = parsed.map((lineInfo) => {
+    let highlightedCodeCount = 0;
+    const highlighted: HighlightedDiffLine[] = parsed.map((lineInfo) => {
       const { className, prefix, content, oldLineNumber, newLineNumber, raw } = lineInfo;
       const isCodeLine = className === 'diff-line-addition' || className === 'diff-line-deletion' || className === 'diff-line-normal';
 
       let highlightedCode: React.ReactNode = null;
       if (isCodeLine) {
-        highlightedCode = highlightCodeLine(content, activePath);
+        if (highlightedCodeCount < 3000) {
+          highlightedCode = highlightCodeLine(content, activePath);
+          highlightedCodeCount += 1;
+        } else {
+          highlightedCode = content;
+        }
       } else {
         highlightedCode = raw;
       }
@@ -186,11 +225,50 @@ export const GitPanel: React.FC<GitPanelProps> = ({ cwd, onClose, width, onResiz
       };
     });
 
+    const renderLines: RenderableDiffLine[] = [];
+    let foldedCount = 0;
+    let hasSeenHunk = false;
+    let previousOldEnd = 0;
+    let previousNewEnd = 0;
+
+    for (let index = 0; index < highlighted.length; index += 1) {
+      const lineInfo = highlighted[index];
+      if (isDiffMaximized && lineInfo.className === 'diff-line-hunk') {
+        const match = lineInfo.raw.match(/^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/);
+        if (match) {
+          const oldStart = parseInt(match[1], 10);
+          const oldCount = match[2] === undefined ? 1 : parseInt(match[2], 10);
+          const newStart = parseInt(match[3], 10);
+          const newCount = match[4] === undefined ? 1 : parseInt(match[4], 10);
+          const hiddenLines = hasSeenHunk
+            ? Math.max(0, oldStart - previousOldEnd, newStart - previousNewEnd)
+            : Math.max(0, oldStart - 1, newStart - 1);
+
+          if (hiddenLines > 0) {
+            renderLines.push({
+              type: 'hidden-lines',
+              key: `hidden-${index}-${oldStart}-${newStart}`,
+              count: hiddenLines,
+              oldStartLine: hasSeenHunk ? previousOldEnd : 1,
+              newStartLine: hasSeenHunk ? previousNewEnd : 1
+            });
+            foldedCount += hiddenLines;
+          }
+
+          previousOldEnd = oldStart + oldCount;
+          previousNewEnd = newStart + newCount;
+          hasSeenHunk = true;
+        }
+      }
+      renderLines.push(lineInfo);
+    }
+
     return {
-      parsedLines: highlighted,
-      hiddenDiffLineCount: hiddenCount
+      parsedLines: renderLines,
+      hiddenDiffLineCount: hiddenCount,
+      foldedDiffLineCount: foldedCount
     };
-  }, [diff, selectedFile?.path, selectedCommitFile?.path]);
+  }, [diff, isDiffMaximized, selectedFile?.path, selectedCommitFile?.path]);
 
   const { visibleCommitFiles, hiddenCommitFilesCount } = useMemo(() => {
     const limit = 400;
@@ -370,6 +448,7 @@ export const GitPanel: React.FC<GitPanelProps> = ({ cwd, onClose, width, onResiz
               selectedFileRef.current = null;
               setSelectedFile(null);
               setDiff(null);
+              setHiddenDiffSnippets({});
             }
           }
         } while (pendingStatusRef.current);
@@ -395,6 +474,7 @@ export const GitPanel: React.FC<GitPanelProps> = ({ cwd, onClose, width, onResiz
     diffRequestIdRef.current = requestId;
     setDiff(null);
     setDiffError(null);
+    setHiddenDiffSnippets({});
     try {
       const result = await window.terminalApi.gitDiff({
         cwd,
@@ -513,6 +593,7 @@ export const GitPanel: React.FC<GitPanelProps> = ({ cwd, onClose, width, onResiz
       setSelectedCommitFile(null);
       setDiff(null);
       setDiffError(null);
+      setHiddenDiffSnippets({});
       return;
     }
 
@@ -526,6 +607,7 @@ export const GitPanel: React.FC<GitPanelProps> = ({ cwd, onClose, width, onResiz
     setSelectedCommitFile(null);
     setDiff(null);
     setDiffError(null);
+    setHiddenDiffSnippets({});
     setCommitFilesLoading(true);
 
     try {
@@ -555,6 +637,7 @@ export const GitPanel: React.FC<GitPanelProps> = ({ cwd, onClose, width, onResiz
     setSelectedCommitFile({ path: filePath });
     setDiff(null);
     setDiffError(null);
+    setHiddenDiffSnippets({});
     try {
       const result = await window.terminalApi.gitCommitFileDiff({
         cwd,
@@ -659,6 +742,64 @@ export const GitPanel: React.FC<GitPanelProps> = ({ cwd, onClose, width, onResiz
       loadDiff(selectedFile);
     }
   }, [selectedFile, loadDiff]);
+
+  useLayoutEffect(() => {
+    const body = diffBodyRef.current;
+    if (!body || diffError || diff === null) {
+      setDiffScrollMarkers([]);
+      return;
+    }
+
+    const measureMarkers = () => {
+      const scrollableHeight = Math.max(1, body.scrollHeight);
+      const markerNodes = Array.from(body.querySelectorAll<HTMLElement>('[data-diff-marker-type]'));
+      const measuredMarkers = markerNodes.map((node, index) => {
+        const type = node.dataset.diffMarkerType as DiffScrollMarker['type'];
+        return {
+          key: `${type}-${node.offsetTop}-${index}`,
+          type,
+          targetTop: node.offsetTop,
+          bottomTop: node.offsetTop + node.offsetHeight
+        };
+      });
+      const groupedMarkers: { type: DiffScrollMarker['type']; targetTop: number; bottomTop: number }[] = [];
+      const markerGapThreshold = 3;
+
+      for (const marker of measuredMarkers) {
+        const current = groupedMarkers[groupedMarkers.length - 1];
+        if (current && current.type === marker.type && marker.targetTop - current.bottomTop <= markerGapThreshold) {
+          current.bottomTop = Math.max(current.bottomTop, marker.bottomTop);
+        } else {
+          groupedMarkers.push({
+            type: marker.type,
+            targetTop: marker.targetTop,
+            bottomTop: marker.bottomTop
+          });
+        }
+      }
+
+      const nextMarkers = groupedMarkers.map((marker, index) => ({
+        key: `${marker.type}-${marker.targetTop}-${index}`,
+        type: marker.type,
+        targetTop: marker.targetTop,
+        topPercent: (marker.targetTop / scrollableHeight) * 100,
+        heightPercent: Math.max(0.7, ((marker.bottomTop - marker.targetTop) / scrollableHeight) * 100)
+      }));
+      setDiffScrollMarkers(nextMarkers);
+    };
+
+    const frameId = requestAnimationFrame(measureMarkers);
+    const resizeObserver = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(measureMarkers);
+    resizeObserver?.observe(body);
+    const content = body.querySelector<HTMLElement>('.git-diff-pre');
+    if (content) {
+      resizeObserver?.observe(content);
+    }
+    return () => {
+      cancelAnimationFrame(frameId);
+      resizeObserver?.disconnect();
+    };
+  }, [diff, diffError, hiddenDiffLineCount, hiddenDiffSnippets, parsedLines]);
 
   // Trigger refresh from prop
   useEffect(() => {
@@ -877,11 +1018,147 @@ export const GitPanel: React.FC<GitPanelProps> = ({ cwd, onClose, width, onResiz
     }
   };
 
-  const renderDiffLine = (line: HighlightedDiffLine, index: number) => {
-    const { className, prefix, oldLineNumber, newLineNumber, isCodeLine, dataLang, highlightedCode } = line;
+  const handleHiddenLinesToggle = async (line: HiddenDiffLinesBlock) => {
+    const current = hiddenDiffSnippets[line.key];
+    if (current?.lines || current?.error) {
+      setHiddenDiffSnippets((snippets) => {
+        const next = { ...snippets };
+        delete next[line.key];
+        return next;
+      });
+      return;
+    }
+
+    const activeFile = activeTab === 'changes' ? selectedFile : selectedCommitFile;
+    if (!activeFile) return;
+
+    setHiddenDiffSnippets((snippets) => ({
+      ...snippets,
+      [line.key]: { loading: true }
+    }));
+
+    try {
+      const result = await window.terminalApi.gitFileSnippet({
+        cwd,
+        filePath: activeFile.path,
+        source: activeTab === 'history' ? 'commit' : (selectedFile?.isStaged ? 'index' : 'workingTree'),
+        ref: activeTab === 'history' ? selectedCommit?.hash : undefined,
+        startLine: line.newStartLine,
+        lineCount: line.count
+      });
+
+      setHiddenDiffSnippets((snippets) => ({
+        ...snippets,
+        [line.key]: result.error ? { error: result.error } : { lines: result.lines || [] }
+      }));
+    } catch (err: any) {
+      setHiddenDiffSnippets((snippets) => ({
+        ...snippets,
+        [line.key]: { error: err.message || 'Failed to load hidden lines' }
+      }));
+    }
+  };
+
+  const renderDiffLine = (line: RenderableDiffLine, index: number) => {
+    if ('type' in line && line.type === 'hidden-lines') {
+      const snippet = hiddenDiffSnippets[line.key];
+      return (
+        <React.Fragment key={line.key}>
+          <button
+            type="button"
+            className={`git-diff-hidden-lines-row ${snippet?.lines || snippet?.error ? 'is-expanded' : ''}`}
+            data-diff-marker-type="hidden"
+            onClick={() => handleHiddenLinesToggle(line)}
+            title={snippet?.lines || snippet?.error ? 'Collapse hidden lines' : 'Show hidden lines'}
+          >
+            <div className="git-diff-hidden-gutter">
+              {snippet?.loading ? null : (snippet?.lines || snippet?.error ? <FoldIcon /> : <UnfoldIcon />)}
+            </div>
+            <div className="git-diff-hidden-text">
+              {snippet?.loading
+                ? 'Loading hidden lines...'
+                : snippet?.lines || snippet?.error
+                  ? `Hide ${line.count} hidden lines`
+                  : `${line.count} hidden lines`}
+            </div>
+          </button>
+          {snippet?.error && renderDiffLine({
+            raw: snippet.error,
+            className: 'diff-line-meta',
+            prefix: '',
+            oldLineNumber: '',
+            newLineNumber: '',
+            isCodeLine: false,
+            dataLang: 'text',
+            highlightedCode: snippet.error
+          }, index)}
+          {snippet?.lines && (() => {
+            const hasManyLines = snippet.lines.length > 100;
+            const showSplit = hasManyLines && !snippet.fullyExpanded;
+
+            const renderLineHelper = (content: string, snippetIndex: number) => renderDiffLine({
+              raw: ` ${content}`,
+              className: 'diff-line-normal',
+              prefix: ' ',
+              oldLineNumber: line.oldStartLine + snippetIndex,
+              newLineNumber: line.newStartLine + snippetIndex,
+              isCodeLine: true,
+              dataLang: 'text',
+              highlightedCode: highlightCodeLine(content, activeTab === 'changes' ? selectedFile?.path || '' : selectedCommitFile?.path || '')
+            }, index + snippetIndex + 1);
+
+            if (showSplit) {
+              const firstPart = snippet.lines.slice(0, 50);
+              const lastPart = snippet.lines.slice(-50);
+              const middleCount = snippet.lines.length - 100;
+
+              return (
+                <>
+                  {firstPart.map((content, idx) => renderLineHelper(content, idx))}
+                  <button
+                    type="button"
+                    className="git-diff-hidden-lines-row git-diff-hidden-lines-middle"
+                    onClick={() => {
+                      setHiddenDiffSnippets((snippets) => ({
+                        ...snippets,
+                        [line.key]: {
+                          ...snippets[line.key],
+                          fullyExpanded: true
+                        }
+                      }));
+                    }}
+                  >
+                    {middleCount > 500
+                      ? `Show remaining ${middleCount} lines (expensive action)`
+                      : `Show remaining ${middleCount} lines`}
+                  </button>
+                  {lastPart.map((content, idx) => {
+                    const actualIdx = snippet.lines!.length - 50 + idx;
+                    return renderLineHelper(content, actualIdx);
+                  })}
+                </>
+              );
+            }
+
+            return snippet.lines.map((content, idx) => renderLineHelper(content, idx));
+          })()}
+        </React.Fragment>
+      );
+    }
+
+    const diffLine = line as HighlightedDiffLine;
+    const { className, prefix, oldLineNumber, newLineNumber, isCodeLine, dataLang, highlightedCode } = diffLine;
+    const markerType =
+      className === 'diff-line-addition'
+        ? 'addition'
+        : className === 'diff-line-deletion'
+          ? 'deletion'
+          : className === 'diff-line-hunk'
+            ? 'hunk'
+            : undefined;
 
     return (
-      <div key={index} className={`git-diff-line ${className}`} data-lang={dataLang}>
+      <div key={index} className={`git-diff-line ${className}`} data-lang={dataLang} data-diff-marker-type={markerType}>
         {isCodeLine ? (
           <>
             <span className="diff-line-number-old">{oldLineNumber}</span>
@@ -918,10 +1195,29 @@ export const GitPanel: React.FC<GitPanelProps> = ({ cwd, onClose, width, onResiz
     }
   };
 
+  const handleDiffMarkerClick = (targetTop: number) => {
+    const body = diffBodyRef.current;
+    if (!body) return;
+
+    body.scrollTop = Math.max(0, targetTop - body.clientHeight * 0.2);
+  };
+
   // Helper icons
   const BranchIcon = () => (
     <svg className="git-svg-icon" viewBox="0 0 16 16" width="14" height="14">
       <path fill="currentColor" d="M11.75 2.5a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5zm-2.25.75a2.25 2.25 0 1 1 3.53 1.83 3.75 3.75 0 0 1-3.03 3.63v1.79a2.25 2.25 0 1 1-1.5 0V8.21c-.08-.01-.15-.02-.23-.04A3.75 3.75 0 0 1 5.28 4.75a2.25 2.25 0 1 1 1.5 0A2.25 2.25 0 0 0 9 6.75a2.25 2.25 0 0 0 1.25-.38V3.25zm-6 0a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5zM5 12.75a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5z"/>
+    </svg>
+  );
+
+  const UnfoldIcon = () => (
+    <svg className="git-svg-icon unfold-icon" viewBox="0 0 16 16" width="12" height="12">
+      <path fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" d="M3 5l5-4 5 4M3 11l5 4 5-4"/>
+    </svg>
+  );
+
+  const FoldIcon = () => (
+    <svg className="git-svg-icon fold-icon" viewBox="0 0 16 16" width="12" height="12">
+      <path fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" d="M3 2l5 4 5-4M3 14l5-4 5 4"/>
     </svg>
   );
 
@@ -1075,33 +1371,60 @@ export const GitPanel: React.FC<GitPanelProps> = ({ cwd, onClose, width, onResiz
               </button>
               <span className="git-diff-filename" title={activeFile.path}>{activeFile.path}</span>
             </div>
-            <span className="git-diff-status">
-              {activeTab === 'changes'
-                ? (selectedFile?.isStaged ? 'staged' : 'working tree')
-                : `commit ${selectedCommit?.hash.substring(0, 8)}`}
-            </span>
+            <div className="git-diff-header-actions">
+              {isDiffMaximized && foldedDiffLineCount > 0 && (
+                <span className="git-diff-hidden-summary" title="Unchanged lines hidden between diff hunks">
+                  {foldedDiffLineCount} hidden
+                </span>
+              )}
+              <span className="git-diff-status">
+                {activeTab === 'changes'
+                  ? (selectedFile?.isStaged ? 'staged' : 'working tree')
+                  : `commit ${selectedCommit?.hash.substring(0, 8)}`}
+              </span>
+            </div>
           </div>
-          <div className="git-diff-body">
-            {diffError ? (
-              <div className="git-diff-error">{diffError}</div>
-            ) : diff === null ? (
-              <div className="git-diff-loading">Loading diff...</div>
-            ) : (
-              <pre className="git-diff-pre">
-                <code>
-                  {parsedLines.map((lineInfo, i) => renderDiffLine(lineInfo, i))}
-                  {hiddenDiffLineCount > 0 && renderDiffLine({
-                    raw: `... Preview truncated: ${hiddenDiffLineCount} more lines not shown.`,
-                    className: 'diff-line-meta',
-                    prefix: '',
-                    oldLineNumber: '',
-                    newLineNumber: '',
-                    isCodeLine: false,
-                    dataLang: 'text',
-                    highlightedCode: `... Preview truncated: ${hiddenDiffLineCount} more lines not shown.`
-                  }, parsedLines.length)}
-                </code>
-              </pre>
+          <div className="git-diff-body-shell">
+            <div className="git-diff-body" ref={diffBodyRef}>
+              {diffError ? (
+                <div className="git-diff-error">{diffError}</div>
+              ) : diff === null ? (
+                <div className="git-diff-loading">Loading diff...</div>
+              ) : (
+                <pre className="git-diff-pre">
+                  <code>
+                    {parsedLines.map((lineInfo, i) => renderDiffLine(lineInfo, i))}
+                    {hiddenDiffLineCount > 0 && renderDiffLine({
+                      raw: `... Preview truncated: ${hiddenDiffLineCount} more lines not shown.`,
+                      className: 'diff-line-meta',
+                      prefix: '',
+                      oldLineNumber: '',
+                      newLineNumber: '',
+                      isCodeLine: false,
+                      dataLang: 'text',
+                      highlightedCode: `... Preview truncated: ${hiddenDiffLineCount} more lines not shown.`
+                    }, parsedLines.length)}
+                  </code>
+                </pre>
+              )}
+            </div>
+            {diffScrollMarkers.length > 0 && (
+              <div className="git-diff-scroll-markers">
+                {diffScrollMarkers.map((marker) => (
+                  <button
+                    key={marker.key}
+                    type="button"
+                    className={`git-diff-scroll-marker marker-${marker.type}`}
+                    style={{
+                      top: `${marker.topPercent}%`,
+                      height: `${marker.heightPercent}%`
+                    }}
+                    onClick={() => handleDiffMarkerClick(marker.targetTop)}
+                    tabIndex={-1}
+                    title="Jump to diff marker"
+                  />
+                ))}
+              </div>
             )}
           </div>
         </>
@@ -1206,6 +1529,7 @@ export const GitPanel: React.FC<GitPanelProps> = ({ cwd, onClose, width, onResiz
             setSelectedCommitFile(null);
             setDiff(null);
             setDiffError(null);
+            setHiddenDiffSnippets({});
           }}
         >
           Changes
@@ -1225,6 +1549,7 @@ export const GitPanel: React.FC<GitPanelProps> = ({ cwd, onClose, width, onResiz
             setSelectedCommitFile(null);
             setDiff(null);
             setDiffError(null);
+            setHiddenDiffSnippets({});
           }}
         >
           History

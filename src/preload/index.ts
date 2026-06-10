@@ -153,6 +153,8 @@ const terminal: TerminalApi = {
     ipcRenderer.invoke('git:status', request),
   gitDiff: (request: { cwd: string; filePath: string; isStaged: boolean }): Promise<{ diff?: string; error?: string }> =>
     ipcRenderer.invoke('git:diff', request),
+  gitFileSnippet: (request: { cwd: string; filePath: string; source: 'workingTree' | 'index' | 'commit'; ref?: string; startLine: number; lineCount: number }): Promise<{ lines?: string[]; error?: string }> =>
+    ipcRenderer.invoke('git:file-snippet', request),
   gitStage: (request: { cwd: string; filePath: string }): Promise<void> =>
     ipcRenderer.invoke('git:stage', request),
   gitUnstage: (request: { cwd: string; filePath: string }): Promise<void> =>

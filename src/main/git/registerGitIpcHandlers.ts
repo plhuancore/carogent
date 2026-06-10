@@ -22,6 +22,16 @@ export function registerGitIpcHandlers(): void {
 
   const gitWatchers = new Map<number, GitWatchState>();
 
+  const fileLinesCacheMap = new Map<string, {
+    mtimeMs?: number;
+    lines: string[];
+    timestamp: number;
+  }>();
+
+  function clearSnippetCache() {
+    fileLinesCacheMap.clear();
+  }
+
   function runGitCommand(
     args: string[],
     cwd: string,
@@ -431,6 +441,96 @@ export function registerGitIpcHandlers(): void {
     }
   }
 
+  async function getGitFileSnippet(
+    cwd: string,
+    request: { filePath: string; source: 'workingTree' | 'index' | 'commit'; ref?: string; startLine: number; lineCount: number }
+  ) {
+    try {
+      const startLine = Math.max(1, Math.floor(request.startLine));
+      const lineCount = Math.min(1500, Math.max(0, Math.floor(request.lineCount)));
+      if (lineCount === 0) {
+        return { lines: [] };
+      }
+
+      const cacheKey = `${cwd}:${request.filePath}:${request.source}:${request.ref || ''}`;
+      let lines: string[] = [];
+
+      if (request.source === 'workingTree') {
+        const fullPath = join(cwd, getNewPathFromRename(request.filePath));
+        const fileStat = await stat(fullPath);
+        if (fileStat.size > GIT_DIFF_PREVIEW_MAX_BYTES) {
+          return { error: `Preview skipped: file is larger than ${GIT_DIFF_PREVIEW_MAX_BYTES / 1024 / 1024} MB.` };
+        }
+
+        const cached = fileLinesCacheMap.get(cacheKey);
+        if (cached && cached.mtimeMs === fileStat.mtimeMs) {
+          lines = cached.lines;
+          cached.timestamp = Date.now();
+        } else {
+          const buffer = await readFile(fullPath);
+          if (isLikelyBinary(buffer)) {
+            return { error: 'Preview skipped: binary file.' };
+          }
+          const content = buffer.toString('utf8');
+          lines = content.split('\n');
+
+          if (fileLinesCacheMap.size >= 10) {
+            let oldestKey = '';
+            let oldestTime = Infinity;
+            for (const [k, v] of fileLinesCacheMap.entries()) {
+              if (v.timestamp < oldestTime) {
+                oldestTime = v.timestamp;
+                oldestKey = k;
+              }
+            }
+            if (oldestKey) fileLinesCacheMap.delete(oldestKey);
+          }
+
+          fileLinesCacheMap.set(cacheKey, {
+            mtimeMs: fileStat.mtimeMs,
+            lines,
+            timestamp: Date.now()
+          });
+        }
+      } else {
+        const cached = fileLinesCacheMap.get(cacheKey);
+        if (cached) {
+          lines = cached.lines;
+          cached.timestamp = Date.now();
+        } else {
+          const ref = request.source === 'index' ? ':' : `${request.ref || 'HEAD'}:`;
+          const content = await runGitCommand(['show', `${ref}${getNewPathFromRename(request.filePath)}`], cwd, {
+            maxStdoutBytes: GIT_DIFF_PREVIEW_MAX_BYTES,
+            truncatedMessage: '... File preview truncated: file is too large.'
+          });
+          lines = content.split('\n');
+
+          if (fileLinesCacheMap.size >= 10) {
+            let oldestKey = '';
+            let oldestTime = Infinity;
+            for (const [k, v] of fileLinesCacheMap.entries()) {
+              if (v.timestamp < oldestTime) {
+                oldestTime = v.timestamp;
+                oldestKey = k;
+              }
+            }
+            if (oldestKey) fileLinesCacheMap.delete(oldestKey);
+          }
+
+          fileLinesCacheMap.set(cacheKey, {
+            lines,
+            timestamp: Date.now()
+          });
+        }
+      }
+
+      const sliced = lines.slice(startLine - 1, startLine - 1 + lineCount);
+      return { lines: sliced };
+    } catch (err: any) {
+      return { error: err.message || String(err) };
+    }
+  }
+
   function closeGitWatchState(webContentsId: number) {
     const state = gitWatchers.get(webContentsId);
     if (!state) return;
@@ -750,17 +850,32 @@ export function registerGitIpcHandlers(): void {
   ipcMain.handle('git:worktrees', (_event, { cwd }) => getGitWorktrees(cwd));
   ipcMain.handle('git:status', (_event, { cwd }) => getGitStatus(cwd));
   ipcMain.handle('git:diff', (_event, { cwd, filePath, isStaged }) => getGitDiff(cwd, filePath, isStaged));
+  ipcMain.handle('git:file-snippet', (_event, { cwd, ...request }) => getGitFileSnippet(cwd, request));
   ipcMain.handle('git:commit-files', (_event, { cwd, hash }) => getGitCommitFiles(cwd, hash));
   ipcMain.handle('git:commit-file-diff', (_event, { cwd, hash, filePath }) => getGitCommitFileDiff(cwd, hash, filePath));
-  ipcMain.handle('git:stage', (_event, { cwd, filePath }) => runGitCommand(['add', filePath], cwd));
-  ipcMain.handle('git:unstage', (_event, { cwd, filePath }) => runGitCommand(['reset', 'HEAD', '--', filePath], cwd));
-  ipcMain.handle('git:stage-all', (_event, { cwd }) => runGitCommand(['add', '-A'], cwd));
-  ipcMain.handle('git:unstage-all', (_event, { cwd }) => runGitCommand(['reset', 'HEAD'], cwd));
+  ipcMain.handle('git:stage', (_event, { cwd, filePath }) => {
+    clearSnippetCache();
+    return runGitCommand(['add', filePath], cwd);
+  });
+  ipcMain.handle('git:unstage', (_event, { cwd, filePath }) => {
+    clearSnippetCache();
+    return runGitCommand(['reset', 'HEAD', '--', filePath], cwd);
+  });
+  ipcMain.handle('git:stage-all', (_event, { cwd }) => {
+    clearSnippetCache();
+    return runGitCommand(['add', '-A'], cwd);
+  });
+  ipcMain.handle('git:unstage-all', (_event, { cwd }) => {
+    clearSnippetCache();
+    return runGitCommand(['reset', 'HEAD'], cwd);
+  });
   ipcMain.handle('git:discard-all', async (_event, { cwd }) => {
+    clearSnippetCache();
     await runGitCommand(['checkout', '--', '.'], cwd);
     await runGitCommand(['clean', '-fd'], cwd);
   });
   ipcMain.handle('git:discard', async (_event, { cwd, filePath, isUntracked }) => {
+    clearSnippetCache();
     if (isUntracked) {
       const fullPath = join(cwd, filePath);
       const fileStat = await stat(fullPath);
@@ -773,7 +888,10 @@ export function registerGitIpcHandlers(): void {
       await runGitCommand(['checkout', '--', filePath], cwd);
     }
   });
-  ipcMain.handle('git:commit', (_event, { cwd, message }) => runGitCommand(['commit', '-m', message], cwd));
+  ipcMain.handle('git:commit', (_event, { cwd, message }) => {
+    clearSnippetCache();
+    return runGitCommand(['commit', '-m', message], cwd);
+  });
   ipcMain.handle('git:history', (_event, { cwd, limit, skip }) => {
     let limitCount = typeof limit === 'number' && !isNaN(limit) ? Math.floor(limit) : 100;
     let skipCount = typeof skip === 'number' && !isNaN(skip) ? Math.floor(skip) : 0;
@@ -783,8 +901,12 @@ export function registerGitIpcHandlers(): void {
     if (skipCount > 5000) skipCount = 5000;
     return runGitCommand(['log', '--all', '--date-order', '--pretty=format:%H|%P|%d|%s|%an|%cr|%ct', '-n', String(limitCount), '--skip', String(skipCount)], cwd);
   });
-  ipcMain.handle('git:init', (_event, { cwd }) => runGitCommand(['init'], cwd));
+  ipcMain.handle('git:init', (_event, { cwd }) => {
+    clearSnippetCache();
+    return runGitCommand(['init'], cwd);
+  });
   ipcMain.handle('git:undo-last-commit', async (_event, { cwd }) => {
+    clearSnippetCache();
     let message = '';
     try {
       message = await runGitCommand(['log', '-1', '--pretty=%B'], cwd);

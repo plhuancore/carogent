@@ -185,6 +185,11 @@ export type GitDiffResult = {
   error?: string;
 };
 
+export type GitFileSnippetResult = {
+  lines?: string[];
+  error?: string;
+};
+
 export type TerminalApi = {
   getAgentBridgeSettings: () => Promise<{ enabled: boolean; port: number }>;
   setAgentBridgeSettings: (settings: { enabled: boolean; port: number }) => Promise<{ enabled: boolean; port: number }>;
@@ -224,6 +229,7 @@ export type TerminalApi = {
   onExit: (callback: (event: TerminalExitEvent) => void) => () => void;
   gitStatus: (request: { cwd: string }) => Promise<GitStatus>;
   gitDiff: (request: { cwd: string; filePath: string; isStaged: boolean }) => Promise<GitDiffResult>;
+  gitFileSnippet: (request: { cwd: string; filePath: string; source: 'workingTree' | 'index' | 'commit'; ref?: string; startLine: number; lineCount: number }) => Promise<GitFileSnippetResult>;
   gitStage: (request: { cwd: string; filePath: string }) => Promise<void>;
   gitUnstage: (request: { cwd: string; filePath: string }) => Promise<void>;
   gitStageAll: (request: { cwd: string }) => Promise<void>;
