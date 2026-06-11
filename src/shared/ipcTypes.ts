@@ -185,6 +185,18 @@ export type GitDiffResult = {
   error?: string;
 };
 
+export type GitImageDiffResult = {
+  oldImage?: {
+    dataUrl: string;
+    size?: number;
+  };
+  newImage?: {
+    dataUrl: string;
+    size?: number;
+  };
+  error?: string;
+};
+
 export type GitFileSnippetResult = {
   lines?: string[];
   error?: string;
@@ -229,6 +241,7 @@ export type TerminalApi = {
   onExit: (callback: (event: TerminalExitEvent) => void) => () => void;
   gitStatus: (request: { cwd: string }) => Promise<GitStatus>;
   gitDiff: (request: { cwd: string; filePath: string; isStaged: boolean }) => Promise<GitDiffResult>;
+  gitImageDiff: (request: { cwd: string; filePath: string; isStaged: boolean; hash?: string }) => Promise<GitImageDiffResult>;
   gitFileSnippet: (request: { cwd: string; filePath: string; source: 'workingTree' | 'index' | 'commit'; ref?: string; startLine: number; lineCount: number }) => Promise<GitFileSnippetResult>;
   gitStage: (request: { cwd: string; filePath: string }) => Promise<void>;
   gitUnstage: (request: { cwd: string; filePath: string }) => Promise<void>;

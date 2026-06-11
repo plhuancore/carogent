@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useLayoutEffect, useRef, useCallback, useMemo } from 'react';
-import type { GitStatus, GitWorktree } from '../../shared/ipcTypes';
+import type { GitStatus, GitWorktree, GitImageDiffResult } from '../../shared/ipcTypes';
 import 'prism-themes/themes/prism-vsc-dark-plus.css';
 import { FileIcon } from './FileIcon';
 import { parseDiffLines, type HighlightedDiffLine } from './git/diffParser';
@@ -71,6 +71,332 @@ function groupFilesByDirectory(files: { additions: number; deletions: number; pa
   return groups;
 }
 
+const isImageFile = (path: string): boolean => {
+  return /\.(png|jpe?g|gif|webp|bmp|ico|svg|tiff)$/i.test(path);
+};
+
+function formatBytes(bytes?: number): string {
+  if (bytes === undefined || bytes === null) return 'unknown size';
+  if (bytes === 0) return '0 B';
+  const k = 1024;
+  const sizes = ['B', 'KB', 'MB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+}
+
+interface ImageDiffViewerProps {
+  diff: GitImageDiffResult;
+}
+
+const ImageDiffViewer: React.FC<ImageDiffViewerProps> = React.memo(({ diff }) => {
+  const [mode, setMode] = useState<'2-up' | 'swipe' | 'onion'>('2-up');
+  const [swipePercent, setSwipePercent] = useState<number>(50);
+  const [onionOpacity, setOnionOpacity] = useState<number>(0.5);
+
+  const [oldDims, setOldDims] = useState<{ width: number; height: number } | null>(null);
+  const [newDims, setNewDims] = useState<{ width: number; height: number } | null>(null);
+
+  const [oldError, setOldError] = useState<boolean>(false);
+  const [newError, setNewError] = useState<boolean>(false);
+
+  const swipeContainerRef = useRef<HTMLDivElement>(null);
+
+  const moveListenerRef = useRef<((e: MouseEvent) => void) | null>(null);
+  const upListenerRef = useRef<(() => void) | null>(null);
+  const touchMoveListenerRef = useRef<((e: TouchEvent) => void) | null>(null);
+  const touchEndListenerRef = useRef<(() => void) | null>(null);
+
+  useEffect(() => {
+    setOldDims(null);
+    setNewDims(null);
+    setOldError(false);
+    setNewError(false);
+  }, [diff]);
+
+  useEffect(() => {
+    return () => {
+      if (moveListenerRef.current) {
+        window.removeEventListener('mousemove', moveListenerRef.current);
+      }
+      if (upListenerRef.current) {
+        window.removeEventListener('mouseup', upListenerRef.current);
+      }
+      if (touchMoveListenerRef.current) {
+        window.removeEventListener('touchmove', touchMoveListenerRef.current);
+      }
+      if (touchEndListenerRef.current) {
+        window.removeEventListener('touchend', touchEndListenerRef.current);
+      }
+    };
+  }, []);
+
+  const handleSwipeMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (!swipeContainerRef.current) return;
+    const rect = swipeContainerRef.current.getBoundingClientRect();
+
+    const handleMouseMove = (moveEvent: MouseEvent) => {
+      const x = moveEvent.clientX - rect.left;
+      const percentage = Math.max(0, Math.min(100, (x / rect.width) * 100));
+      setSwipePercent(percentage);
+    };
+
+    const handleMouseUp = () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+      moveListenerRef.current = null;
+      upListenerRef.current = null;
+    };
+
+    moveListenerRef.current = handleMouseMove;
+    upListenerRef.current = handleMouseUp;
+
+    const initialX = e.clientX - rect.left;
+    setSwipePercent(Math.max(0, Math.min(100, (initialX / rect.width) * 100)));
+
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mouseup', handleMouseUp);
+  };
+
+  const handleSwipeTouchStart = (e: React.TouchEvent<HTMLDivElement>) => {
+    if (!swipeContainerRef.current) return;
+    const rect = swipeContainerRef.current.getBoundingClientRect();
+
+    const handleTouchMove = (moveEvent: TouchEvent) => {
+      const x = moveEvent.touches[0].clientX - rect.left;
+      const percentage = Math.max(0, Math.min(100, (x / rect.width) * 100));
+      setSwipePercent(percentage);
+    };
+
+    const handleTouchEnd = () => {
+      window.removeEventListener('touchmove', handleTouchMove);
+      window.removeEventListener('touchend', handleTouchEnd);
+      touchMoveListenerRef.current = null;
+      touchEndListenerRef.current = null;
+    };
+
+    touchMoveListenerRef.current = handleTouchMove;
+    touchEndListenerRef.current = handleTouchEnd;
+
+    const initialX = e.touches[0].clientX - rect.left;
+    setSwipePercent(Math.max(0, Math.min(100, (initialX / rect.width) * 100)));
+
+    window.addEventListener('touchmove', handleTouchMove);
+    window.addEventListener('touchend', handleTouchEnd);
+  };
+
+  const hasOld = !!diff.oldImage?.dataUrl;
+  const hasNew = !!diff.newImage?.dataUrl;
+
+  const oldSizeStr = hasOld ? formatBytes(diff.oldImage?.size) : '';
+  const newSizeStr = hasNew ? formatBytes(diff.newImage?.size) : '';
+
+  return (
+    <div className="image-diff-viewer">
+      <div className="image-diff-toolbar">
+        <div className="image-diff-mode-selectors">
+          <button
+            type="button"
+            className={`image-diff-mode-btn ${mode === '2-up' ? 'active' : ''}`}
+            onClick={() => setMode('2-up')}
+          >
+            2-Up (Side-by-Side)
+          </button>
+          <button
+            type="button"
+            className={`image-diff-mode-btn ${mode === 'swipe' ? 'active' : ''}`}
+            onClick={() => setMode('swipe')}
+            disabled={!hasOld || !hasNew || oldError || newError}
+          >
+            Swipe
+          </button>
+          <button
+            type="button"
+            className={`image-diff-mode-btn ${mode === 'onion' ? 'active' : ''}`}
+            onClick={() => setMode('onion')}
+            disabled={!hasOld || !hasNew || oldError || newError}
+          >
+            Onion Skin
+          </button>
+        </div>
+        
+        {mode === 'onion' && hasOld && hasNew && !oldError && !newError && (
+          <div className="image-diff-control-slider">
+            <span className="slider-label">Opacity: {Math.round(onionOpacity * 100)}%</span>
+            <input
+              type="range"
+              min="0"
+              max="1"
+              step="0.01"
+              value={onionOpacity}
+              onChange={(e) => setOnionOpacity(parseFloat(e.target.value))}
+            />
+          </div>
+        )}
+      </div>
+
+      <div className="image-diff-display-area">
+        {mode === '2-up' && (
+          <div className="image-diff-2up">
+            <div className="image-diff-pane old-pane">
+              <div className="pane-header">
+                <span className="pane-title label-deleted">OLD</span>
+                <span className="pane-meta">
+                  {oldError ? '' : oldSizeStr} {oldDims && !oldError ? `(${oldDims.width}x${oldDims.height})` : ''}
+                </span>
+              </div>
+              <div className="image-canvas-wrapper">
+                {oldError ? (
+                  <span className="image-error-state">Failed to load image preview</span>
+                ) : hasOld ? (
+                  <img
+                    src={diff.oldImage!.dataUrl}
+                    alt="Old version"
+                    className="image-diff-img"
+                    onError={() => setOldError(true)}
+                    onLoad={(e) => {
+                      const img = e.currentTarget;
+                      setOldDims({ width: img.naturalWidth, height: img.naturalHeight });
+                    }}
+                  />
+                ) : (
+                  <span className="image-empty-state">File Added</span>
+                )}
+              </div>
+            </div>
+            
+            <div className="image-diff-pane new-pane">
+              <div className="pane-header">
+                <span className="pane-title label-added">NEW</span>
+                <span className="pane-meta">
+                  {newError ? '' : newSizeStr} {newDims && !newError ? `(${newDims.width}x${newDims.height})` : ''}
+                </span>
+              </div>
+              <div className="image-canvas-wrapper">
+                {newError ? (
+                  <span className="image-error-state">Failed to load image preview</span>
+                ) : hasNew ? (
+                  <img
+                    src={diff.newImage!.dataUrl}
+                    alt="New version"
+                    className="image-diff-img"
+                    onError={() => setNewError(true)}
+                    onLoad={(e) => {
+                      const img = e.currentTarget;
+                      setNewDims({ width: img.naturalWidth, height: img.naturalHeight });
+                    }}
+                  />
+                ) : (
+                  <span className="image-empty-state">File Deleted</span>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {mode === 'swipe' && hasOld && hasNew && (
+          oldError || newError ? (
+            <span className="image-error-state">Failed to load image preview</span>
+          ) : (
+            <div
+              className="image-diff-swipe-container"
+              ref={swipeContainerRef}
+              onMouseDown={handleSwipeMouseDown}
+              onTouchStart={handleSwipeTouchStart}
+            >
+              {/* Old Image (Base Layer) */}
+              <div className="swipe-layer old-layer">
+                <img
+                  src={diff.oldImage!.dataUrl}
+                  alt="Old version"
+                  className="swipe-img"
+                  draggable={false}
+                  onError={() => setOldError(true)}
+                />
+                <div className="swipe-info-tag tag-old">
+                  OLD: {oldDims ? `${oldDims.width}x${oldDims.height}` : ''} ({oldSizeStr})
+                </div>
+              </div>
+
+              {/* New Image (Overlay Layer, Clipped) */}
+              <div
+                className="swipe-layer new-layer"
+                style={{ clipPath: `inset(0 ${100 - swipePercent}% 0 0)` }}
+              >
+                <img
+                  src={diff.newImage!.dataUrl}
+                  alt="New version"
+                  className="swipe-img"
+                  draggable={false}
+                  onError={() => setNewError(true)}
+                />
+                <div className="swipe-info-tag tag-new">
+                  NEW: {newDims ? `${newDims.width}x${newDims.height}` : ''} ({newSizeStr})
+                </div>
+              </div>
+
+              {/* Swipe Handle Wrapper for GPU acceleration */}
+              <div
+                className="swipe-handle-wrapper"
+                style={{ transform: `translate3d(${swipePercent}%, 0, 0)` }}
+              >
+                <div className="swipe-handle">
+                  <div className="swipe-handle-bar"></div>
+                  <div className="swipe-handle-circle">
+                    <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
+                      <path d="M8.5 6L3.5 12L8.5 18V6M15.5 6L20.5 12L15.5 18V6Z" />
+                    </svg>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )
+        )}
+
+        {mode === 'onion' && hasOld && hasNew && (
+          oldError || newError ? (
+            <span className="image-error-state">Failed to load image preview</span>
+          ) : (
+            <div className="image-diff-onion-container">
+              {/* Background Old Image */}
+              <div className="onion-layer old-layer">
+                <img
+                  src={diff.oldImage!.dataUrl}
+                  alt="Old version"
+                  className="onion-img"
+                  draggable={false}
+                  onError={() => setOldError(true)}
+                />
+                <div className="onion-info-tag tag-old">
+                  OLD: {oldDims ? `${oldDims.width}x${oldDims.height}` : ''} ({oldSizeStr})
+                </div>
+              </div>
+
+              {/* Foreground New Image with Opacity */}
+              <div
+                className="onion-layer new-layer"
+                style={{ opacity: onionOpacity }}
+              >
+                <img
+                  src={diff.newImage!.dataUrl}
+                  alt="New version"
+                  className="onion-img"
+                  draggable={false}
+                  onError={() => setNewError(true)}
+                />
+                <div className="onion-info-tag tag-new">
+                  NEW: {newDims ? `${newDims.width}x${newDims.height}` : ''} ({newSizeStr})
+                </div>
+              </div>
+            </div>
+          )
+        )}
+      </div>
+    </div>
+  );
+});
+
+ImageDiffViewer.displayName = 'ImageDiffViewer';
+
 export const GitPanel: React.FC<GitPanelProps> = ({ cwd, onClose, width, onResize, activePaneId, terminalId, refreshTrigger = 0 }) => {
   const [status, setStatus] = useState<GitStatus | null>(null);
   const [selectedCommit, setSelectedCommit] = useState<CommitHistoryItem | null>(null);
@@ -82,6 +408,7 @@ export const GitPanel: React.FC<GitPanelProps> = ({ cwd, onClose, width, onResiz
   const [selectedFile, setSelectedFile] = useState<{ path: string; isStaged: boolean } | null>(null);
   const [diff, setDiff] = useState<string | null>(null);
   const [diffError, setDiffError] = useState<string | null>(null);
+  const [imageDiff, setImageDiff] = useState<GitImageDiffResult | null>(null);
   const [commitMessage, setCommitMessage] = useState('');
   const [commitLoading, setCommitLoading] = useState(false);
   const [history, setHistory] = useState<CommitHistoryItem[]>([]);
@@ -473,8 +800,30 @@ export const GitPanel: React.FC<GitPanelProps> = ({ cwd, onClose, width, onResiz
     const requestId = diffRequestIdRef.current + 1;
     diffRequestIdRef.current = requestId;
     setDiff(null);
+    setImageDiff(null);
     setDiffError(null);
     setHiddenDiffSnippets({});
+
+    if (isImageFile(file.path)) {
+      try {
+        const result = await window.terminalApi.gitImageDiff({
+          cwd,
+          filePath: file.path,
+          isStaged: file.isStaged
+        });
+        if (diffRequestIdRef.current !== requestId) return;
+        if (result.error) {
+          setDiffError(result.error);
+        } else {
+          setImageDiff(result);
+        }
+      } catch (err: any) {
+        if (diffRequestIdRef.current !== requestId) return;
+        setDiffError(err.message || 'Failed to load image diff');
+      }
+      return;
+    }
+
     try {
       const result = await window.terminalApi.gitDiff({
         cwd,
@@ -636,8 +985,31 @@ export const GitPanel: React.FC<GitPanelProps> = ({ cwd, onClose, width, onResiz
 
     setSelectedCommitFile({ path: filePath });
     setDiff(null);
+    setImageDiff(null);
     setDiffError(null);
     setHiddenDiffSnippets({});
+
+    if (isImageFile(filePath)) {
+      try {
+        const result = await window.terminalApi.gitImageDiff({
+          cwd,
+          filePath,
+          isStaged: false,
+          hash: selectedCommit.hash
+        });
+        if (commitDiffRequestIdRef.current !== requestId) return;
+        if (result.error) {
+          setDiffError(result.error);
+        } else {
+          setImageDiff(result);
+        }
+      } catch (err: any) {
+        if (commitDiffRequestIdRef.current !== requestId) return;
+        setDiffError(err.message || 'Failed to load image diff');
+      }
+      return;
+    }
+
     try {
       const result = await window.terminalApi.gitCommitFileDiff({
         cwd,
@@ -1388,6 +1760,12 @@ export const GitPanel: React.FC<GitPanelProps> = ({ cwd, onClose, width, onResiz
             <div className="git-diff-body" ref={diffBodyRef}>
               {diffError ? (
                 <div className="git-diff-error">{diffError}</div>
+              ) : isImageFile(activeFile.path) ? (
+                imageDiff === null ? (
+                  <div className="git-diff-loading">Loading image diff...</div>
+                ) : (
+                  <ImageDiffViewer diff={imageDiff} />
+                )
               ) : diff === null ? (
                 <div className="git-diff-loading">Loading diff...</div>
               ) : (

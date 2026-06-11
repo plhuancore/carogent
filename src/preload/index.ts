@@ -14,7 +14,8 @@ import type {
   TerminalCwdEvent,
   TerminalDataEvent,
   TerminalExitEvent,
-  TerminalShellOption
+  TerminalShellOption,
+  GitImageDiffResult
 } from '../shared/ipcTypes';
 
 const terminal: TerminalApi = {
@@ -153,6 +154,8 @@ const terminal: TerminalApi = {
     ipcRenderer.invoke('git:status', request),
   gitDiff: (request: { cwd: string; filePath: string; isStaged: boolean }): Promise<{ diff?: string; error?: string }> =>
     ipcRenderer.invoke('git:diff', request),
+  gitImageDiff: (request: { cwd: string; filePath: string; isStaged: boolean; hash?: string }): Promise<GitImageDiffResult> =>
+    ipcRenderer.invoke('git:image-diff', request),
   gitFileSnippet: (request: { cwd: string; filePath: string; source: 'workingTree' | 'index' | 'commit'; ref?: string; startLine: number; lineCount: number }): Promise<{ lines?: string[]; error?: string }> =>
     ipcRenderer.invoke('git:file-snippet', request),
   gitStage: (request: { cwd: string; filePath: string }): Promise<void> =>

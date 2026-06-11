@@ -847,9 +847,206 @@ export function registerGitIpcHandlers(): void {
     }
   });
 
+  function runGitCommandBuffer(
+    args: string[],
+    cwd: string
+  ): Promise<Buffer> {
+    return new Promise((resolve, reject) => {
+      const child = spawn('git', args, { cwd });
+      const chunks: Buffer[] = [];
+      let stderr = '';
+      child.stdout.on('data', (data) => {
+        chunks.push(Buffer.isBuffer(data) ? data : Buffer.from(data));
+      });
+      child.stderr.on('data', (data) => {
+        stderr += data.toString();
+      });
+      child.on('close', (code) => {
+        if (code === 0) {
+          resolve(Buffer.concat(chunks));
+        } else {
+          reject(new Error(stderr.trim() || `Git command failed with exit code ${code}`));
+        }
+      });
+      child.on('error', (err) => {
+        reject(err);
+      });
+    });
+  }
+
+  function getMimeType(filePath: string): string {
+    const ext = filePath.split('.').pop()?.toLowerCase();
+    switch (ext) {
+      case 'png': return 'image/png';
+      case 'jpg':
+      case 'jpeg': return 'image/jpeg';
+      case 'gif': return 'image/gif';
+      case 'webp': return 'image/webp';
+      case 'bmp': return 'image/bmp';
+      case 'ico': return 'image/x-icon';
+      case 'svg': return 'image/svg+xml';
+      case 'tiff': return 'image/tiff';
+      default: return 'image/png';
+    }
+  }
+
+  async function getGitObjectSize(cwd: string, ref: string): Promise<number> {
+    try {
+      const sizeStr = await runGitCommand(['cat-file', '-s', ref], cwd);
+      return parseInt(sizeStr.trim(), 10) || 0;
+    } catch {
+      return 0;
+    }
+  }
+
+  function formatBytes(bytes?: number): string {
+    if (bytes === undefined || bytes === null) return 'unknown size';
+    if (bytes === 0) return '0 B';
+    const k = 1024;
+    const sizes = ['B', 'KB', 'MB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+  }
+
+  async function getGitImageDiff(
+    cwd: string,
+    filePath: string,
+    isStaged: boolean,
+    hash?: string
+  ) {
+    const GIT_IMAGE_DIFF_MAX_BYTES = 20 * 1024 * 1024;
+
+    try {
+      const mimeType = getMimeType(filePath);
+      let oldImage: { dataUrl: string; size: number } | undefined = undefined;
+      let newImage: { dataUrl: string; size: number } | undefined = undefined;
+
+      const toDataUrl = (buffer: Buffer) => {
+        return `data:${mimeType};base64,${buffer.toString('base64')}`;
+      };
+
+      if (hash) {
+        const actualPath = getNewPathFromRename(filePath);
+        const newRef = `${hash}:${actualPath}`;
+        const newSize = await getGitObjectSize(cwd, newRef);
+        if (newSize > GIT_IMAGE_DIFF_MAX_BYTES) {
+          return { error: `New image exceeds 20MB limit (${formatBytes(newSize)}).` };
+        }
+
+        try {
+          const newBuffer = await runGitCommandBuffer(['show', newRef], cwd);
+          newImage = {
+            dataUrl: toDataUrl(newBuffer),
+            size: newBuffer.length
+          };
+        } catch (err) {
+          // ignore
+        }
+
+        const oldRef = `${hash}^:${actualPath}`;
+        const oldSize = await getGitObjectSize(cwd, oldRef);
+        if (oldSize > GIT_IMAGE_DIFF_MAX_BYTES) {
+          return { error: `Old image exceeds 20MB limit (${formatBytes(oldSize)}).` };
+        }
+
+        try {
+          const oldBuffer = await runGitCommandBuffer(['show', oldRef], cwd);
+          oldImage = {
+            dataUrl: toDataUrl(oldBuffer),
+            size: oldBuffer.length
+          };
+        } catch (err) {
+          // ignore
+        }
+      } else {
+        if (isStaged) {
+          const oldRef = `HEAD:${filePath}`;
+          const oldSize = await getGitObjectSize(cwd, oldRef);
+          if (oldSize > GIT_IMAGE_DIFF_MAX_BYTES) {
+            return { error: `Old image exceeds 20MB limit (${formatBytes(oldSize)}).` };
+          }
+
+          try {
+            const oldBuffer = await runGitCommandBuffer(['show', oldRef], cwd);
+            oldImage = {
+              dataUrl: toDataUrl(oldBuffer),
+              size: oldBuffer.length
+            };
+          } catch (err) {
+            // ignore
+          }
+
+          const newRef = `:${filePath}`;
+          const newSize = await getGitObjectSize(cwd, newRef);
+          if (newSize > GIT_IMAGE_DIFF_MAX_BYTES) {
+            return { error: `New image exceeds 20MB limit (${formatBytes(newSize)}).` };
+          }
+
+          try {
+            const newBuffer = await runGitCommandBuffer(['show', newRef], cwd);
+            newImage = {
+              dataUrl: toDataUrl(newBuffer),
+              size: newBuffer.length
+            };
+          } catch (err) {
+            // ignore
+          }
+        } else {
+          const oldRef = `:${filePath}`;
+          let oldSize = await getGitObjectSize(cwd, oldRef);
+          if (oldSize === 0) {
+            oldSize = await getGitObjectSize(cwd, `HEAD:${filePath}`);
+          }
+
+          if (oldSize > GIT_IMAGE_DIFF_MAX_BYTES) {
+            return { error: `Old image exceeds 20MB limit (${formatBytes(oldSize)}).` };
+          }
+
+          try {
+            const oldBuffer = await runGitCommandBuffer(['show', oldRef], cwd);
+            oldImage = {
+              dataUrl: toDataUrl(oldBuffer),
+              size: oldBuffer.length
+            };
+          } catch (err) {
+            try {
+              const oldBufferHead = await runGitCommandBuffer(['show', `HEAD:${filePath}`], cwd);
+              oldImage = {
+                dataUrl: toDataUrl(oldBufferHead),
+                size: oldBufferHead.length
+              };
+            } catch (e) {
+              // ignore
+            }
+          }
+
+          const fullPath = join(cwd, filePath);
+          try {
+            const fileStat = await stat(fullPath);
+            if (fileStat.size > GIT_IMAGE_DIFF_MAX_BYTES) {
+              return { error: `New image exceeds 20MB limit (${formatBytes(fileStat.size)}).` };
+            }
+            const newBuffer = await readFile(fullPath);
+            newImage = {
+              dataUrl: toDataUrl(newBuffer),
+              size: newBuffer.length
+            };
+          } catch (err) {
+            // ignore
+          }
+        }
+      }
+
+      return { oldImage, newImage };
+    } catch (err: any) {
+      return { error: err.message || String(err) };
+    }
+  }
+
   ipcMain.handle('git:worktrees', (_event, { cwd }) => getGitWorktrees(cwd));
   ipcMain.handle('git:status', (_event, { cwd }) => getGitStatus(cwd));
   ipcMain.handle('git:diff', (_event, { cwd, filePath, isStaged }) => getGitDiff(cwd, filePath, isStaged));
+  ipcMain.handle('git:image-diff', (_event, { cwd, filePath, isStaged, hash }) => getGitImageDiff(cwd, filePath, isStaged, hash));
   ipcMain.handle('git:file-snippet', (_event, { cwd, ...request }) => getGitFileSnippet(cwd, request));
   ipcMain.handle('git:commit-files', (_event, { cwd, hash }) => getGitCommitFiles(cwd, hash));
   ipcMain.handle('git:commit-file-diff', (_event, { cwd, hash, filePath }) => getGitCommitFileDiff(cwd, hash, filePath));
