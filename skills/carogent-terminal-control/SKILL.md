@@ -37,8 +37,9 @@ When the user asks you to spawn a subagent and monitor it in a separate shell pa
 3. Locate the monitoring script:
    - Check if `scripts/monitor.js` exists in the current project workspace.
    - If not, use the global script at `~/.gemini/scripts/monitor.js`.
-4. Insert the command into the new monitor pane using `insert_text` to start it:
-   - Run the script in Auto-Detect mode (without arguments) so it automatically picks up any active subagents:
-     `node scripts/monitor.js\n` (or `node ~/.gemini/scripts/monitor.js\n`)
-   - Alternatively, target the specific subagent ID:
+4. Insert the command into the new monitor pane using `insert_text` to start it. Prefer targeting the specific subagent ID to avoid auto-detection issues:
+   - **Recommended**: Run the script with the specific subagent ID:
      `node scripts/monitor.js <conversationId>\n` (or `node ~/.gemini/scripts/monitor.js <conversationId>\n`)
+   - Alternatively, run the script in Auto-Detect mode (only if the parent conversation ID is correctly configured/skipped in the script):
+     `node scripts/monitor.js\n` (or `node ~/.gemini/scripts/monitor.js\n`)
+
