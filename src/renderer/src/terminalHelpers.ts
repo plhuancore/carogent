@@ -129,6 +129,7 @@ export function fitTerminalSession(session: TerminalSession): void {
   }
 
   try {
+    captureTerminalScroll(session);
     session.fitAddon.fit();
 
     if (session.terminalId) {
@@ -138,6 +139,8 @@ export function fitTerminalSession(session: TerminalSession): void {
         rows: session.terminal.rows
       });
     }
+
+    scheduleTerminalScrollRestore(session);
   } catch {
     // xterm can briefly have zero dimensions while panes attach, split, or hide.
   }
