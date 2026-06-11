@@ -28,3 +28,17 @@ Available tools:
 1. **Check connection status**: Run `carogent_status` to ensure you are communicating properly with the Carogent desktop app.
 2. **Interact with panes**: If you need to focus, split, or send commands to terminal panes, use `focus_pane`, `split_pane`, or `insert_text`.
 3. **Notify on task completion**: When you finish any task, command execution, or build, you MUST call `notify_done` on the active pane to alert the user and pin/update the terminal pane status on the Carogent floating bar.
+
+## Subagent Monitoring Utility
+
+When the user asks you to spawn a subagent and monitor it in a separate shell pane, follow these steps:
+1. Spawn the subagent using `invoke_subagent`. You will receive a `conversationId` for the subagent.
+2. Split a new terminal pane using `split_pane` with `title: "<Subagent Role> Monitor"` (or `<Subagent TypeName> Monitor` if role is not available).
+3. Locate the monitoring script:
+   - Check if `scripts/monitor.js` exists in the current project workspace.
+   - If not, use the global script at `~/.gemini/scripts/monitor.js`.
+4. Insert the command into the new monitor pane using `insert_text` to start it:
+   - Run the script in Auto-Detect mode (without arguments) so it automatically picks up any active subagents:
+     `node scripts/monitor.js\n` (or `node ~/.gemini/scripts/monitor.js\n`)
+   - Alternatively, target the specific subagent ID:
+     `node scripts/monitor.js <conversationId>\n` (or `node ~/.gemini/scripts/monitor.js <conversationId>\n`)

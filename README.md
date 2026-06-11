@@ -71,9 +71,16 @@ Git Control opens a source-control sidebar for the active pane's current working
 4. Stage, unstage, or discard file changes from the row actions.
 5. Enter a commit message and commit the staged changes.
 
-The file list shows untracked files individually, similar to VS Code. Large or binary file previews may be skipped or truncated to keep the sidebar responsive.
+To maintain UI responsiveness in repositories with extensive modifications, the following performance optimizations are built into Git Control:
+
+- **Display Limits**: Staged and unstaged change lists are capped at a maximum count (defaulting to 50 files). You can click `Show More` to progressively reveal additional files, or `Collapse` to reset the view.
+- **Progressive Diff Line Reveal**: Unchanged lines between diff hunks are folded by default and replaced with an expander row (e.g., "120 hidden lines"). Clicking this row asynchronously loads the missing lines. For blocks exceeding 100 lines, it partially reveals the first 50 and last 50 lines with a middle collapse/expansion button to avoid rendering bottlenecks.
+- **Binary & Size Guardrails**: Large files or binary file previews are automatically skipped or truncated to prevent UI lag.
 
 Use the `History` tab to browse recent commits and their graph. Use the repository dropdown to view available Git worktrees and switch the active pane to another worktree.
+
+- **Infinite Scrolling**: Commits are loaded dynamically in chunks using an intersection observer, allowing you to scroll through deep project histories without performance degradation.
+- **Visual Stability**: Layering z-indexes and graph layouts are mathematically aligned to prevent visual clipping or overlapping of row cells during rendering.
 
 `Discard` deletes untracked files or reverts tracked file changes. This cannot be undone.
 
@@ -273,6 +280,15 @@ Make sure to replace `/absolute/path/to/carogent/` with the actual path to your 
 The global `~/.gemini/GEMINI.md` file is the reliable automatic trigger for short prompts such as `say hi`. Skill metadata alone may not activate for every request.
 
 Restart Gemini CLI or Antigravity CLI after updating the instructions.
+
+## Performance & Stability Optimizations
+
+Carogent Terminal incorporates key optimizations in the backend IPC and the frontend rendering layer to handle heavy development workloads seamlessly:
+
+- **File Snippet Caching**: Diff preview snippet requests (`git:file-snippet`) are cached on the backend (`fileLinesCacheMap`) using an LRU eviction strategy (capped at 10 files). For files in the working tree, the cache checks file modification times (`mtimeMs`) to invalidate entries automatically if changes are written to disk. Immutable index and commit files bypass invalidation for direct hits.
+- **Zero-Allocation Git Watcher Scanner**: Parsing lists of files from `ls-files` buffers in the main process directory watcher avoids expensive array allocations and string split operations. Instead, it scans files using index-based string searching (`indexOf('\0')`) to identify directories directly. Directory watching is debounced at 1000ms and capped at 2,000 directories to avoid exceeding Node.js file descriptor limits.
+- **Git Status Race Condition Prevention**: Async status queries validate paths using a `cwdRef` upon completion. Stale in-flight status promises are ignored if the user switches active panes or directories in the middle of a request, preventing the UI from populating with incorrect or mixed directory data.
+- **Asynchronous Terminal Focus**: Activating panes or restoring layouts triggers a deferred focus (`setTimeout`) on the target `xterm.js` instance. This resolves focus race conditions across Electron windows and ensures immediate keyboard input readiness.
 
 ## Notes
 
