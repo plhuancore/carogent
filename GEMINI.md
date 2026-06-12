@@ -57,7 +57,29 @@ cp skills/carogent-done/SKILL.md ~/.gemini/antigravity-cli/skills/carogent-done/
 
 ### 3. Auto-Notify Done Hook Setup
 
-To automatically trigger the floating bar notification when any prompt/task completes, add the hook configuration to your Gemini hooks file (usually at `~/.gemini/config/hooks.json`):
+Install the hook script into the agent's own config directory, then point the agent hook at that copied file. Do not run the hook through a relative repository path like `node scripts/carogent-done-hook.js`; agents may finish tasks from any working directory.
+
+For Codex:
+
+```bash
+mkdir -p ~/.codex/scripts
+cp scripts/carogent-done-hook.js ~/.codex/scripts/carogent-done-hook.js
+```
+
+Use this command in Codex stop hooks and completion instructions:
+
+```bash
+node /Users/huanpham/.codex/scripts/carogent-done-hook.js
+```
+
+For Gemini or Antigravity CLI:
+
+```bash
+mkdir -p ~/.gemini/antigravity-cli/scripts
+cp scripts/carogent-done-hook.js ~/.gemini/antigravity-cli/scripts/carogent-done-hook.js
+```
+
+Then add the hook configuration to your Gemini hooks file (usually at `~/.gemini/config/hooks.json`):
 
 ```json
 {
@@ -65,12 +87,18 @@ To automatically trigger the floating bar notification when any prompt/task comp
     "Stop": [
       {
         "type": "command",
-        "command": "node /absolute/path/to/carogent/scripts/carogent-done-hook.js"
+        "command": "node /Users/huanpham/.gemini/antigravity-cli/scripts/carogent-done-hook.js"
       }
     ]
   }
 }
 ```
 
-Make sure to replace `/absolute/path/to/carogent/` with the actual path to your cloned repository.
+Verify the hook from a different working directory:
 
+```bash
+cd /tmp
+node /Users/huanpham/.codex/scripts/carogent-done-hook.js
+```
+
+The command should exit with code `0`. If it fails with a missing token, run it from inside a Carogent terminal pane so `CAROGENT_AGENT_TOKEN` is available, or ensure the bridge state file exists.

@@ -95,7 +95,9 @@ async function run() {
       process.exit(1);
     }
 
-    console.log(`[carogent-done-hook] Successfully notified done for pane ${paneId}`);
+    if (process.env.CAROGENT_DONE_HOOK_VERBOSE === '1') {
+      console.error(`[carogent-done-hook] Successfully notified done for pane ${paneId}`);
+    }
   } catch (error) {
     console.error('[carogent-done-hook] Hook error:', error);
     process.exit(1);
