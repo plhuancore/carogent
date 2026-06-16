@@ -547,7 +547,6 @@ function App(): JSX.Element {
       for (const [paneId, session] of sessions.current) {
         if (session.terminalId === id) {
           session.terminal.write(data);
-          scheduleTerminalFit(session);
 
           if (pinnedPaneIdsRef.current.has(paneId)) {
             triggerOverlayUpdate(paneId);

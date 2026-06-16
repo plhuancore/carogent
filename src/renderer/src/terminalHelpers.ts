@@ -16,6 +16,7 @@ export type TerminalSession = {
   restoreScrollTimer?: number;
   viewportY?: number;
   viewportAtBottom?: boolean;
+  viewportBottomOffset?: number;
   terminalId?: string;
   cwd?: string;
   shell?: string;
@@ -166,9 +167,14 @@ export function scheduleTerminalFit(session: TerminalSession): void {
 
 export function captureTerminalScroll(session: TerminalSession): void {
   const buffer = session.terminal.buffer.active;
+  const viewport = session.terminal.element?.querySelector<HTMLElement>('.xterm-viewport');
+  const domAtBottom = viewport
+    ? viewport.scrollHeight - viewport.clientHeight - viewport.scrollTop <= 2
+    : false;
 
   session.viewportY = buffer.viewportY;
-  session.viewportAtBottom = buffer.viewportY === buffer.baseY;
+  session.viewportBottomOffset = Math.max(0, buffer.baseY - buffer.viewportY);
+  session.viewportAtBottom = domAtBottom || session.viewportBottomOffset <= 1;
 }
 
 function syncTerminalScrollArea(session: TerminalSession): void {
@@ -184,6 +190,12 @@ function restoreTerminalScroll(session: TerminalSession): void {
 
   if (session.viewportAtBottom) {
     session.terminal.scrollToBottom();
+    syncTerminalScrollArea(session);
+    return;
+  }
+
+  if (session.viewportBottomOffset !== undefined) {
+    session.terminal.scrollToLine(Math.max(0, buffer.baseY - session.viewportBottomOffset));
     syncTerminalScrollArea(session);
     return;
   }
