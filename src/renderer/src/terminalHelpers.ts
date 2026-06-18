@@ -66,6 +66,7 @@ function getTerminalFontFamily(): string {
 export function createXterm(): Terminal {
   return new Terminal({
     allowProposedApi: true,
+    windowsMode: navigator.platform.toLowerCase().includes('win'),
     cursorBlink: true,
     cursorInactiveStyle: 'bar',
     cursorStyle: 'bar',
