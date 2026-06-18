@@ -45,6 +45,8 @@ const terminal: TerminalApi = {
     ipcRenderer.invoke('agent-overlay:show-done', item),
   unpinAgentDonePane: (paneId: string): Promise<string[]> =>
     ipcRenderer.invoke('agent-overlay:unpin-pane', paneId),
+  reorderAgentDoneOverlayItems: (paneIds: string[]): Promise<string[]> =>
+    ipcRenderer.invoke('agent-overlay:reorder-items', paneIds),
   openAgentDonePane: (request: AgentOpenPaneRequest): Promise<void> =>
     ipcRenderer.invoke('agent-overlay:open-pane', request),
   closeAgentDoneOverlay: (): Promise<void> =>

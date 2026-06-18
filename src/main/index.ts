@@ -66,6 +66,15 @@ let agentBridgeSnapshot: AgentBridgeSnapshot = {
 const agentBridgePending = new Map<string, (response: AgentBridgeRendererResponse) => void>();
 const browserBridge = createBrowserBridge(() => mainWindow);
 
+const sessionCachePath = join(os.tmpdir(), `carogent-electron-cache-${process.pid}`);
+try {
+  mkdirSync(sessionCachePath, { recursive: true });
+  app.setPath('sessionData', sessionCachePath);
+  app.commandLine.appendSwitch('disk-cache-dir', sessionCachePath);
+} catch (error) {
+  console.error('Failed to configure Electron cache path:', error);
+}
+
 function getAppIconPath(): string {
   return join(__dirname, '../../build/icon.png');
 }
@@ -647,6 +656,7 @@ function killTerminal(id: string): void {
   const paneId = terminalPaneIds.get(id);
   if (paneId) {
     paneTerminalIds.delete(paneId);
+    unpinAgentDonePane(paneId);
   }
   terminalPaneIds.delete(id);
 }
@@ -1064,6 +1074,24 @@ app.whenReady().then(() => {
   ipcMain.handle('agent-overlay:unpin-pane', (_event, paneId: string) => {
     return unpinAgentDonePane(paneId);
   });
+  ipcMain.handle('agent-overlay:reorder-items', (_event, paneIds: string[]) => {
+    const reordered: AgentDoneOverlayItem[] = [];
+    for (const paneId of paneIds) {
+      const item = agentDoneOverlayItems.find((current) => current.paneId === paneId);
+      if (item) {
+        reordered.push(item);
+      }
+    }
+    for (const item of agentDoneOverlayItems) {
+      if (!reordered.some((current) => current.paneId === item.paneId)) {
+        reordered.push(item);
+      }
+    }
+    agentDoneOverlayItems = reordered;
+    sendAgentDoneOverlayItems();
+    sendAgentDoneOverlayPinnedPaneIds();
+    return agentDoneOverlayItems.map((item) => item.paneId);
+  });
   ipcMain.handle('agent-overlay:open-pane', (_event, request: AgentOpenPaneRequest) => {
     if (mainWindow?.isMinimized()) {
       mainWindow.restore();
@@ -1133,6 +1161,7 @@ app.whenReady().then(() => {
       const paneId = terminalPaneIds.get(id);
       if (paneId) {
         paneTerminalIds.delete(paneId);
+        unpinAgentDonePane(paneId);
       }
       terminalPaneIds.delete(id);
       mainWindow?.webContents.send('terminal:exit', { id, exitCode, signal });

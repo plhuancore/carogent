@@ -216,6 +216,7 @@ export type TerminalApi = {
   getAgentDoneOverlayVisible: () => Promise<boolean>;
   showAgentDoneOverlay: (item: AgentDoneOverlayItem) => Promise<string[]>;
   unpinAgentDonePane: (paneId: string) => Promise<string[]>;
+  reorderAgentDoneOverlayItems: (paneIds: string[]) => Promise<string[]>;
   openAgentDonePane: (request: AgentOpenPaneRequest) => Promise<void>;
   closeAgentDoneOverlay: () => Promise<void>;
   setAgentDoneOverlayExpanded: (expanded: boolean) => Promise<void>;

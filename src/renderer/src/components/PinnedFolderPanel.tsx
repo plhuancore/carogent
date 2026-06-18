@@ -5,7 +5,7 @@ import type {
   MouseEvent as ReactMouseEvent
 } from 'react';
 import type { DirectoryEntry, DirectoryListResult } from '../../../shared/ipcTypes';
-import { ChevronDownIcon, ChevronUpIcon, FileTreeIcon, ParentFolderIcon } from './AppIcons';
+import { ChevronDownIcon, ChevronUpIcon, FileTreeIcon, ParentFolderIcon, RefreshIcon } from './AppIcons';
 
 function isImageFile(entry: DirectoryEntry): boolean {
   return entry.type === 'file' && /\.(png|jpe?g|gif|webp|bmp|svg)$/i.test(entry.name);
@@ -40,6 +40,7 @@ export function PinnedFolderPanel({
   const previewTimer = useRef<number | null>(null);
   const previewRequestId = useRef(0);
   const previewPosition = useRef<{ x: number; y: number } | null>(null);
+  const previewRef = useRef<HTMLDivElement | null>(null);
 
   const clearImagePreview = useCallback((): void => {
     if (previewTimer.current !== null) {
@@ -169,20 +170,14 @@ export function PinnedFolderPanel({
   };
 
   const moveImagePreview = (event: ReactMouseEvent<HTMLButtonElement>): void => {
-    previewPosition.current = {
-      x: event.clientX,
-      y: event.clientY
-    };
+    const x = event.clientX;
+    const y = event.clientY;
+    previewPosition.current = { x, y };
 
-    setPreview((current) =>
-      current
-        ? {
-            ...current,
-            x: event.clientX,
-            y: event.clientY
-          }
-        : null
-    );
+    if (previewRef.current) {
+      previewRef.current.style.left = `${x + 14}px`;
+      previewRef.current.style.top = `${y + 14}px`;
+    }
   };
 
   useEffect(() => clearImagePreview, [clearImagePreview]);
@@ -194,12 +189,14 @@ export function PinnedFolderPanel({
         <div className="pinned-folder-header-actions">
           {!collapsed && (
             <button
+              className="pinned-folder-refresh-button"
               type="button"
               title="Refresh pinned folder"
+              aria-label="Refresh pinned folder"
               onClick={() => loadDirectory(draftPath)}
               disabled={!draftPath.trim() || loading}
             >
-              refresh
+              <RefreshIcon className={loading ? 'spin' : ''} />
             </button>
           )}
           <button
@@ -283,6 +280,7 @@ export function PinnedFolderPanel({
       </div>
       {preview && (
         <div
+          ref={previewRef}
           className="pinned-image-preview"
           style={{ left: preview.x + 14, top: preview.y + 14 }}
         >

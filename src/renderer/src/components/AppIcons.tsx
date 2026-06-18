@@ -210,3 +210,12 @@ export function MinimizeIcon(): JSX.Element {
     </svg>
   );
 }
+
+export function RefreshIcon({ className }: { className?: string } = {}): JSX.Element {
+  return (
+    <svg className={className} aria-hidden="true" viewBox="0 0 16 16">
+      <path d="M13.5 10a6 6 0 1 1-1.5-6.5L15 6" />
+      <path d="M15 2v4h-4" />
+    </svg>
+  );
+}

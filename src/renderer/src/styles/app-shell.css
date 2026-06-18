@@ -1,12 +1,17 @@
 .app-shell {
   display: grid;
-  grid-template-columns: 244px minmax(0, 1fr);
+  grid-template-columns: var(--sidebar-width, 244px) minmax(0, 1fr);
   width: 100%;
   height: 100%;
   background: #050607;
 }
 
+.app-shell.has-git-sidebar {
+  grid-template-columns: var(--sidebar-width, 244px) minmax(0, 1fr) var(--git-sidebar-width, 380px);
+}
+
 .sidebar {
+  position: relative;
   display: flex;
   min-width: 0;
   min-height: 0;
@@ -14,6 +19,22 @@
   border-right: 1px solid #1b222b;
   background: #080a0d;
   padding: 16px 10px;
+}
+
+.sidebar-resize-handle {
+  position: absolute;
+  right: -3px;
+  top: 0;
+  width: 6px;
+  height: 100%;
+  cursor: col-resize;
+  z-index: 5000;
+  transition: background 0.15s;
+}
+
+.sidebar-resize-handle:hover,
+.sidebar-resize-handle:active {
+  background: rgba(45, 212, 191, 0.4);
 }
 
 .brand {
@@ -284,7 +305,8 @@
   cursor: not-allowed;
 }
 
-.pinned-folder-header .pinned-folder-toggle-button {
+.pinned-folder-header .pinned-folder-toggle-button,
+.pinned-folder-header .pinned-folder-refresh-button {
   display: grid;
   width: 22px;
   place-items: center;
@@ -292,7 +314,8 @@
   padding: 0;
 }
 
-.pinned-folder-header .pinned-folder-toggle-button svg {
+.pinned-folder-header .pinned-folder-toggle-button svg,
+.pinned-folder-header .pinned-folder-refresh-button svg {
   display: block;
   width: 13px;
   height: 13px;
@@ -740,4 +763,17 @@
 
 .settings-menu-item:hover {
   background: #2d2d2d;
+}
+
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.spin {
+  animation: spin 1s linear infinite;
 }

@@ -63,6 +63,24 @@ function escapeTerminalPath(path: string): string {
   return `'${path.replace(/'/g, "'\\''")}'`;
 }
 
+const SearchArrowUpIcon = (): JSX.Element => (
+  <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
+    <path fill="currentColor" d="M8 2.75a.75.75 0 0 1 .53.22l4.25 4.25a.75.75 0 1 1-1.06 1.06L8.75 5.31v7.94a.75.75 0 0 1-1.5 0V5.31L4.28 8.28a.75.75 0 0 1-1.06-1.06l4.25-4.25A.75.75 0 0 1 8 2.75z" />
+  </svg>
+);
+
+const SearchArrowDownIcon = (): JSX.Element => (
+  <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
+    <path fill="currentColor" d="M8 13.25a.75.75 0 0 1-.53-.22L3.22 8.78a.75.75 0 0 1 1.06-1.06l2.97 2.97V2.75a.75.75 0 0 1 1.5 0v7.94l2.97-2.97a.75.75 0 1 1 1.06 1.06l-4.25 4.25a.75.75 0 0 1-.53.22z" />
+  </svg>
+);
+
+const SearchCloseIcon = (): JSX.Element => (
+  <svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true">
+    <path fill="currentColor" d="M3.72 3.72a.75.75 0 0 1 1.06 0L8 6.94l3.22-3.22a.75.75 0 1 1 1.06 1.06L9.06 8l3.22 3.22a.75.75 0 1 1-1.06 1.06L8 9.06l-3.22 3.22a.75.75 0 0 1-1.06-1.06L6.94 8 3.72 4.78a.75.75 0 0 1 0-1.06z" />
+  </svg>
+);
+
 
 type NodeViewProps = {
   node: LayoutNode;
@@ -446,11 +464,18 @@ function TerminalPane({
       session.terminal.open(host);
     }
 
-    const observer = new ResizeObserver(() => scheduleTerminalFit(session));
+    const observer = new ResizeObserver(() => {
+      captureTerminalScroll(session);
+      scheduleTerminalFit(session);
+    });
     observer.observe(host);
+    captureTerminalScroll(session);
     scheduleTerminalFit(session);
     scheduleTerminalScrollRestore(session);
-    window.setTimeout(() => scheduleTerminalFit(session), 0);
+    window.setTimeout(() => {
+      captureTerminalScroll(session);
+      scheduleTerminalFit(session);
+    }, 0);
 
     return () => {
       observer.disconnect();
@@ -469,6 +494,7 @@ function TerminalPane({
 
     const session = ensureSession(pane);
 
+    captureTerminalScroll(session);
     scheduleTerminalFit(session);
     window.setTimeout(() => session.terminal.focus(), 0);
   }, [active, ensureSession, pane.paneId, pane.shell]);
@@ -768,29 +794,49 @@ function TerminalPane({
         )}
         {searchOpen && (
           <div className="pane-search" ref={searchRef} onMouseDown={(event) => event.stopPropagation()}>
-            <input
-              ref={searchInputRef}
-              className="pane-search-input"
-              value={searchQuery}
-              placeholder="Search"
-              onChange={(event) => {
-                setSearchQuery(event.target.value);
-                setSearchError(null);
-                setSearchResultCount(0);
-                setSearchResultIndex(null);
-              }}
-              onKeyDown={(event) => {
-                if (event.key === 'Enter') {
-                  event.preventDefault();
-                  runSearch(event.shiftKey ? 'previous' : 'next');
-                }
+            <div className="pane-search-box">
+              <SearchIcon />
+              <input
+                ref={searchInputRef}
+                className="pane-search-input"
+                type="search"
+                value={searchQuery}
+                placeholder="Search"
+                spellCheck={false}
+                onChange={(event) => {
+                  setSearchQuery(event.target.value);
+                  setSearchError(null);
+                  setSearchResultCount(0);
+                  setSearchResultIndex(null);
+                }}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter') {
+                    event.preventDefault();
+                    runSearch(event.shiftKey ? 'previous' : 'next');
+                  }
 
-                if (event.key === 'Escape') {
-                  event.preventDefault();
-                  closeSearch();
-                }
-              }}
-            />
+                  if (event.key === 'Escape') {
+                    event.preventDefault();
+                    closeSearch();
+                  }
+                }}
+              />
+              <button
+                className="pane-search-clear"
+                type="button"
+                title="Clear search"
+                disabled={!searchQuery}
+                onClick={() => {
+                  setSearchQuery('');
+                  setSearchError(null);
+                  setSearchResultCount(0);
+                  setSearchResultIndex(null);
+                  searchInputRef.current?.focus();
+                }}
+              >
+                <SearchCloseIcon />
+              </button>
+            </div>
             <button
               className={`pane-search-toggle ${searchCaseSensitive ? 'is-active' : ''}`}
               type="button"
@@ -814,7 +860,7 @@ function TerminalPane({
               title="Previous match"
               onClick={() => runSearch('previous')}
             >
-              ↑
+              <SearchArrowUpIcon />
             </button>
             <button
               className="pane-search-nav"
@@ -822,10 +868,10 @@ function TerminalPane({
               title="Next match"
               onClick={() => runSearch('next')}
             >
-              ↓
+              <SearchArrowDownIcon />
             </button>
-            <button type="button" title="Close search" onClick={closeSearch}>
-              x
+            <button className="pane-search-close" type="button" title="Close search" onClick={closeSearch}>
+              <SearchCloseIcon />
             </button>
             {searchError && <span className="pane-search-status">{searchError}</span>}
           </div>

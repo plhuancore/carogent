@@ -17,6 +17,7 @@ export type TerminalSession = {
   viewportY?: number;
   viewportAtBottom?: boolean;
   viewportBottomOffset?: number;
+  isScrollCaptured?: boolean;
   terminalId?: string;
   cwd?: string;
   shell?: string;
@@ -130,7 +131,9 @@ export function fitTerminalSession(session: TerminalSession): void {
   }
 
   try {
-    captureTerminalScroll(session);
+    if (!session.isScrollCaptured) {
+      captureTerminalScroll(session);
+    }
     session.fitAddon.fit();
 
     if (session.terminalId) {
@@ -166,7 +169,10 @@ export function scheduleTerminalFit(session: TerminalSession): void {
 }
 
 export function captureTerminalScroll(session: TerminalSession): void {
-  const buffer = session.terminal.buffer.active;
+  const buffer = session.terminal.buffer?.active;
+  if (!buffer) {
+    return;
+  }
   const viewport = session.terminal.element?.querySelector<HTMLElement>('.xterm-viewport');
   const domAtBottom = viewport
     ? viewport.scrollHeight - viewport.clientHeight - viewport.scrollTop <= 2
@@ -175,6 +181,7 @@ export function captureTerminalScroll(session: TerminalSession): void {
   session.viewportY = buffer.viewportY;
   session.viewportBottomOffset = Math.max(0, buffer.baseY - buffer.viewportY);
   session.viewportAtBottom = domAtBottom || session.viewportBottomOffset <= 1;
+  session.isScrollCaptured = true;
 }
 
 function syncTerminalScrollArea(session: TerminalSession): void {
@@ -186,22 +193,29 @@ function restoreTerminalScroll(session: TerminalSession): void {
     return;
   }
 
-  const buffer = session.terminal.buffer.active;
+  const buffer = session.terminal.buffer?.active;
+  if (!buffer) {
+    session.isScrollCaptured = false;
+    return;
+  }
 
   if (session.viewportAtBottom) {
     session.terminal.scrollToBottom();
     syncTerminalScrollArea(session);
+    session.isScrollCaptured = false;
     return;
   }
 
   if (session.viewportBottomOffset !== undefined) {
     session.terminal.scrollToLine(Math.max(0, buffer.baseY - session.viewportBottomOffset));
     syncTerminalScrollArea(session);
+    session.isScrollCaptured = false;
     return;
   }
 
   session.terminal.scrollToLine(Math.min(session.viewportY, buffer.baseY));
   syncTerminalScrollArea(session);
+  session.isScrollCaptured = false;
 }
 
 export function scheduleTerminalScrollRestore(session: TerminalSession): void {
@@ -247,7 +261,10 @@ export function clearTerminalFitTimers(session: TerminalSession): void {
 }
 
 export function getTerminalPreviewLines(session: TerminalSession): string[] {
-  const buffer = session.terminal.buffer.active;
+  const buffer = session.terminal.buffer?.active;
+  if (!buffer) {
+    return [];
+  }
   const lines: string[] = [];
   const end = Math.min(buffer.length - 1, Math.max(6, buffer.baseY + buffer.cursorY));
   const start = Math.max(0, end - 6);

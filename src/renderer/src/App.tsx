@@ -187,6 +187,32 @@ function App(): JSX.Element {
   const [isGitSidebarOpen, setIsGitSidebarOpen] = useState(false);
   const [gitRefreshTrigger, setGitRefreshTrigger] = useState(0);
   const [gitSidebarWidth, setGitSidebarWidth] = useState(380);
+  const [leftSidebarWidth, setLeftSidebarWidth] = useState(() => {
+    const saved = localStorage.getItem('carogent-left-sidebar-width');
+    const parsed = saved ? parseInt(saved, 10) : 244;
+    return Number.isFinite(parsed) ? Math.max(160, Math.min(600, parsed)) : 244;
+  });
+
+  const handleLeftResizeStart = (e: React.PointerEvent<HTMLDivElement>) => {
+    e.currentTarget.setPointerCapture(e.pointerId);
+    let latestWidth = leftSidebarWidth;
+
+    const handlePointerMove = (moveEvent: PointerEvent) => {
+      const newWidth = moveEvent.clientX;
+      const constrainedWidth = Math.max(160, Math.min(600, newWidth));
+      latestWidth = constrainedWidth;
+      setLeftSidebarWidth(constrainedWidth);
+    };
+
+    const handlePointerUp = () => {
+      window.removeEventListener('pointermove', handlePointerMove);
+      window.removeEventListener('pointerup', handlePointerUp);
+      localStorage.setItem('carogent-left-sidebar-width', latestWidth.toString());
+    };
+
+    window.addEventListener('pointermove', handlePointerMove);
+    window.addEventListener('pointerup', handlePointerUp);
+  };
   const sessions = useRef<SessionRegistry>(new Map());
   const pinnedPaneIdsRef = useRef<Set<string>>(new Set());
   const [pinnedPaneIds, setPinnedPaneIds] = useState<Set<string>>(new Set());
@@ -1247,7 +1273,13 @@ function App(): JSX.Element {
   }
 
   return (
-    <main className="app-shell" style={isGitSidebarOpen ? { gridTemplateColumns: `244px minmax(0, 1fr) ${gitSidebarWidth}px` } : undefined}>
+    <main
+      className={`app-shell${isGitSidebarOpen ? ' has-git-sidebar' : ''}`}
+      style={{
+        '--sidebar-width': `${leftSidebarWidth}px`,
+        '--git-sidebar-width': `${gitSidebarWidth}px`
+      } as React.CSSProperties}
+    >
       <aside className="sidebar">
         <div className="brand">
           <div className="brand-mark">
@@ -1293,6 +1325,7 @@ function App(): JSX.Element {
           <div className="footer-value">{activePaneTitle}</div>
           <div className="footer-path">{activePane?.cwd || 'Starting shell...'}</div>
         </div>
+        <div className="sidebar-resize-handle" onPointerDown={handleLeftResizeStart} />
       </aside>
 
       <section className="workspace">

@@ -1,7 +1,32 @@
 import { useEffect, useState, useRef } from 'react';
+import type { KeyboardEvent as ReactKeyboardEvent, MouseEvent as ReactMouseEvent } from 'react';
 import type { AgentDoneOverlayItem } from '../../shared/ipcTypes';
 import carogentLogoUrl from './assets/carogent-logo-v2.png';
 import './styles.css';
+
+function ArrowUpIcon(): JSX.Element {
+  return (
+    <svg aria-hidden="true" viewBox="0 0 16 16" width="12" height="12">
+      <path fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.8" d="m3.5 10.5 4.5-4.5 4.5 4.5" />
+    </svg>
+  );
+}
+
+function ArrowDownIcon(): JSX.Element {
+  return (
+    <svg aria-hidden="true" viewBox="0 0 16 16" width="12" height="12">
+      <path fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.8" d="m3.5 5.5 4.5 4.5 4.5-4.5" />
+    </svg>
+  );
+}
+
+function RemoveIcon(): JSX.Element {
+  return (
+    <svg aria-hidden="true" viewBox="0 0 16 16" width="12" height="12">
+      <path fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.8" d="m4.75 4.75 6.5 6.5M11.25 4.75l-6.5 6.5" />
+    </svg>
+  );
+}
 
 function OverlayApp(): JSX.Element {
   const [items, setItems] = useState<AgentDoneOverlayItem[]>([]);
@@ -131,6 +156,44 @@ function OverlayApp(): JSX.Element {
     window.terminalApi.openAgentDonePane({ workspaceId: item.workspaceId, paneId: item.paneId });
   };
 
+  const handleRemove = (event: ReactMouseEvent, paneId: string): void => {
+    event.stopPropagation();
+    window.terminalApi.unpinAgentDonePane(paneId).catch(() => {});
+  };
+
+  const handleMoveUp = (event: ReactMouseEvent, index: number): void => {
+    event.stopPropagation();
+    if (index <= 0) return;
+    const nextItems = [...items];
+    const temp = nextItems[index];
+    nextItems[index] = nextItems[index - 1];
+    nextItems[index - 1] = temp;
+    setItems(nextItems);
+
+    const paneIds = nextItems.map((item) => item.paneId);
+    window.terminalApi.reorderAgentDoneOverlayItems(paneIds).catch(() => {});
+  };
+
+  const handleMoveDown = (event: ReactMouseEvent, index: number): void => {
+    event.stopPropagation();
+    if (index >= items.length - 1) return;
+    const nextItems = [...items];
+    const temp = nextItems[index];
+    nextItems[index] = nextItems[index + 1];
+    nextItems[index + 1] = temp;
+    setItems(nextItems);
+
+    const paneIds = nextItems.map((item) => item.paneId);
+    window.terminalApi.reorderAgentDoneOverlayItems(paneIds).catch(() => {});
+  };
+
+  const handleKeyDown = (event: ReactKeyboardEvent, item: AgentDoneOverlayItem): void => {
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      handleOpenPane(item);
+    }
+  };
+
   return (
     <main className="agent-overlay-shell">
       <div className={`agent-overlay-dropdown ${expanded && menuItems.length > 0 ? 'is-expanded' : ''}`}>
@@ -180,15 +243,46 @@ function OverlayApp(): JSX.Element {
         </div>
         {expanded && menuItems.length > 0 && (
           <div className="agent-overlay-menu" role="menu">
-            {menuItems.map((item) => (
-              <button
+            {menuItems.map((item, index) => (
+              <div
                 key={item.paneId}
                 className="agent-overlay-menu-item"
-                type="button"
                 role="menuitem"
+                tabIndex={0}
                 title={`${item.workspaceName}: ${item.cwd || item.title}`}
                 onClick={() => handleOpenPane(item)}
+                onKeyDown={(e) => handleKeyDown(e, item)}
               >
+                <div className="agent-overlay-menu-item-actions">
+                  {index > 0 && (
+                    <button
+                      className="agent-overlay-action-button move-up"
+                      type="button"
+                      title="Move up"
+                      onClick={(e) => handleMoveUp(e, index)}
+                    >
+                      <ArrowUpIcon />
+                    </button>
+                  )}
+                  {index < menuItems.length - 1 && (
+                    <button
+                      className="agent-overlay-action-button move-down"
+                      type="button"
+                      title="Move down"
+                      onClick={(e) => handleMoveDown(e, index)}
+                    >
+                      <ArrowDownIcon />
+                    </button>
+                  )}
+                  <button
+                    className="agent-overlay-action-button remove"
+                    type="button"
+                    title="Remove from floating bar"
+                    onClick={(e) => handleRemove(e, item.paneId)}
+                  >
+                    <RemoveIcon />
+                  </button>
+                </div>
                 <div className="agent-overlay-item-header">
                   {item.hasUnreadNotification && (
                     <span
@@ -210,7 +304,7 @@ function OverlayApp(): JSX.Element {
                     ))}
                   </div>
                 )}
-              </button>
+              </div>
             ))}
           </div>
         )}

@@ -425,6 +425,9 @@ export const GitPanel: React.FC<GitPanelProps> = ({ cwd, onClose, width, onResiz
   const [hasMoreHistory, setHasMoreHistory] = useState(true);
   const [stagedLimit, setStagedLimit] = useState(MAX_DISPLAYED_CHANGES);
   const [unstagedLimit, setUnstagedLimit] = useState(MAX_DISPLAYED_CHANGES);
+  const [historySearchQuery, setHistorySearchQuery] = useState('');
+  const [historySearchCaseSensitive, setHistorySearchCaseSensitive] = useState(false);
+  const [activeHistoryMatchIndex, setActiveHistoryMatchIndex] = useState(-1);
   const loadedHistoryRawCountRef = useRef(0);
   const historyRequestIdRef = useRef(0);
   const historyLoadingRef = useRef(false);
@@ -443,6 +446,8 @@ export const GitPanel: React.FC<GitPanelProps> = ({ cwd, onClose, width, onResiz
     setDiff(null);
     setDiffError(null);
     setHiddenDiffSnippets({});
+    setHistorySearchQuery('');
+    setActiveHistoryMatchIndex(-1);
     setStagedLimit(MAX_DISPLAYED_CHANGES);
     setUnstagedLimit(MAX_DISPLAYED_CHANGES);
     statusInFlightRef.current = false;
@@ -464,6 +469,7 @@ export const GitPanel: React.FC<GitPanelProps> = ({ cwd, onClose, width, onResiz
   const diffBodyRef = useRef<HTMLDivElement | null>(null);
   const loaderRef = useRef<HTMLTableRowElement | null>(null);
   const historyContainerRef = useRef<HTMLDivElement | null>(null);
+  const historyRowRefs = useRef<Map<string, HTMLTableRowElement>>(new Map());
 
   const { historyForGraph, graphRows, hashToIndexMap } = useMemo(() => {
     const stagedCount = status?.staged?.length || 0;
@@ -615,9 +621,83 @@ export const GitPanel: React.FC<GitPanelProps> = ({ cwd, onClose, width, onResiz
     return groupFilesByDirectory(visibleCommitFiles);
   }, [visibleCommitFiles]);
 
+  const normalizeHistorySearchText = useCallback((value: string) => {
+    return historySearchCaseSensitive ? value : value.toLowerCase();
+  }, [historySearchCaseSensitive]);
+
+  const historyFindQuery = historySearchQuery.trim();
+  const normalizedHistoryFindQuery = normalizeHistorySearchText(historyFindQuery);
+
+  const getHistorySearchFields = useCallback((commit: CommitHistoryItem) => {
+    const shortHash = commit.hash.substring(0, 8);
+    return [
+      commit.subject,
+      commit.author,
+      commit.date,
+      commit.decorations,
+      commit.hash,
+      shortHash,
+      String(commit.timestamp || '')
+    ];
+  }, []);
+
+  const historyMatchHashes = useMemo(() => {
+    if (!normalizedHistoryFindQuery) return [];
+
+    return historyForGraph
+      .filter((commit) => {
+        if (commit.isUncommitted) return false;
+        return getHistorySearchFields(commit).some((field) => (
+          normalizeHistorySearchText(field || '').includes(normalizedHistoryFindQuery)
+        ));
+      })
+      .map((commit) => commit.hash);
+  }, [getHistorySearchFields, historyForGraph, normalizeHistorySearchText, normalizedHistoryFindQuery]);
+
+  const historyMatchHashSet = useMemo(() => new Set(historyMatchHashes), [historyMatchHashes]);
+
+  const activeHistoryMatchHash = activeHistoryMatchIndex >= 0
+    ? historyMatchHashes[activeHistoryMatchIndex]
+    : undefined;
+
+  const renderHistorySearchHighlight = useCallback((text: string) => {
+    if (!normalizedHistoryFindQuery || !text) return text;
+
+    const normalizedText = normalizeHistorySearchText(text);
+    const parts: React.ReactNode[] = [];
+    let cursor = 0;
+    let matchIndex = normalizedText.indexOf(normalizedHistoryFindQuery);
+    let key = 0;
+
+    while (matchIndex !== -1) {
+      if (matchIndex > cursor) {
+        parts.push(text.slice(cursor, matchIndex));
+      }
+      const end = matchIndex + normalizedHistoryFindQuery.length;
+      parts.push(
+        <mark className="git-history-search-highlight" key={`match-${key}`}>
+          {text.slice(matchIndex, end)}
+        </mark>
+      );
+      cursor = end;
+      key += 1;
+      matchIndex = normalizedText.indexOf(normalizedHistoryFindQuery, cursor);
+    }
+
+    if (cursor < text.length) {
+      parts.push(text.slice(cursor));
+    }
+
+    return parts.length > 0 ? parts : text;
+  }, [normalizeHistorySearchText, normalizedHistoryFindQuery]);
+
   useEffect(() => {
     selectedFileRef.current = selectedFile;
   }, [selectedFile]);
+
+  useEffect(() => {
+    setActiveHistoryMatchIndex(-1);
+  }, [historyFindQuery, historySearchCaseSensitive]);
 
   useEffect(() => {
     const handleUndone = (e: Event) => {
@@ -852,15 +932,22 @@ export const GitPanel: React.FC<GitPanelProps> = ({ cwd, onClose, width, onResiz
       return;
     }
     const limit = Math.min(HISTORY_PAGE_SIZE, MAX_HISTORY_ITEMS - skip);
+    const requestLimit = skip + limit < MAX_HISTORY_ITEMS ? limit + 1 : limit;
     historyLoadingRef.current = true;
     setHistoryLoading(true);
     try {
-      const logText = await window.terminalApi.gitHistory({ cwd, limit, skip });
+      const logText = await window.terminalApi.gitHistory({
+        cwd,
+        limit: requestLimit,
+        skip
+      });
       if (historyRequestIdRef.current !== requestId) return;
       const rawLines = logText.split('\n').map(line => line.trim()).filter(Boolean);
-      loadedHistoryRawCountRef.current = skip + rawLines.length;
-      setHasMoreHistory(rawLines.length === limit && loadedHistoryRawCountRef.current < MAX_HISTORY_ITEMS);
+      const pageLines = rawLines.slice(0, limit);
+      loadedHistoryRawCountRef.current = skip + pageLines.length;
+      setHasMoreHistory(rawLines.length > limit && loadedHistoryRawCountRef.current < MAX_HISTORY_ITEMS);
       const items: CommitHistoryItem[] = rawLines
+        .slice(0, limit)
         .map((line) => {
           const parts = line.split('|');
           const hash = parts[0] || '';
@@ -930,6 +1017,57 @@ export const GitPanel: React.FC<GitPanelProps> = ({ cwd, onClose, width, onResiz
       setHistoryLoading(false);
     }
   }, [cwd]);
+
+  useEffect(() => {
+    if (!historyFindQuery || historyMatchHashes.length === 0) {
+      setActiveHistoryMatchIndex(-1);
+      return;
+    }
+
+    setActiveHistoryMatchIndex((current) => {
+      if (current >= 0 && current < historyMatchHashes.length) {
+        return current;
+      }
+      return 0;
+    });
+  }, [historyFindQuery, historyMatchHashes.length]);
+
+  useLayoutEffect(() => {
+    if (!activeHistoryMatchHash) return;
+    const row = historyRowRefs.current.get(activeHistoryMatchHash);
+    const container = historyContainerRef.current;
+    if (!row || !container) return;
+
+    const rowTop = row.offsetTop;
+    const targetTop = Math.max(0, rowTop - container.clientHeight * 0.35);
+    container.scrollTo({ top: targetTop, behavior: 'auto' });
+  }, [activeHistoryMatchHash]);
+
+  const goToHistoryMatch = useCallback((direction: 'next' | 'previous') => {
+    if (historyMatchHashes.length === 0) {
+      if (historyFindQuery && hasMoreHistory && !historyLoadingRef.current && activeTab === 'history') {
+        loadHistory(false);
+      }
+      return;
+    }
+    setActiveHistoryMatchIndex((current) => {
+      if (current < 0) return 0;
+      if (
+        direction === 'next' &&
+        current === historyMatchHashes.length - 1 &&
+        historyFindQuery &&
+        hasMoreHistory &&
+        !historyLoadingRef.current &&
+        activeTab === 'history'
+      ) {
+        loadHistory(false);
+      }
+      if (direction === 'next') {
+        return (current + 1) % historyMatchHashes.length;
+      }
+      return (current - 1 + historyMatchHashes.length) % historyMatchHashes.length;
+    });
+  }, [activeTab, hasMoreHistory, historyFindQuery, historyMatchHashes.length, loadHistory]);
 
 
   const handleCommitRowClick = useCallback(async (commit: CommitHistoryItem) => {
@@ -1095,6 +1233,13 @@ export const GitPanel: React.FC<GitPanelProps> = ({ cwd, onClose, width, onResiz
     loadedHistoryRawCountRef.current = 0;
     setHasMoreHistory(true);
     setHistory([]);
+    setSelectedCommit(null);
+    setCommitFiles([]);
+    setCommitFilesHasMore(false);
+    setSelectedCommitFile(null);
+    setDiff(null);
+    setDiffError(null);
+    setHiddenDiffSnippets({});
     loadHistory(true);
 
     const handleFocus = () => {
@@ -1632,6 +1777,24 @@ export const GitPanel: React.FC<GitPanelProps> = ({ cwd, onClose, width, onResiz
   const RefreshIcon = () => (
     <svg className={`git-svg-icon ${isRefreshing ? 'spin' : ''}`} viewBox="0 0 16 16" width="14" height="14">
       <path fill="currentColor" d="M8 3a5 5 0 1 0 4.546 2.914.75.75 0 0 1 1.364-.628A6.5 6.5 0 1 1 8 1.5c1.479 0 2.87.492 4 1.332V1.25a.75.75 0 0 1 1.5 0v3.75a.75.75 0 0 1-.75.75h-3.75a.75.75 0 0 1 0-1.5h1.86A4.985 4.985 0 0 0 8 3z"/>
+    </svg>
+  );
+
+  const SearchIcon = () => (
+    <svg className="git-svg-icon" viewBox="0 0 16 16" width="14" height="14">
+      <path fill="currentColor" d="M10.68 11.74a6 6 0 1 1 1.06-1.06l3.04 3.04a.75.75 0 0 1-1.06 1.06l-3.04-3.04zM6.5 11a4.5 4.5 0 1 0 0-9 4.5 4.5 0 0 0 0 9z"/>
+    </svg>
+  );
+
+  const ArrowUpIcon = () => (
+    <svg className="git-svg-icon" viewBox="0 0 16 16" width="14" height="14">
+      <path fill="currentColor" d="M8 2.75a.75.75 0 0 1 .53.22l4.25 4.25a.75.75 0 1 1-1.06 1.06L8.75 5.31v7.94a.75.75 0 0 1-1.5 0V5.31L4.28 8.28a.75.75 0 0 1-1.06-1.06l4.25-4.25A.75.75 0 0 1 8 2.75z"/>
+    </svg>
+  );
+
+  const ArrowDownIcon = () => (
+    <svg className="git-svg-icon" viewBox="0 0 16 16" width="14" height="14">
+      <path fill="currentColor" d="M8 13.25a.75.75 0 0 1-.53-.22L3.22 8.78a.75.75 0 0 1 1.06-1.06l2.97 2.97V2.75a.75.75 0 0 1 1.5 0v7.94l2.97-2.97a.75.75 0 1 1 1.06 1.06l-4.25 4.25a.75.75 0 0 1-.53.22z"/>
     </svg>
   );
 
@@ -2219,9 +2382,75 @@ export const GitPanel: React.FC<GitPanelProps> = ({ cwd, onClose, width, onResiz
       ) : (
         /* HISTORY TAB CONTENT */
         (() => {
+          const currentHistoryMatchNumber = activeHistoryMatchIndex >= 0 ? activeHistoryMatchIndex + 1 : 0;
+          const historySearchToolbar = (
+            <div className="git-history-search-toolbar">
+              <div className="git-history-search-box">
+                <SearchIcon />
+                <input
+                  type="search"
+                  className="git-history-search-input"
+                  value={historySearchQuery}
+                  onChange={(e) => setHistorySearchQuery(e.target.value)}
+                  placeholder="Search commits, author, hash, branch..."
+                  spellCheck={false}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      goToHistoryMatch(e.shiftKey ? 'previous' : 'next');
+                    }
+                  }}
+                />
+                <button
+                  type="button"
+                  className="git-history-search-clear"
+                  onClick={() => setHistorySearchQuery('')}
+                  disabled={!historySearchQuery}
+                  title="Clear search"
+                >
+                  <CloseIcon />
+                </button>
+              </div>
+              <button
+                type="button"
+                className={`git-history-find-option ${historySearchCaseSensitive ? 'active' : ''}`}
+                onClick={() => setHistorySearchCaseSensitive((enabled) => !enabled)}
+                title="Match case"
+              >
+                Aa
+              </button>
+              <span className="git-history-search-status">
+                {historyFindQuery
+                  ? `${currentHistoryMatchNumber} of ${historyMatchHashes.length}`
+                  : historyLoading && history.length > 0
+                    ? 'Loading...'
+                    : ''}
+              </span>
+              <button
+                type="button"
+                className="git-history-find-nav"
+                onClick={() => goToHistoryMatch('previous')}
+                disabled={historyMatchHashes.length === 0}
+                title="Previous match"
+              >
+                <ArrowUpIcon />
+              </button>
+              <button
+                type="button"
+                className="git-history-find-nav"
+                onClick={() => goToHistoryMatch('next')}
+                disabled={historyMatchHashes.length === 0}
+                title="Next match"
+              >
+                <ArrowDownIcon />
+              </button>
+            </div>
+          );
+
           if (historyLoading && history.length === 0) {
             return (
               <div className="git-tab-content history-tab">
+                {historySearchToolbar}
                 <div className="git-panel-loading">
                   <div className="git-spinner"></div>
                   <span>Loading commit history...</span>
@@ -2233,6 +2462,7 @@ export const GitPanel: React.FC<GitPanelProps> = ({ cwd, onClose, width, onResiz
           if (historyForGraph.length === 0) {
             return (
               <div className="git-tab-content history-tab">
+                {historySearchToolbar}
                 <div className="git-empty-state">
                   <p>No commits found in this repository.</p>
                 </div>
@@ -2247,6 +2477,7 @@ export const GitPanel: React.FC<GitPanelProps> = ({ cwd, onClose, width, onResiz
 
           return (
             <div className="git-tab-content history-tab">
+              {historySearchToolbar}
               {/* 1. History Graph Table */}
               <div ref={historyContainerRef} className="git-history-container" style={{ height: fileListHeight, flex: 'none' }}>
                 <div className="git-history-table-wrapper">
@@ -2281,13 +2512,22 @@ export const GitPanel: React.FC<GitPanelProps> = ({ cwd, onClose, width, onResiz
                         const isUncommitted = commit.isUncommitted;
                         const shortHash = isUncommitted ? '*' : commit.hash.substring(0, 8);
                         const isSelected = selectedCommit?.hash === commit.hash;
+                        const isHistoryMatch = historyMatchHashSet.has(commit.hash);
+                        const isActiveHistoryMatch = activeHistoryMatchHash === commit.hash;
                         const rowZIndex = (30 - (i % 30)) * 2;
                         const detailsZIndex = rowZIndex - 1;
 
                         return (
                           <React.Fragment key={commit.hash + '-' + i}>
                             <tr
-                              className={`git-history-row ${isUncommitted ? 'uncommitted-row' : ''} ${isSelected ? 'selected' : ''}`}
+                              ref={(node) => {
+                                if (node && !isUncommitted) {
+                                  historyRowRefs.current.set(commit.hash, node);
+                                } else {
+                                  historyRowRefs.current.delete(commit.hash);
+                                }
+                              }}
+                              className={`git-history-row ${isUncommitted ? 'uncommitted-row' : ''} ${isSelected ? 'selected' : ''} ${isHistoryMatch ? 'search-match' : ''} ${isActiveHistoryMatch ? 'active-search-match' : ''}`}
                               style={{ zIndex: rowZIndex, cursor: isUncommitted ? 'default' : 'pointer' }}
                               onClick={() => !isUncommitted && handleCommitRowClick(commit)}
                             >
@@ -2313,20 +2553,20 @@ export const GitPanel: React.FC<GitPanelProps> = ({ cwd, onClose, width, onResiz
                               <td className="col-desc" style={{ width: columnWidths.desc, minWidth: columnWidths.desc, maxWidth: columnWidths.desc, overflow: 'hidden' }} title={commit.subject}>
                                 <div style={{ display: 'flex', alignItems: 'center', minWidth: 0, width: '100%', overflow: 'hidden' }}>
                                   {renderRefBadges(commit.decorations)}
-                                  <span className="git-commit-subject">{commit.subject}</span>
+                                  <span className="git-commit-subject">{renderHistorySearchHighlight(commit.subject)}</span>
                                 </div>
                               </td>
                               <td className="col-date" style={{ width: columnWidths.date, minWidth: columnWidths.date, maxWidth: columnWidths.date }}>
-                                <span className="git-history-date-time">{commit.date}</span>
+                                <span className="git-history-date-time">{renderHistorySearchHighlight(commit.date)}</span>
                               </td>
                               <td className="col-author" style={{ width: columnWidths.author, minWidth: columnWidths.author, maxWidth: columnWidths.author }} title={commit.author}>
-                                <span className="git-history-author-name">{commit.author}</span>
+                                <span className="git-history-author-name">{renderHistorySearchHighlight(commit.author)}</span>
                               </td>
                               <td className="col-commit" style={{ width: columnWidths.commit, minWidth: columnWidths.commit, maxWidth: columnWidths.commit }}>
                                 {isUncommitted ? (
                                   <span style={{ color: '#8b949e', fontWeight: 600 }}>*</span>
                                 ) : (
-                                  <span className="git-history-hash-label">{shortHash}</span>
+                                  <span className="git-history-hash-label">{renderHistorySearchHighlight(shortHash)}</span>
                                 )}
                               </td>
                             </tr>
