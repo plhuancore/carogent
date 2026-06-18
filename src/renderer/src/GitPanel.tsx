@@ -470,6 +470,7 @@ export const GitPanel: React.FC<GitPanelProps> = ({ cwd, onClose, width, onResiz
   const loaderRef = useRef<HTMLTableRowElement | null>(null);
   const historyContainerRef = useRef<HTMLDivElement | null>(null);
   const historyRowRefs = useRef<Map<string, HTMLTableRowElement>>(new Map());
+  const historyScrollSnapTimeoutRef = useRef<number | null>(null);
 
   const { historyForGraph, graphRows, hashToIndexMap } = useMemo(() => {
     const stagedCount = status?.staged?.length || 0;
@@ -694,6 +695,14 @@ export const GitPanel: React.FC<GitPanelProps> = ({ cwd, onClose, width, onResiz
   useEffect(() => {
     selectedFileRef.current = selectedFile;
   }, [selectedFile]);
+
+  useEffect(() => {
+    return () => {
+      if (historyScrollSnapTimeoutRef.current !== null) {
+        window.clearTimeout(historyScrollSnapTimeoutRef.current);
+      }
+    };
+  }, []);
 
   useEffect(() => {
     setActiveHistoryMatchIndex(-1);
@@ -1040,7 +1049,19 @@ export const GitPanel: React.FC<GitPanelProps> = ({ cwd, onClose, width, onResiz
 
     const rowTop = row.offsetTop;
     const targetTop = Math.max(0, rowTop - container.clientHeight * 0.35);
-    container.scrollTo({ top: targetTop, behavior: 'auto' });
+
+    if (historyScrollSnapTimeoutRef.current !== null) {
+      window.clearTimeout(historyScrollSnapTimeoutRef.current);
+      historyScrollSnapTimeoutRef.current = null;
+    }
+
+    container.scrollTo({ top: targetTop, behavior: 'smooth' });
+    historyScrollSnapTimeoutRef.current = window.setTimeout(() => {
+      historyScrollSnapTimeoutRef.current = null;
+      if (Math.abs(container.scrollTop - targetTop) > 4) {
+        container.scrollTo({ top: targetTop, behavior: 'auto' });
+      }
+    }, 180);
   }, [activeHistoryMatchHash]);
 
   const goToHistoryMatch = useCallback((direction: 'next' | 'previous') => {
