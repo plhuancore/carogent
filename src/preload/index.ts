@@ -15,6 +15,8 @@ import type {
   TerminalDataEvent,
   TerminalExitEvent,
   TerminalShellOption,
+  TextFileReadResult,
+  TextFileWriteResult,
   GitImageDiffResult
 } from '../shared/ipcTypes';
 
@@ -31,6 +33,10 @@ const terminal: TerminalApi = {
     ipcRenderer.invoke('filesystem:list-directory', request),
   getImagePreview: (request: { path: string }): Promise<ImagePreviewResult> =>
     ipcRenderer.invoke('filesystem:get-image-preview', request),
+  readTextFile: (request: { path: string }): Promise<TextFileReadResult> =>
+    ipcRenderer.invoke('filesystem:read-text-file', request),
+  writeTextFile: (request: { path: string; content: string }): Promise<TextFileWriteResult> =>
+    ipcRenderer.invoke('filesystem:write-text-file', request),
   openInVSCode: (request: { path?: string }): Promise<void> =>
     ipcRenderer.invoke('workspace:open-vscode', request),
   openOrFocusBrowser: (request: { url?: string }): Promise<void> =>

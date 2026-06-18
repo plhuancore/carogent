@@ -7,7 +7,7 @@ import { createServer } from 'node:http';
 import type { IncomingMessage, ServerResponse, Server } from 'node:http';
 import os from 'node:os';
 import * as pty from 'node-pty';
-import { getImagePreview, listDirectory } from './filesystem';
+import { getImagePreview, listDirectory, readTextFile, writeTextFile } from './filesystem';
 import { createBrowserBridge, DEFAULT_BROWSER_URL } from './browserBridge';
 import { registerGitIpcHandlers } from './git/registerGitIpcHandlers';
 import type {
@@ -27,6 +27,8 @@ import type {
   TerminalCreateRequest,
   TerminalResizeRequest,
   TerminalShellOption,
+  TextFileReadRequest,
+  TextFileWriteRequest,
   TerminalWriteRequest
 } from '../shared/ipcTypes';
 
@@ -1050,6 +1052,8 @@ app.whenReady().then(() => {
 
   ipcMain.handle('filesystem:list-directory', (_event, request: DirectoryListRequest) => listDirectory(request));
   ipcMain.handle('filesystem:get-image-preview', (_event, request: ImagePreviewRequest) => getImagePreview(request));
+  ipcMain.handle('filesystem:read-text-file', (_event, request: TextFileReadRequest) => readTextFile(request));
+  ipcMain.handle('filesystem:write-text-file', (_event, request: TextFileWriteRequest) => writeTextFile(request));
   ipcMain.handle('workspace:open-vscode', (_event, request: OpenVSCodeRequest = {}) => openVSCode(request));
   ipcMain.handle('browser:open-or-focus', (_event, request: OpenBrowserRequest = {}) => browserBridge.openOrFocus(request));
   ipcMain.handle('browser:get-bridge-status', () => browserBridge.getStatus());

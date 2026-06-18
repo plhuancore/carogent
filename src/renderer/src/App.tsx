@@ -54,8 +54,11 @@ import {
   SettingsIcon,
   ShellIcon,
   SplitDownIcon,
-  SplitRightIcon
+  SplitRightIcon,
+  WrenchIcon
 } from './components/AppIcons';
+import { CurrentFolderTree } from './components/CurrentFolderTree';
+import { FileEditorWorkspace } from './components/FileEditorWorkspace';
 import { McpSettingsModal } from './components/McpSettingsModal';
 import { PinnedFolderPanel } from './components/PinnedFolderPanel';
 import { QuickAccessManager, QuickAccessPalette } from './components/QuickAccess';
@@ -185,6 +188,8 @@ function App(): JSX.Element {
     enabled: true
   });
   const [isGitSidebarOpen, setIsGitSidebarOpen] = useState(false);
+  const [isExplorerSidebarOpen, setIsExplorerSidebarOpen] = useState(false);
+  const [activeEditorFilePath, setActiveEditorFilePath] = useState('');
   const [gitRefreshTrigger, setGitRefreshTrigger] = useState(0);
   const [gitSidebarWidth, setGitSidebarWidth] = useState(380);
   const [leftSidebarWidth, setLeftSidebarWidth] = useState(() => {
@@ -893,6 +898,7 @@ function App(): JSX.Element {
   );
 
   const activePane = findPane(layout, activePaneId) || findPane(layout, getFirstPaneId(layout));
+  const activePaneCwd = sessions.current.get(activePaneId)?.cwd || activePane?.cwd || '';
   const paneIds = listPaneIds(layout);
   const activePaneTitle =
     activePane?.customTitle ||
@@ -926,10 +932,10 @@ function App(): JSX.Element {
   );
 
   const handleOpenInVSCode = useCallback(() => {
-    const path = sessions.current.get(activePaneId)?.cwd || activePane?.cwd;
+    const path = activePaneCwd;
 
     window.terminalApi.openInVSCode({ path });
-  }, [activePane?.cwd, activePaneId]);
+  }, [activePaneCwd]);
 
   const handleOpenBrowser = useCallback(() => {
     window.terminalApi.openOrFocusBrowser({ url: activePane?.browserUrl });
@@ -984,7 +990,7 @@ function App(): JSX.Element {
   );
 
   const commandPaletteItems = useMemo<CommandPaletteItem[]>(() => {
-    const codePath = sessions.current.get(activePaneId)?.cwd || activePane?.cwd || 'Home directory';
+    const codePath = activePaneCwd || 'Home directory';
     const browserLabel = formatBrowserUrlLabel(activePane?.browserUrl) || 'localhost:3000';
 
     const items: CommandPaletteItem[] = [
@@ -1100,6 +1106,7 @@ function App(): JSX.Element {
     activePane?.browserUrl,
     activePane?.cwd,
     activePane?.title,
+    activePaneCwd,
     activePaneId,
     closeQuickAccess,
     handleOpenBrowser,
@@ -1281,51 +1288,65 @@ function App(): JSX.Element {
       } as React.CSSProperties}
     >
       <aside className="sidebar">
-        <div className="brand">
-          <div className="brand-mark">
-            <img className="brand-mark-logo" src={carogentLogoUrl} alt="" />
-          </div>
-          <div>
-            <div className="brand-title">Carogent</div>
-            <div className="brand-subtitle">Terminal Workspace</div>
-          </div>
-        </div>
-
-        <section className="workspace-list">
-          <div className="workspace-list-header">
-            <span>Workspaces</span>
-            <button className="workspace-add-button" type="button" title="Add workspace" onClick={handleAddWorkspace}>
-              +
-            </button>
-          </div>
-          {workspaces.map((workspace) => (
-            <WorkspaceItem
-              key={workspace.id}
-              workspace={workspace}
-              active={workspace.id === activeWorkspaceId}
-              canDelete={workspaces.length > 1}
-              onSelect={setActiveWorkspaceId}
-              onRename={handleRenameWorkspace}
-              onColorChange={handleUpdateWorkspaceColor}
-              onDelete={handleDeleteWorkspace}
+        {isExplorerSidebarOpen ? (
+          <>
+            <CurrentFolderTree
+              rootPath={activePaneCwd}
+              onClose={() => setIsExplorerSidebarOpen(false)}
+              onOpenFile={setActiveEditorFilePath}
+              activeFilePath={activeEditorFilePath}
             />
-          ))}
-        </section>
+            <div className="sidebar-resize-handle" onPointerDown={handleLeftResizeStart} />
+          </>
+        ) : (
+          <>
+          <div className="brand">
+            <div className="brand-mark">
+              <img className="brand-mark-logo" src={carogentLogoUrl} alt="" />
+            </div>
+            <div>
+              <div className="brand-title">Carogent</div>
+              <div className="brand-subtitle">Terminal Workspace</div>
+            </div>
+          </div>
 
-        <PinnedFolderPanel
-          pinnedDirectory={pinnedDirectory}
-          collapsed={pinnedFolderCollapsed}
-          onPinnedDirectoryChange={setPinnedDirectory}
-          onCollapsedChange={setPinnedFolderCollapsed}
-          onInsertPath={handleInsertPath}
-        />
+          <section className="workspace-list">
+            <div className="workspace-list-header">
+              <span>Workspaces</span>
+              <button className="workspace-add-button" type="button" title="Add workspace" onClick={handleAddWorkspace}>
+                +
+              </button>
+            </div>
+            {workspaces.map((workspace) => (
+              <WorkspaceItem
+                key={workspace.id}
+                workspace={workspace}
+                active={workspace.id === activeWorkspaceId}
+                canDelete={workspaces.length > 1}
+                onSelect={setActiveWorkspaceId}
+                onRename={handleRenameWorkspace}
+                onColorChange={handleUpdateWorkspaceColor}
+                onDelete={handleDeleteWorkspace}
+              />
+            ))}
+          </section>
 
-        <div className="sidebar-footer">
-          <div className="footer-label">Active Pane</div>
-          <div className="footer-value">{activePaneTitle}</div>
-          <div className="footer-path">{activePane?.cwd || 'Starting shell...'}</div>
-        </div>
-        <div className="sidebar-resize-handle" onPointerDown={handleLeftResizeStart} />
+          <PinnedFolderPanel
+            pinnedDirectory={pinnedDirectory}
+            collapsed={pinnedFolderCollapsed}
+            onPinnedDirectoryChange={setPinnedDirectory}
+            onCollapsedChange={setPinnedFolderCollapsed}
+            onInsertPath={handleInsertPath}
+          />
+
+          <div className="sidebar-footer">
+            <div className="footer-label">Active Pane</div>
+            <div className="footer-value">{activePaneTitle}</div>
+            <div className="footer-path">{activePaneCwd || 'Starting shell...'}</div>
+          </div>
+          <div className="sidebar-resize-handle" onPointerDown={handleLeftResizeStart} />
+          </>
+        )}
       </aside>
 
       <section className="workspace">
@@ -1369,6 +1390,16 @@ function App(): JSX.Element {
                 <path d="M5 3.25a.75.75 0 1 1-1.5 0 .75.75 0 0 1 1.5 0zm0 2.122a2.25 2.25 0 1 0-1.5 0v5.256a2.251 2.251 0 1 0 1.5 0V5.372zm8-.25a.75.75 0 1 1-1.5 0 .75.75 0 0 1 1.5 0zM11.5 7.25a2.25 2.25 0 1 0 0 4.5 2.25 2.25 0 0 0 0-4.5z"/>
               </svg>
               Git Control
+            </button>
+            <button
+              className="settings-button"
+              type="button"
+              onClick={() => setIsExplorerSidebarOpen((open) => !open)}
+              title="Toggle current folder explorer"
+              aria-label="Toggle current folder explorer"
+              style={isExplorerSidebarOpen ? { borderColor: '#67e8f9', color: '#67e8f9' } : undefined}
+            >
+              <WrenchIcon />
             </button>
             <div className="settings-menu-wrap" ref={settingsMenuRef}>
               <button
@@ -1426,29 +1457,33 @@ function App(): JSX.Element {
           </div>
         </header>
 
-        <div className="terminal-canvas">
-          <NodeView
-            key={activeWorkspace.id}
-            node={layout}
-            path=""
-            activePaneId={activePaneId}
-            workspaceFocusColor={activeWorkspace.color}
-            paneCount={paneCount}
-            ensureSession={ensureSession}
-            onActivate={handleActivatePane}
-            onSplit={handleSplit}
-            onClose={handleClose}
-            onResize={handleResize}
-            onUpdatePane={handleUpdatePane}
-            onChangeShell={handleChangeShell}
-            onOpenBrowser={(browserUrl) => window.terminalApi.openOrFocusBrowser({ url: browserUrl })}
-            shellOptions={shellOptions}
-            onPushToOverlay={handleTogglePinShell}
-            pinnedPaneIds={pinnedPaneIds}
-            maximizedPaneId={activeWorkspace.maximizedPaneId}
-            onToggleMaximize={handleToggleMaximize}
-          />
-        </div>
+        {isExplorerSidebarOpen ? (
+          <FileEditorWorkspace activeFilePath={activeEditorFilePath} rootPath={activePaneCwd} />
+        ) : (
+          <div className="terminal-canvas">
+            <NodeView
+              key={activeWorkspace.id}
+              node={layout}
+              path=""
+              activePaneId={activePaneId}
+              workspaceFocusColor={activeWorkspace.color}
+              paneCount={paneCount}
+              ensureSession={ensureSession}
+              onActivate={handleActivatePane}
+              onSplit={handleSplit}
+              onClose={handleClose}
+              onResize={handleResize}
+              onUpdatePane={handleUpdatePane}
+              onChangeShell={handleChangeShell}
+              onOpenBrowser={(browserUrl) => window.terminalApi.openOrFocusBrowser({ url: browserUrl })}
+              shellOptions={shellOptions}
+              onPushToOverlay={handleTogglePinShell}
+              pinnedPaneIds={pinnedPaneIds}
+              maximizedPaneId={activeWorkspace.maximizedPaneId}
+              onToggleMaximize={handleToggleMaximize}
+            />
+          </div>
+        )}
       </section>
       {isGitSidebarOpen && (
         <GitPanel
@@ -1459,6 +1494,10 @@ function App(): JSX.Element {
           activePaneId={activePaneId}
           terminalId={sessions.current.get(activePaneId)?.terminalId}
           refreshTrigger={gitRefreshTrigger}
+          onOpenFile={(filePath) => {
+            setActiveEditorFilePath(filePath);
+            setIsExplorerSidebarOpen(true);
+          }}
         />
       )}
       {quickAccessOpen && (

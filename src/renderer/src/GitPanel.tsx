@@ -6,7 +6,7 @@ import { parseDiffLines, type HighlightedDiffLine } from './git/diffParser';
 import { computeGraphData, GraphCell, renderRefBadges, getColorForCol } from './git/historyGraph';
 import { highlightCodeLine } from './git/syntaxHighlight';
 import type { CommitHistoryItem } from './git/types';
-import { MaximizeIcon, MinimizeIcon } from './components/AppIcons';
+import { MaximizeIcon, MinimizeIcon, OpenFileIcon } from './components/AppIcons';
 
 const MAX_RENDERED_DIFF_LINES = 5000;
 const MAX_MAXIMIZED_RENDERED_DIFF_LINES = 10000;
@@ -55,6 +55,7 @@ interface GitPanelProps {
   activePaneId?: string;
   terminalId?: string;
   refreshTrigger?: number;
+  onOpenFile?: (filePath: string) => void;
 }
 
 function groupFilesByDirectory(files: { additions: number; deletions: number; path: string }[]) {
@@ -397,7 +398,29 @@ const ImageDiffViewer: React.FC<ImageDiffViewerProps> = React.memo(({ diff }) =>
 
 ImageDiffViewer.displayName = 'ImageDiffViewer';
 
-export const GitPanel: React.FC<GitPanelProps> = ({ cwd, onClose, width, onResize, activePaneId, terminalId, refreshTrigger = 0 }) => {
+export const GitPanel: React.FC<GitPanelProps> = ({
+  cwd,
+  onClose,
+  width,
+  onResize,
+  activePaneId,
+  terminalId,
+  refreshTrigger = 0,
+  onOpenFile
+}) => {
+  const handleOpenFileClick = (e: React.MouseEvent, relPath: string) => {
+    e.stopPropagation();
+    if (onOpenFile) {
+      const cleanBase = cwd.replace(/[\\/]+$/, '');
+      const cleanRel = relPath.replace(/^[\\/]+/, '');
+      const isWindows = cwd.includes('\\') || navigator.platform.toUpperCase().indexOf('WIN') >= 0;
+      const absolutePath = isWindows
+        ? `${cleanBase}\\${cleanRel.replace(/\//g, '\\')}`
+        : `${cleanBase}/${cleanRel}`;
+      onOpenFile(absolutePath);
+    }
+  };
+
   const [status, setStatus] = useState<GitStatus | null>(null);
   const [selectedCommit, setSelectedCommit] = useState<CommitHistoryItem | null>(null);
   const [commitFiles, setCommitFiles] = useState<{ additions: number; deletions: number; path: string }[]>([]);
@@ -2203,6 +2226,13 @@ export const GitPanel: React.FC<GitPanelProps> = ({ cwd, onClose, width, onResiz
                             {getStatusBadge(file.status)}
                             <div className="git-file-row-actions">
                               <button
+                                className="git-row-action-btn open-file"
+                                onClick={(e) => handleOpenFileClick(e, file.path)}
+                                title="Open file"
+                              >
+                                <OpenFileIcon />
+                              </button>
+                              <button
                                 className="git-row-action-btn"
                                 onClick={(e) => handleUnstageFile(e, file.path)}
                                 title="Unstage"
@@ -2321,6 +2351,13 @@ export const GitPanel: React.FC<GitPanelProps> = ({ cwd, onClose, width, onResiz
                           <div className="git-file-row-right">
                             {getStatusBadge(file.status)}
                             <div className="git-file-row-actions">
+                              <button
+                                className="git-row-action-btn open-file"
+                                onClick={(e) => handleOpenFileClick(e, file.path)}
+                                title="Open file"
+                              >
+                                <OpenFileIcon />
+                              </button>
                               <button
                                 className="git-row-action-btn discard"
                                 onClick={(e) => handleDiscardFile(e, file.path, file.status === '?')}

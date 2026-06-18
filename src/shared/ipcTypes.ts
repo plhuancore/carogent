@@ -73,6 +73,26 @@ export type ImagePreviewResult = {
   dataUrl: string;
 };
 
+export type TextFileReadRequest = {
+  path: string;
+};
+
+export type TextFileReadResult = {
+  path: string;
+  content: string;
+  modifiedAt: number;
+};
+
+export type TextFileWriteRequest = {
+  path: string;
+  content: string;
+};
+
+export type TextFileWriteResult = {
+  path: string;
+  modifiedAt: number;
+};
+
 export type OpenVSCodeRequest = {
   path?: string;
 };
@@ -209,6 +229,8 @@ export type TerminalApi = {
   getShellOptions: () => Promise<TerminalShellOption[]>;
   listDirectory: (request: DirectoryListRequest) => Promise<DirectoryListResult>;
   getImagePreview: (request: ImagePreviewRequest) => Promise<ImagePreviewResult>;
+  readTextFile: (request: TextFileReadRequest) => Promise<TextFileReadResult>;
+  writeTextFile: (request: TextFileWriteRequest) => Promise<TextFileWriteResult>;
   openInVSCode: (request: OpenVSCodeRequest) => Promise<void>;
   openOrFocusBrowser: (request: OpenBrowserRequest) => Promise<void>;
   getBrowserBridgeStatus: () => Promise<BrowserBridgeStatusEvent>;
