@@ -68,10 +68,9 @@ let agentBridgeSnapshot: AgentBridgeSnapshot = {
 const agentBridgePending = new Map<string, (response: AgentBridgeRendererResponse) => void>();
 const browserBridge = createBrowserBridge(() => mainWindow);
 
-const sessionCachePath = join(os.tmpdir(), `carogent-electron-cache-${process.pid}`);
+const sessionCachePath = join(os.tmpdir(), 'carogent-electron-cache');
 try {
   mkdirSync(sessionCachePath, { recursive: true });
-  app.setPath('sessionData', sessionCachePath);
   app.commandLine.appendSwitch('disk-cache-dir', sessionCachePath);
 } catch (error) {
   console.error('Failed to configure Electron cache path:', error);
