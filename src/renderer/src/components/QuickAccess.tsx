@@ -21,6 +21,73 @@ function formatBrowserUrlLabel(value?: string): string {
   }
 }
 
+function highlightTextMatches(text: string, query: string): React.ReactNode {
+  const trimmedQuery = query.trim();
+  if (!trimmedQuery) {
+    return text;
+  }
+
+  let cleanQuery = trimmedQuery;
+  if (cleanQuery.startsWith('>')) {
+    cleanQuery = cleanQuery.slice(1).trim();
+  }
+
+  const terms = cleanQuery.toLowerCase().split(/\s+/).filter(Boolean);
+  if (terms.length === 0) {
+    return text;
+  }
+
+  const matchedIndices = new Array(text.length).fill(false);
+
+  // For each term, find subsequence match in text case-insensitively
+  terms.forEach((term) => {
+    let textIndex = 0;
+    const tempIndices: number[] = [];
+    for (let q = 0; q < term.length; q++) {
+      const char = term[q];
+      const idx = text.toLowerCase().indexOf(char, textIndex);
+      if (idx !== -1) {
+        tempIndices.push(idx);
+        textIndex = idx + 1;
+      } else {
+        break;
+      }
+    }
+    // If the entire term was matched as a subsequence, mark it
+    if (tempIndices.length === term.length) {
+      tempIndices.forEach((idx) => {
+        matchedIndices[idx] = true;
+      });
+    }
+  });
+
+  // Group consecutive matched/unmatched indices and render
+  const elements: React.ReactNode[] = [];
+  let currentGroupMatched = matchedIndices[0];
+  let currentGroupStart = 0;
+
+  for (let i = 1; i <= text.length; i++) {
+    if (i === text.length || matchedIndices[i] !== currentGroupMatched) {
+      const chunk = text.slice(currentGroupStart, i);
+      if (currentGroupMatched) {
+        elements.push(
+          <span key={currentGroupStart} className="quick-access-highlight">
+            {chunk}
+          </span>
+        );
+      } else {
+        elements.push(<span key={currentGroupStart}>{chunk}</span>);
+      }
+      if (i < text.length) {
+        currentGroupMatched = matchedIndices[i];
+        currentGroupStart = i;
+      }
+    }
+  }
+
+  return <>{elements}</>;
+}
+
 type QuickAccessPaletteProps = {
   inputRef: RefObject<HTMLInputElement>;
   query: string;
@@ -92,7 +159,13 @@ export function QuickAccessPalette({
             ref={inputRef}
             className="quick-access-input"
             value={query}
-            placeholder={isCommandMode ? 'Search commands' : 'Search quick access'}
+            placeholder={
+              mode === 'file'
+                ? 'Search files by name (append : to go to line or @ to go to symbol)'
+                : isCommandMode
+                ? 'Search commands'
+                : 'Search quick access'
+            }
             onChange={(event) => onQueryChange(event.target.value)}
             onKeyDown={handleKeyDown}
           />
@@ -109,8 +182,12 @@ export function QuickAccessPalette({
                 <CommandPaletteIcon type={item.icon} />
               </span>
               <span className="quick-access-result-copy">
-                <span className="quick-access-result-name">{item.title}</span>
-                <span className="quick-access-result-domain">{item.subtitle}</span>
+                <span className="quick-access-result-name">
+                  {highlightTextMatches(item.title, query)}
+                </span>
+                <span className="quick-access-result-domain">
+                  {highlightTextMatches(item.subtitle, query)}
+                </span>
               </span>
             </button>
           ))}
@@ -138,12 +215,14 @@ export function QuickAccessPalette({
             </div>
           )}
         </div>
-        <div className="quick-access-footer">
-          <span><kbd>Enter</kbd> Open</span>
-          <span><kbd>Esc</kbd> Close</span>
-          <span><kbd>↑↓</kbd> Navigate</span>
-          {!isCommandMode && <span><kbd>&gt;</kbd> Commands</span>}
-        </div>
+        {mode !== 'file' && (
+          <div className="quick-access-footer">
+            <span><kbd>Enter</kbd> Open</span>
+            <span><kbd>Esc</kbd> Close</span>
+            <span><kbd>↑↓</kbd> Navigate</span>
+            {!isCommandMode && <span><kbd>&gt;</kbd> Commands</span>}
+          </div>
+        )}
       </div>
     </div>
   );

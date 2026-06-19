@@ -17,6 +17,10 @@ import type {
   TerminalShellOption,
   TextFileReadResult,
   TextFileWriteResult,
+  FileSearchRequest,
+  FileSearchResult,
+  FindFilesRequest,
+  FindFilesResult,
   GitImageDiffResult
 } from '../shared/ipcTypes';
 
@@ -37,6 +41,10 @@ const terminal: TerminalApi = {
     ipcRenderer.invoke('filesystem:read-text-file', request),
   writeTextFile: (request: { path: string; content: string }): Promise<TextFileWriteResult> =>
     ipcRenderer.invoke('filesystem:write-text-file', request),
+  searchFiles: (request: FileSearchRequest): Promise<FileSearchResult> =>
+    ipcRenderer.invoke('filesystem:search-files', request),
+  findFiles: (request: FindFilesRequest): Promise<FindFilesResult> =>
+    ipcRenderer.invoke('filesystem:find-files', request),
   openInVSCode: (request: { path?: string }): Promise<void> =>
     ipcRenderer.invoke('workspace:open-vscode', request),
   openOrFocusBrowser: (request: { url?: string }): Promise<void> =>

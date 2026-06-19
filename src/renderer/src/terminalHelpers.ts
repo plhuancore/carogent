@@ -207,13 +207,6 @@ function restoreTerminalScroll(session: TerminalSession): void {
     return;
   }
 
-  if (session.viewportBottomOffset !== undefined) {
-    session.terminal.scrollToLine(Math.max(0, buffer.baseY - session.viewportBottomOffset));
-    syncTerminalScrollArea(session);
-    session.isScrollCaptured = false;
-    return;
-  }
-
   session.terminal.scrollToLine(Math.min(session.viewportY, buffer.baseY));
   syncTerminalScrollArea(session);
   session.isScrollCaptured = false;

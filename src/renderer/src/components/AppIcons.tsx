@@ -1,4 +1,4 @@
-export type CommandPaletteIconType = 'browser' | 'code' | 'quick-access' | 'agent-overlay' | 'git';
+export type CommandPaletteIconType = 'browser' | 'code' | 'quick-access' | 'agent-overlay' | 'git' | 'folder';
 
 export function SearchIcon(): JSX.Element {
   return (
@@ -179,6 +179,10 @@ export function CommandPaletteIcon({ type }: { type: CommandPaletteIconType }): 
 
   if (type === 'git') {
     return <GitIcon />;
+  }
+
+  if (type === 'folder') {
+    return <FileTreeIcon type="directory" />;
   }
 
   return <QuickAccessIcon />;

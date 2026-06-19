@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, memo } from 'react';
 import type { KeyboardEvent as ReactKeyboardEvent } from 'react';
 import { CloseIcon, RefreshIcon } from './AppIcons';
 import { highlightCodeLine } from '../git/syntaxHighlight';
+import type { LocalMatchRange } from '../git/syntaxHighlight';
 import 'prism-themes/themes/prism-vsc-dark-plus.css';
 
 
@@ -18,6 +19,7 @@ type EditorTab = {
 
 type FileEditorWorkspaceProps = {
   activeFilePath: string;
+  activeLineNumber?: number;
   rootPath: string;
 };
 
@@ -48,10 +50,80 @@ function formatModifiedAt(value?: number): string {
   return new Date(value).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 }
 
-export function FileEditorWorkspace({ activeFilePath, rootPath }: FileEditorWorkspaceProps): JSX.Element {
+function getSearchRegex(query: string, caseSensitive: boolean, wholeWord: boolean, useRegex: boolean): RegExp | null {
+  if (!query) return null;
+  try {
+    let pattern = useRegex ? query : query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    if (wholeWord) {
+      pattern = `\\b${pattern}\\b`;
+    }
+    const flags = caseSensitive ? 'g' : 'gi';
+    return new RegExp(pattern, flags);
+  } catch (e) {
+    return null;
+  }
+}
+
+const CodeLine = memo(
+  ({
+    line,
+    filePath,
+    isActive,
+    localMatchRanges
+  }: {
+    line: string;
+    filePath: string;
+    isActive: boolean;
+    localMatchRanges?: LocalMatchRange[];
+  }) => {
+    return (
+      <div className={`file-editor-line${isActive ? ' is-active-search-line' : ''}`}>
+        {highlightCodeLine(line, filePath, localMatchRanges) || '\n'}
+      </div>
+    );
+  }
+);
+CodeLine.displayName = 'CodeLine';
+
+const EditorGutter = memo(
+  ({
+    lineCount,
+    activeLineNumber,
+    editorHeight
+  }: {
+    lineCount: number;
+    activeLineNumber?: number;
+    editorHeight: number;
+  }) => {
+    return (
+      <div className="file-editor-gutter" style={{ minHeight: `${editorHeight}px` }}>
+        {Array.from({ length: lineCount }, (_, index) => (
+          <div
+            key={index + 1}
+            className={activeLineNumber === index + 1 ? 'is-active-search-line-gutter' : undefined}
+          >
+            {index + 1}
+          </div>
+        ))}
+      </div>
+    );
+  }
+);
+EditorGutter.displayName = 'EditorGutter';
+
+export function FileEditorWorkspace({ activeFilePath, activeLineNumber, rootPath }: FileEditorWorkspaceProps): JSX.Element {
   const [tabs, setTabs] = useState<EditorTab[]>([]);
   const [selectedPath, setSelectedPath] = useState('');
   const tabsRef = useRef<EditorTab[]>([]);
+  const surfaceRef = useRef<HTMLDivElement>(null);
+
+  // Local Find states
+  const [findActive, setFindActive] = useState(false);
+  const [findQuery, setFindQuery] = useState('');
+  const [findCaseSensitive, setFindCaseSensitive] = useState(false);
+  const [findWholeWord, setFindWholeWord] = useState(false);
+  const [findUseRegex, setFindUseRegex] = useState(false);
+  const [activeFindIndex, setActiveFindIndex] = useState(0);
 
   useEffect(() => {
     tabsRef.current = tabs;
@@ -131,7 +203,96 @@ export function FileEditorWorkspace({ activeFilePath, rootPath }: FileEditorWork
     }
   }, [activeFilePath, loadFile]);
 
+  // Scroll to activeLineNumber
+  useEffect(() => {
+    if (activeLineNumber && activeLineNumber > 0) {
+      // Wait slightly for file rendering to complete
+      const timer = window.setTimeout(() => {
+        if (surfaceRef.current) {
+          // 12px padding top in pre, 20px per line, offset by 80px for context visibility
+          const targetScrollTop = 12 + (activeLineNumber - 1) * 20 - 80;
+          surfaceRef.current.scrollTop = Math.max(0, targetScrollTop);
+        }
+      }, 50);
+      return () => window.clearTimeout(timer);
+    }
+    return undefined;
+  }, [activeLineNumber, selectedPath]);
+
   const selectedTab = tabs.find((tab) => tab.path === selectedPath) || null;
+
+  const localMatches = useMemo(() => {
+    if (!selectedTab || !findQuery) return [];
+    const lines = selectedTab.content.split('\n');
+    const regex = getSearchRegex(findQuery, findCaseSensitive, findWholeWord, findUseRegex);
+    if (!regex) return [];
+
+    const list: { lineIndex: number; charIndex: number; length: number }[] = [];
+    lines.forEach((line, lineIndex) => {
+      let match;
+      regex.lastIndex = 0;
+      while ((match = regex.exec(line)) !== null) {
+        if (match[0].length === 0) {
+          regex.lastIndex++;
+          continue;
+        }
+        list.push({
+          lineIndex,
+          charIndex: match.index,
+          length: match[0].length
+        });
+      }
+    });
+    return list;
+  }, [selectedTab?.content, findQuery, findCaseSensitive, findWholeWord, findUseRegex]);
+
+  const regexForLineHighlight = useMemo(() => {
+    return getSearchRegex(findQuery, findCaseSensitive, findWholeWord, findUseRegex);
+  }, [findQuery, findCaseSensitive, findWholeWord, findUseRegex]);
+
+  useEffect(() => {
+    if (localMatches.length === 0) {
+      setActiveFindIndex(0);
+    } else if (activeFindIndex >= localMatches.length) {
+      setActiveFindIndex(localMatches.length - 1);
+    }
+  }, [localMatches, activeFindIndex]);
+
+  useEffect(() => {
+    if (findActive && localMatches.length > 0 && activeFindIndex < localMatches.length) {
+      const activeMatch = localMatches[activeFindIndex];
+      const targetLine = activeMatch.lineIndex + 1;
+      if (surfaceRef.current) {
+        const targetScrollTop = 12 + (targetLine - 1) * 20 - 80;
+        surfaceRef.current.scrollTop = Math.max(0, targetScrollTop);
+      }
+    }
+  }, [activeFindIndex, localMatches, findActive]);
+
+  useEffect(() => {
+    const handleGlobalKeyDown = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'f') {
+        const activeEl = document.activeElement;
+        if (activeEl?.id === 'local-find-input') {
+          return;
+        }
+        e.preventDefault();
+        setFindActive(true);
+        window.requestAnimationFrame(() => {
+          const findInput = document.getElementById('local-find-input');
+          if (findInput) {
+            findInput.focus();
+            (findInput as HTMLInputElement).select();
+          }
+        });
+      }
+    };
+
+    window.addEventListener('keydown', handleGlobalKeyDown);
+    return () => {
+      window.removeEventListener('keydown', handleGlobalKeyDown);
+    };
+  }, [selectedPath]);
   const hasDirtyTabs = tabs.some((tab) => tab.content !== tab.savedContent);
 
   const lineCount = useMemo(() => {
@@ -206,10 +367,56 @@ export function FileEditorWorkspace({ activeFilePath, rootPath }: FileEditorWork
     setTabs((current) => current.map((tab) => (tab.path === selectedTab.path ? { ...tab, content } : tab)));
   };
 
+  const navigateFind = useCallback((direction: 'next' | 'prev') => {
+    if (localMatches.length === 0) return;
+    if (direction === 'next') {
+      setActiveFindIndex((prev) => (prev + 1) % localMatches.length);
+    } else {
+      setActiveFindIndex((prev) => (prev - 1 + localMatches.length) % localMatches.length);
+    }
+  }, [localMatches]);
+
+  const handleFindInputKeyDown = (e: ReactKeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      if (e.shiftKey) {
+        navigateFind('prev');
+      } else {
+        navigateFind('next');
+      }
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      setFindActive(false);
+      const editorInput = document.querySelector('.file-editor-input') as HTMLTextAreaElement | null;
+      if (editorInput) {
+        editorInput.focus();
+      }
+    }
+  };
+
   const handleEditorKeyDown = (event: ReactKeyboardEvent<HTMLTextAreaElement>): void => {
     if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 's') {
       event.preventDefault();
       saveFile();
+      return;
+    }
+
+    if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'f') {
+      event.preventDefault();
+      setFindActive(true);
+      window.requestAnimationFrame(() => {
+        const findInput = document.getElementById('local-find-input');
+        if (findInput) {
+          findInput.focus();
+          (findInput as HTMLInputElement).select();
+        }
+      });
+      return;
+    }
+
+    if (event.key === 'Escape' && findActive) {
+      event.preventDefault();
+      setFindActive(false);
       return;
     }
 
@@ -303,19 +510,145 @@ export function FileEditorWorkspace({ activeFilePath, rootPath }: FileEditorWork
             </div>
           </div>
           {selectedTab.error && <div className="file-editor-error">{selectedTab.error}</div>}
-          <div className="file-editor-surface">
-            <div className="file-editor-gutter" style={{ minHeight: `${editorHeight}px` }}>
-              {Array.from({ length: lineCount }, (_, index) => (
-                <div key={index + 1}>{index + 1}</div>
-              ))}
+          {findActive && (
+            <div className="local-find-widget">
+              <div className="local-find-input-wrapper">
+                <input
+                  id="local-find-input"
+                  type="text"
+                  placeholder="Find"
+                  value={findQuery}
+                  onChange={(e) => {
+                    setFindQuery(e.target.value);
+                    setActiveFindIndex(0);
+                  }}
+                  onKeyDown={handleFindInputKeyDown}
+                  spellCheck={false}
+                  autoComplete="off"
+                />
+                <div className="local-find-options">
+                  <button
+                    type="button"
+                    className={`local-find-option ${findCaseSensitive ? 'is-active' : ''}`}
+                    onClick={() => {
+                      setFindCaseSensitive(prev => !prev);
+                      setActiveFindIndex(0);
+                    }}
+                    title="Match Case (Aa)"
+                  >
+                    Aa
+                  </button>
+                  <button
+                    type="button"
+                    className={`local-find-option ${findWholeWord ? 'is-active' : ''}`}
+                    onClick={() => {
+                      setFindWholeWord(prev => !prev);
+                      setActiveFindIndex(0);
+                    }}
+                    title="Match Whole Word (ab)"
+                  >
+                    ab
+                  </button>
+                  <button
+                    type="button"
+                    className={`local-find-option ${findUseRegex ? 'is-active' : ''}`}
+                    onClick={() => {
+                      setFindUseRegex(prev => !prev);
+                      setActiveFindIndex(0);
+                    }}
+                    title="Use Regular Expression (.*)"
+                  >
+                    .*
+                  </button>
+                </div>
+              </div>
+              <div className="local-find-controls">
+                <span className="local-find-count">
+                  {localMatches.length > 0
+                    ? `${activeFindIndex + 1} of ${localMatches.length}`
+                    : 'No results'}
+                </span>
+                <button
+                  type="button"
+                  className="local-find-action"
+                  onClick={() => navigateFind('prev')}
+                  disabled={localMatches.length === 0}
+                  title="Previous Match (Shift+Enter)"
+                >
+                  ↑
+                </button>
+                <button
+                  type="button"
+                  className="local-find-action"
+                  onClick={() => navigateFind('next')}
+                  disabled={localMatches.length === 0}
+                  title="Next Match (Enter)"
+                >
+                  ↓
+                </button>
+                <button
+                  type="button"
+                  className="local-find-action close-action"
+                  onClick={() => {
+                    setFindActive(false);
+                    const editorInput = document.querySelector('.file-editor-input') as HTMLTextAreaElement | null;
+                    if (editorInput) {
+                      editorInput.focus();
+                    }
+                  }}
+                  title="Close (Escape)"
+                >
+                  <CloseIcon />
+                </button>
+              </div>
             </div>
+          )}
+
+          <div ref={surfaceRef} className="file-editor-surface">
+            <EditorGutter
+              lineCount={lineCount}
+              activeLineNumber={activeLineNumber}
+              editorHeight={editorHeight}
+            />
             <div className="file-editor-container" style={{ minHeight: `${editorHeight}px` }}>
               <pre className="file-editor-highlight" style={{ minHeight: `${editorHeight}px` }}>
-                {selectedTab.content.split('\n').map((line, index) => (
-                  <div key={index} className="file-editor-line">
-                    {highlightCodeLine(line, selectedTab.path) || '\n'}
-                  </div>
-                ))}
+                {selectedTab.content.split('\n').map((line, index) => {
+                  let localMatchRanges: LocalMatchRange[] | undefined = undefined;
+                  if (findActive && regexForLineHighlight) {
+                    localMatchRanges = [];
+                    let match;
+                    regexForLineHighlight.lastIndex = 0;
+                    while ((match = regexForLineHighlight.exec(line)) !== null) {
+                      const matchIndex = match.index;
+                      const matchText = match[0];
+                      if (matchText.length === 0) {
+                        regexForLineHighlight.lastIndex++;
+                        continue;
+                      }
+                      
+                      const isActiveMatch =
+                        localMatches[activeFindIndex] &&
+                        localMatches[activeFindIndex].lineIndex === index &&
+                        localMatches[activeFindIndex].charIndex === matchIndex;
+                        
+                      localMatchRanges.push({
+                        start: matchIndex,
+                        end: matchIndex + matchText.length,
+                        isActive: !!isActiveMatch
+                      });
+                    }
+                  }
+
+                  return (
+                    <CodeLine
+                      key={index}
+                      line={line}
+                      filePath={selectedTab.path}
+                      isActive={activeLineNumber === index + 1}
+                      localMatchRanges={localMatchRanges}
+                    />
+                  );
+                })}
               </pre>
               <textarea
                 className="file-editor-input"

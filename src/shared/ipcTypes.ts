@@ -93,6 +93,51 @@ export type TextFileWriteResult = {
   modifiedAt: number;
 };
 
+export type FileSearchRequest = {
+  rootPath: string;
+  query: string;
+  caseSensitive?: boolean;
+  wholeWord?: boolean;
+  useRegex?: boolean;
+};
+
+export type FileSearchResultMatch = {
+  lineNumber: number;
+  lineContent: string;
+  matchIndex: number;
+  matchLength: number;
+};
+
+export type FileSearchResultEntry = {
+  filePath: string;
+  relativeFilePath: string;
+  matches: FileSearchResultMatch[];
+};
+
+export type FileSearchResult = {
+  results: FileSearchResultEntry[];
+  totalResults: number;
+  totalFiles: number;
+  error?: string;
+};
+
+export type FindFilesRequest = {
+  rootPath: string;
+  query: string;
+};
+
+export type FindFilesResultEntry = {
+  name: string;
+  path: string;
+  relativeFilePath: string;
+  type: 'file' | 'directory';
+};
+
+export type FindFilesResult = {
+  results: FindFilesResultEntry[];
+  error?: string;
+};
+
 export type OpenVSCodeRequest = {
   path?: string;
 };
@@ -231,6 +276,8 @@ export type TerminalApi = {
   getImagePreview: (request: ImagePreviewRequest) => Promise<ImagePreviewResult>;
   readTextFile: (request: TextFileReadRequest) => Promise<TextFileReadResult>;
   writeTextFile: (request: TextFileWriteRequest) => Promise<TextFileWriteResult>;
+  searchFiles: (request: FileSearchRequest) => Promise<FileSearchResult>;
+  findFiles: (request: FindFilesRequest) => Promise<FindFilesResult>;
   openInVSCode: (request: OpenVSCodeRequest) => Promise<void>;
   openOrFocusBrowser: (request: OpenBrowserRequest) => Promise<void>;
   getBrowserBridgeStatus: () => Promise<BrowserBridgeStatusEvent>;

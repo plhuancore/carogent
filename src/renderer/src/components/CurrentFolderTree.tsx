@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { DragEvent as ReactDragEvent } from 'react';
-import type { DirectoryEntry, DirectoryListResult } from '../../../shared/ipcTypes';
+import type { DirectoryEntry, DirectoryListResult, FindFilesResultEntry } from '../../../shared/ipcTypes';
 import { ChevronDownIcon, CloseIcon, FileTreeIcon, RefreshIcon } from './AppIcons';
 
 type TreeNodeState = {
@@ -59,6 +59,46 @@ export function CurrentFolderTree({
 }: CurrentFolderTreeProps): JSX.Element {
   const [nodes, setNodes] = useState<Record<string, TreeNodeState>>({});
   const lastScrolledPathRef = useRef<string | null>(null);
+
+  const [filterQuery, setFilterQuery] = useState('');
+  const [filterResults, setFilterResults] = useState<FindFilesResultEntry[]>([]);
+  const [filterLoading, setFilterLoading] = useState(false);
+  const [filterError, setFilterError] = useState<string | undefined>(undefined);
+
+  useEffect(() => {
+    const query = filterQuery.trim();
+    if (!query || !rootPath.trim()) {
+      setFilterResults([]);
+      setFilterError(undefined);
+      setFilterLoading(false);
+      return;
+    }
+
+    setFilterLoading(true);
+    setFilterError(undefined);
+
+    const timer = window.setTimeout(() => {
+      window.terminalApi
+        .findFiles({ rootPath, query })
+        .then((res) => {
+          if (res.error) {
+            setFilterError(res.error);
+            setFilterResults([]);
+          } else {
+            setFilterResults(res.results);
+          }
+        })
+        .catch((err) => {
+          setFilterError(err instanceof Error ? err.message : String(err));
+          setFilterResults([]);
+        })
+        .finally(() => {
+          setFilterLoading(false);
+        });
+    }, 150);
+
+    return () => window.clearTimeout(timer);
+  }, [filterQuery, rootPath]);
 
   useEffect(() => {
     lastScrolledPathRef.current = null;
@@ -285,18 +325,76 @@ export function CurrentFolderTree({
           >
             <RefreshIcon className={rootNode?.loading ? 'spin' : ''} />
           </button>
-          <button type="button" title="Close explorer" aria-label="Close explorer" onClick={onClose}>
-            <CloseIcon />
-          </button>
         </div>
       </div>
-      <div className="folder-tree-list">
-        {!rootPath.trim() && <div className="folder-tree-status">Starting shell...</div>}
-        {rootNode?.loading && !rootNode.directory && <div className="folder-tree-status">Loading...</div>}
-        {rootNode?.error && <div className="folder-tree-status is-error">{rootNode.error}</div>}
-        {rootNode?.directory?.entries.map((entry) => renderEntry(entry, 0))}
-        {rootNode?.directory && rootNode.directory.entries.length === 0 && <div className="folder-tree-status">Empty folder</div>}
+
+      <div className="folder-tree-search-bar">
+        <input
+          type="text"
+          className="folder-tree-search-input"
+          placeholder="Filter files by name..."
+          value={filterQuery}
+          onChange={(e) => setFilterQuery(e.target.value)}
+          spellCheck={false}
+        />
+        {filterQuery && (
+          <button
+            type="button"
+            className="folder-tree-search-clear"
+            onClick={() => setFilterQuery('')}
+            title="Clear filter"
+          >
+            <CloseIcon />
+          </button>
+        )}
       </div>
+
+      {filterQuery.trim() ? (
+        <div className="folder-tree-list">
+          {filterLoading && <div className="folder-tree-status">Filtering...</div>}
+          {filterError && <div className="folder-tree-status is-error">{filterError}</div>}
+          {!filterLoading && !filterError && filterResults.length === 0 && (
+            <div className="folder-tree-status">No matching files found.</div>
+          )}
+          {!filterLoading && !filterError && filterResults.map((entry) => {
+            const isDir = entry.type === 'directory';
+            return (
+              <button
+                key={entry.path}
+                className={`folder-tree-row is-search-result${activeFilePath === entry.path ? ' is-active' : ''}`}
+                type="button"
+                title={entry.path}
+                style={{ paddingLeft: 8 }}
+                onClick={() => {
+                  if (isDir) {
+                    setFilterQuery('');
+                    loadDirectory(entry.path, true);
+                  } else {
+                    onOpenFile(entry.path);
+                  }
+                }}
+              >
+                <span className="folder-tree-disclosure" />
+                <span className="folder-tree-icon">
+                  <FileTreeIcon type={entry.type} />
+                </span>
+                <span className="folder-tree-name">{entry.name}</span>
+                <span className="folder-tree-search-path" title={entry.relativeFilePath}>
+                  {entry.relativeFilePath.split(/[\\/]/).slice(0, -1).join('/') || '.'}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      ) : (
+        <div className="folder-tree-list">
+          {!rootPath.trim() && <div className="folder-tree-status">Starting shell...</div>}
+          {rootNode?.loading && !rootNode.directory && <div className="folder-tree-status">Loading...</div>}
+          {rootNode?.error && <div className="folder-tree-status is-error">{rootNode.error}</div>}
+          {rootNode?.directory?.entries.map((entry) => renderEntry(entry, 0))}
+          {rootNode?.directory && rootNode.directory.entries.length === 0 && <div className="folder-tree-status">Empty folder</div>}
+        </div>
+      )}
     </section>
   );
 }

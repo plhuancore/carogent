@@ -59,6 +59,7 @@ import {
 } from './components/AppIcons';
 import { CurrentFolderTree } from './components/CurrentFolderTree';
 import { FileEditorWorkspace } from './components/FileEditorWorkspace';
+import { SearchPanel } from './components/SearchPanel';
 import { McpSettingsModal } from './components/McpSettingsModal';
 import { PinnedFolderPanel } from './components/PinnedFolderPanel';
 import { QuickAccessManager, QuickAccessPalette } from './components/QuickAccess';
@@ -177,6 +178,7 @@ function App(): JSX.Element {
   const [quickAccessSelectedIndex, setQuickAccessSelectedIndex] = useState(0);
   const [paletteMode, setPaletteMode] = useState<PaletteMode>('quick-access');
   const [quickAccessManagerOpen, setQuickAccessManagerOpen] = useState(false);
+  const [fileSearchResults, setFileSearchResults] = useState<CommandPaletteItem[]>([]);
   const [settingsMenuOpen, setSettingsMenuOpen] = useState(false);
   const [mcpSettingsOpen, setMcpSettingsOpen] = useState(false);
   const [shellOptions, setShellOptions] = useState<TerminalShellOption[] | null>(null);
@@ -189,7 +191,9 @@ function App(): JSX.Element {
   });
   const [isGitSidebarOpen, setIsGitSidebarOpen] = useState(false);
   const [isExplorerSidebarOpen, setIsExplorerSidebarOpen] = useState(false);
+  const [sidebarActiveTab, setSidebarActiveTab] = useState<'explorer' | 'search'>('explorer');
   const [activeEditorFilePath, setActiveEditorFilePath] = useState('');
+  const [activeEditorLineNumber, setActiveEditorLineNumber] = useState<number | undefined>(undefined);
   const [gitRefreshTrigger, setGitRefreshTrigger] = useState(0);
   const [gitSidebarWidth, setGitSidebarWidth] = useState(380);
   const [leftSidebarWidth, setLeftSidebarWidth] = useState(() => {
@@ -1039,6 +1043,17 @@ function App(): JSX.Element {
         }
       },
       {
+        id: 'toggle-explorer-sidebar',
+        title: isExplorerSidebarOpen ? 'Explorer: Hide Folder Explorer' : 'Explorer: Show Folder Explorer',
+        subtitle: 'Toggle current folder explorer panel visibility',
+        keywords: `explorer folder workspace current directory file tree sidebar show hide toggle secondary Wrench ${isExplorerSidebarOpen ? 'hide' : 'show'}`,
+        icon: 'folder',
+        run: () => {
+          setIsExplorerSidebarOpen((open) => !open);
+          closeQuickAccess();
+        }
+      },
+      {
         id: 'git-refresh',
         title: 'Git: Refresh',
         subtitle: 'Refresh Git repository status and history',
@@ -1124,7 +1139,50 @@ function App(): JSX.Element {
     ? 'command'
     : paletteMode;
 
+  useEffect(() => {
+    if (!quickAccessOpen || effectivePaletteMode !== 'file' || !activePaneCwd) {
+      setFileSearchResults([]);
+      return;
+    }
+
+    let isCurrent = true;
+    window.terminalApi
+      .findFiles({ rootPath: activePaneCwd, query: quickAccessQuery })
+      .then((res) => {
+        if (!isCurrent) return;
+        if (res.results) {
+          const items: CommandPaletteItem[] = res.results
+            .filter((file) => file.type === 'file')
+            .map((file) => ({
+              id: `file-search-${file.path}`,
+              title: file.name,
+              subtitle: file.relativeFilePath.split(/[\\/]/).slice(0, -1).join('/') || '.',
+              keywords: `${file.name} ${file.relativeFilePath}`,
+              icon: 'code',
+              run: () => {
+                setActiveEditorFilePath(file.path);
+                setActiveEditorLineNumber(undefined);
+                setIsExplorerSidebarOpen(true);
+                closeQuickAccess();
+              }
+            }));
+          setFileSearchResults(items);
+        }
+      })
+      .catch((err) => {
+        console.error('Failed to search files:', err);
+      });
+
+    return () => {
+      isCurrent = false;
+    };
+  }, [quickAccessOpen, effectivePaletteMode, activePaneCwd, quickAccessQuery, closeQuickAccess]);
+
   const filteredPaletteItems = useMemo(() => {
+    if (effectivePaletteMode === 'file') {
+      return fileSearchResults;
+    }
+
     const rawQuery =
       effectivePaletteMode === 'command' && quickAccessQuery.trimStart().startsWith('>')
         ? quickAccessQuery.trimStart().slice(1)
@@ -1143,7 +1201,7 @@ function App(): JSX.Element {
       .filter((match) => match.score > 0)
       .sort((first, second) => second.score - first.score || first.index - second.index)
       .map((match) => match.item);
-  }, [commandPaletteItems, effectivePaletteMode, quickAccessPaletteItems, quickAccessQuery]);
+  }, [commandPaletteItems, effectivePaletteMode, quickAccessPaletteItems, quickAccessQuery, fileSearchResults]);
 
   const handleSaveQuickAccessItem = useCallback((item: QuickAccessItem) => {
     const name = item.name.trim();
@@ -1173,14 +1231,18 @@ function App(): JSX.Element {
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'p') {
         event.preventDefault();
         event.stopPropagation();
-        openQuickAccess(event.shiftKey ? 'command' : 'quick-access');
+        if (isExplorerSidebarOpen && activePaneCwd) {
+          openQuickAccess('file');
+        } else {
+          openQuickAccess(event.shiftKey ? 'command' : 'quick-access');
+        }
       }
     };
 
     window.addEventListener('keydown', handleKeyDown, true);
 
     return () => window.removeEventListener('keydown', handleKeyDown, true);
-  }, [openQuickAccess]);
+  }, [openQuickAccess, isExplorerSidebarOpen, activePaneCwd]);
 
   // Escape key to exit fullscreen shell
   useEffect(() => {
@@ -1290,12 +1352,58 @@ function App(): JSX.Element {
       <aside className="sidebar">
         {isExplorerSidebarOpen ? (
           <>
-            <CurrentFolderTree
-              rootPath={activePaneCwd}
-              onClose={() => setIsExplorerSidebarOpen(false)}
-              onOpenFile={setActiveEditorFilePath}
-              activeFilePath={activeEditorFilePath}
-            />
+            <div className="sidebar-panel-container">
+              <div className="sidebar-tabs-header">
+                <div className="sidebar-tabs">
+                  <button
+                    className={`sidebar-tab-button ${sidebarActiveTab === 'explorer' ? 'is-active' : ''}`}
+                    type="button"
+                    onClick={() => setSidebarActiveTab('explorer')}
+                  >
+                    Explorer
+                  </button>
+                  <button
+                    className={`sidebar-tab-button ${sidebarActiveTab === 'search' ? 'is-active' : ''}`}
+                    type="button"
+                    onClick={() => setSidebarActiveTab('search')}
+                  >
+                    Search
+                  </button>
+                </div>
+                <button
+                  className="sidebar-close-button"
+                  type="button"
+                  title="Close sidebar"
+                  onClick={() => setIsExplorerSidebarOpen(false)}
+                >
+                  <CloseIcon />
+                </button>
+              </div>
+
+              <div className="sidebar-panel-content">
+                {sidebarActiveTab === 'explorer' ? (
+                  <CurrentFolderTree
+                    rootPath={activePaneCwd}
+                    onClose={() => setIsExplorerSidebarOpen(false)}
+                    onOpenFile={(path) => {
+                      setActiveEditorFilePath(path);
+                      setActiveEditorLineNumber(undefined);
+                    }}
+                    activeFilePath={activeEditorFilePath}
+                  />
+                ) : (
+                  <SearchPanel
+                    rootPath={activePaneCwd}
+                    onClose={() => setIsExplorerSidebarOpen(false)}
+                    onOpenFile={(path, line) => {
+                      setActiveEditorFilePath(path);
+                      setActiveEditorLineNumber(line);
+                    }}
+                    activeFilePath={activeEditorFilePath}
+                  />
+                )}
+              </div>
+            </div>
             <div className="sidebar-resize-handle" onPointerDown={handleLeftResizeStart} />
           </>
         ) : (
@@ -1458,7 +1566,11 @@ function App(): JSX.Element {
         </header>
 
         {isExplorerSidebarOpen ? (
-          <FileEditorWorkspace activeFilePath={activeEditorFilePath} rootPath={activePaneCwd} />
+          <FileEditorWorkspace
+            activeFilePath={activeEditorFilePath}
+            activeLineNumber={activeEditorLineNumber}
+            rootPath={activePaneCwd}
+          />
         ) : (
           <div className="terminal-canvas">
             <NodeView
@@ -1496,6 +1608,7 @@ function App(): JSX.Element {
           refreshTrigger={gitRefreshTrigger}
           onOpenFile={(filePath) => {
             setActiveEditorFilePath(filePath);
+            setActiveEditorLineNumber(undefined);
             setIsExplorerSidebarOpen(true);
           }}
         />
