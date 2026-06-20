@@ -4,6 +4,7 @@ import type {
   FormEvent as ReactFormEvent,
   MouseEvent as ReactMouseEvent
 } from 'react';
+import { createPortal } from 'react-dom';
 import type { DirectoryEntry, DirectoryListResult } from '../../../shared/ipcTypes';
 import { ChevronDownIcon, ChevronUpIcon, FileTreeIcon, OpenFileIcon, ParentFolderIcon, RefreshIcon } from './AppIcons';
 
@@ -281,7 +282,7 @@ export function PinnedFolderPanel({
           <div className="pinned-folder-empty">Empty folder</div>
         )}
       </div>
-      {preview && (
+      {preview && createPortal(
         <div
           ref={previewRef}
           className="pinned-image-preview"
@@ -299,7 +300,8 @@ export function PinnedFolderPanel({
               style={{ backgroundImage: `url("${preview.dataUrl}")` }}
             />
           )}
-        </div>
+        </div>,
+        document.body
       )}
         </>
       )}

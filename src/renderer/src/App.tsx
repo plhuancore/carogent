@@ -1408,50 +1408,52 @@ function App(): JSX.Element {
           </>
         ) : (
           <>
-          <div className="brand">
-            <div className="brand-mark">
-              <img className="brand-mark-logo" src={carogentLogoUrl} alt="" />
+          <div className="sidebar-brand-workspace">
+            <div className="brand">
+              <div className="brand-mark">
+                <img className="brand-mark-logo" src={carogentLogoUrl} alt="" />
+              </div>
+              <div>
+                <div className="brand-title">Carogent</div>
+                <div className="brand-subtitle">Terminal Workspace</div>
+              </div>
             </div>
-            <div>
-              <div className="brand-title">Carogent</div>
-              <div className="brand-subtitle">Terminal Workspace</div>
-            </div>
-          </div>
 
-          <section className="workspace-list">
-            <div className="workspace-list-header">
-              <span>Workspaces</span>
-              <button className="workspace-add-button" type="button" title="Add workspace" onClick={handleAddWorkspace}>
-                <svg
-                  xmlns="http://www.w3.org/2000/svg"
-                  width="14"
-                  height="14"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  className="lucide lucide-plus-icon lucide-plus"
-                >
-                  <path d="M5 12h14" />
-                  <path d="M12 5v14" />
-                </svg>
-              </button>
-            </div>
-            {workspaces.map((workspace) => (
-              <WorkspaceItem
-                key={workspace.id}
-                workspace={workspace}
-                active={workspace.id === activeWorkspaceId}
-                canDelete={workspaces.length > 1}
-                onSelect={setActiveWorkspaceId}
-                onRename={handleRenameWorkspace}
-                onColorChange={handleUpdateWorkspaceColor}
-                onDelete={handleDeleteWorkspace}
-              />
-            ))}
-          </section>
+            <section className="workspace-list">
+              <div className="workspace-list-header">
+                <span>Workspaces</span>
+                <button className="workspace-add-button" type="button" title="Add workspace" onClick={handleAddWorkspace}>
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    width="14"
+                    height="14"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    className="lucide lucide-plus-icon lucide-plus"
+                  >
+                    <path d="M5 12h14" />
+                    <path d="M12 5v14" />
+                  </svg>
+                </button>
+              </div>
+              {workspaces.map((workspace) => (
+                <WorkspaceItem
+                  key={workspace.id}
+                  workspace={workspace}
+                  active={workspace.id === activeWorkspaceId}
+                  canDelete={workspaces.length > 1}
+                  onSelect={setActiveWorkspaceId}
+                  onRename={handleRenameWorkspace}
+                  onColorChange={handleUpdateWorkspaceColor}
+                  onDelete={handleDeleteWorkspace}
+                />
+              ))}
+            </section>
+          </div>
 
           <PinnedFolderPanel
             pinnedDirectory={pinnedDirectory}

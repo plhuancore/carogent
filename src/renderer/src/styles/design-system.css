@@ -838,7 +838,7 @@ textarea:focus-visible {
 
 .pinned-folder {
   gap: 10px;
-  margin: 14px 0 0;
+  margin: 0;
   border: 1px solid var(--color-border);
   border-radius: var(--radius-xl);
   background:
@@ -1038,6 +1038,7 @@ textarea:focus-visible {
 }
 
 .pinned-image-preview {
+  z-index: 99999 !important;
   width: 220px;
   height: 164px;
   border-color: var(--color-border-strong);
@@ -1363,12 +1364,12 @@ textarea:focus-visible {
 
 .git-file-name {
   color: var(--color-text-strong);
-  font-weight: 650;
+  font-weight: 400;
 }
 
 .git-file-dir {
-  color: var(--color-subtle);
-  opacity: 0.72;
+  color: var(--color-muted);
+  opacity: 0.82;
 }
 
 .git-file-row-actions,
@@ -1724,6 +1725,7 @@ textarea:focus-visible {
   background: var(--color-accent);
 }
 
+/* Disable standard CSS scrollbars to re-enable webkit custom scrollbar styling in Chromium */
 .terminal-viewport .xterm .xterm-viewport,
 .workspace-list,
 .pinned-folder-list,
@@ -1731,19 +1733,102 @@ textarea:focus-visible {
 .git-panel *,
 .quick-access-results,
 .quick-access-manager-list,
-.file-editor-surface {
-  scrollbar-color: rgba(147, 164, 184, 0.52) transparent;
+.file-editor-surface,
+.file-editor-tabs {
+  scrollbar-color: auto !important;
+  scrollbar-width: auto !important;
 }
 
+/* Thinner webkit scrollbars for list views */
+.workspace-list::-webkit-scrollbar,
+.folder-tree-list::-webkit-scrollbar,
+.quick-access-results::-webkit-scrollbar,
+.quick-access-manager-list::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+/* Scrollbars for editor, terminal, and pinned folder list */
+.terminal-viewport .xterm .xterm-viewport::-webkit-scrollbar,
+.pinned-folder-list::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.file-editor-surface::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+/* Fully transparent tracks & corners */
+.terminal-viewport .xterm .xterm-viewport::-webkit-scrollbar-track,
+.workspace-list::-webkit-scrollbar-track,
+.pinned-folder-list::-webkit-scrollbar-track,
+.folder-tree-list::-webkit-scrollbar-track,
+.git-panel *::-webkit-scrollbar-track,
+.quick-access-results::-webkit-scrollbar-track,
+.quick-access-manager-list::-webkit-scrollbar-track,
+.file-editor-surface::-webkit-scrollbar-track,
+.file-editor-tabs::-webkit-scrollbar-track,
+::-webkit-scrollbar-corner {
+  background: transparent !important;
+}
+
+/* Styled scrollbar thumbs matching the accent theme */
 .terminal-viewport .xterm .xterm-viewport::-webkit-scrollbar-thumb,
 .workspace-list::-webkit-scrollbar-thumb,
-.pinned-folder-list::-webkit-scrollbar-thumb,
 .folder-tree-list::-webkit-scrollbar-thumb,
 .quick-access-results::-webkit-scrollbar-thumb,
 .quick-access-manager-list::-webkit-scrollbar-thumb,
-.file-editor-surface::-webkit-scrollbar-thumb {
-  background: rgba(147, 164, 184, 0.5);
-  background-clip: content-box;
+.file-editor-surface::-webkit-scrollbar-thumb,
+.file-editor-tabs::-webkit-scrollbar-thumb {
+  border: 2px solid transparent !important;
+  border-radius: 999px !important;
+  background: rgba(167, 139, 250, 0.22) !important;
+  background-clip: content-box !important;
+}
+
+/* Scrollbar thumbs revealed on hover (pinned folder list & git panel) */
+.pinned-folder-list::-webkit-scrollbar-thumb,
+.git-panel *::-webkit-scrollbar-thumb {
+  border: 2px solid transparent !important;
+  border-radius: 999px !important;
+  background: transparent !important;
+  background-clip: content-box !important;
+}
+
+.pinned-folder-list:hover::-webkit-scrollbar-thumb,
+.git-panel:hover *::-webkit-scrollbar-thumb {
+  background: rgba(167, 139, 250, 0.22) !important;
+}
+
+.terminal-viewport .xterm .xterm-viewport::-webkit-scrollbar-thumb:hover,
+.workspace-list::-webkit-scrollbar-thumb:hover,
+.folder-tree-list::-webkit-scrollbar-thumb:hover,
+.git-panel *::-webkit-scrollbar-thumb:hover,
+.quick-access-results::-webkit-scrollbar-thumb:hover,
+.quick-access-manager-list::-webkit-scrollbar-thumb:hover,
+.file-editor-surface::-webkit-scrollbar-thumb:hover,
+.pinned-folder-list::-webkit-scrollbar-thumb:hover {
+  background: rgba(167, 139, 250, 0.45) !important;
+  background-clip: content-box !important;
+}
+
+/* Tab scrollbar overrides */
+.file-editor-tabs::-webkit-scrollbar-thumb {
+  border: 1px solid transparent !important;
+  border-radius: 999px !important;
+  background: transparent !important;
+}
+
+.file-editor-tabs:hover::-webkit-scrollbar-thumb {
+  background: rgba(167, 139, 250, 0.22) !important;
+  background-clip: content-box !important;
+}
+
+.file-editor-tabs::-webkit-scrollbar-thumb:hover {
+  background: rgba(167, 139, 250, 0.45) !important;
+  background-clip: content-box !important;
 }
 
 @media (max-width: 760px) {
@@ -1755,4 +1840,76 @@ textarea:focus-visible {
   .topbar-button span:last-child {
     display: none;
   }
+}
+
+.sidebar {
+  border: none !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  backdrop-filter: none !important;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  row-gap: 10px;
+}
+
+.sidebar-brand-workspace {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-xl);
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.07), rgba(255, 255, 255, 0.015) 45%, transparent),
+    rgba(25, 24, 32, 0.72);
+  backdrop-filter: blur(18px);
+  padding: 14px 10px;
+  box-shadow: var(--shadow-island);
+  min-height: 0;
+  flex-shrink: 0;
+}
+
+.sidebar-panel-container {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-xl);
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.07), rgba(255, 255, 255, 0.015) 45%, transparent),
+    rgba(25, 24, 32, 0.72);
+  backdrop-filter: blur(18px);
+  padding: 10px;
+  box-shadow: var(--shadow-island);
+}
+
+.sidebar-footer {
+  margin-top: auto;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-xl);
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.07), rgba(255, 255, 255, 0.015) 45%, transparent),
+    rgba(25, 24, 32, 0.72);
+  backdrop-filter: blur(18px);
+  padding: 10px 12px;
+  box-shadow: var(--shadow-island);
+  min-height: 0;
+  flex-shrink: 0;
+}
+
+.workspace-list {
+  max-height: 270px;
+}
+
+/* Sync Git Control panel typography with the File Explorer (var(--font-sans)) */
+.git-panel,
+.git-panel *,
+.git-diff-filename {
+  font-family: var(--font-sans) !important;
+}
+
+/* Use standard highly readable monospace stack for Diff Preview body code */
+.git-panel .git-diff-body,
+.git-panel .git-diff-body * {
+  font-family: Consolas, "Courier New", monospace !important;
 }
