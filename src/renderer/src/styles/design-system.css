@@ -1947,3 +1947,155 @@ textarea:focus-visible {
 .git-panel .git-diff-body * {
   font-family: Consolas, "Courier New", monospace !important;
 }
+
+/* Style sidebar-close-button default state like hover state */
+.sidebar-close-button {
+  background: var(--color-panel-3) !important;
+  color: var(--color-text-strong) !important;
+  transition: opacity 0.15s ease, transform 0.1s ease;
+}
+
+.sidebar-close-button:hover {
+  opacity: 0.85;
+  transform: scale(1.05);
+}
+
+.sidebar-close-button:active {
+  transform: scale(0.95);
+}
+
+/* Remove duplicate inner focus rings for inputs inside focus-within containers */
+.search-text-input:focus,
+.search-text-input:focus-visible,
+.folder-tree-search-input,
+.folder-tree-search-input:focus,
+.folder-tree-search-input:focus-visible {
+  outline: none !important;
+  box-shadow: none !important;
+  border: none !important;
+}
+
+/* Sidebar File Explorer Theme Overrides */
+.sidebar-tabs {
+  background: rgba(0, 0, 0, 0.28) !important;
+  padding: 2px !important;
+  border-radius: var(--radius-md) !important;
+  border: 1px solid var(--color-border-subtle) !important;
+}
+
+.sidebar-tab-button {
+  border-radius: var(--radius-sm) !important;
+  font-size: 12px !important;
+  padding: 4px 12px !important;
+  color: var(--color-muted) !important;
+  transition: all 120ms cubic-bezier(0.4, 0, 0.2, 1) !important;
+}
+
+.sidebar-tab-button:hover:not(.is-active) {
+  background: var(--color-panel-2) !important;
+  color: var(--color-text-strong) !important;
+}
+
+.sidebar-tab-button.is-active {
+  background: var(--color-accent-surface) !important;
+  color: var(--color-accent-strong) !important;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2) !important;
+}
+
+.folder-tree-header {
+  border-bottom: none !important;
+  padding: 0 4px 12px 4px !important;
+}
+
+.folder-tree-title {
+  color: var(--color-muted) !important;
+  font-size: 10px !important;
+  font-weight: 700 !important;
+  text-transform: uppercase !important;
+  letter-spacing: 0.08em !important;
+}
+
+.folder-tree-root {
+  color: var(--color-subtle) !important;
+  font-family: var(--font-mono) !important;
+  font-size: 11px !important;
+}
+
+.folder-tree-row {
+  border-radius: var(--radius-sm) !important;
+  height: 28px !important;
+  padding-right: 6px !important;
+  margin: 1px 0 !important;
+  transition: background-color 120ms ease, color 120ms ease !important;
+  font-size: 12.5px !important;
+  color: var(--color-text) !important;
+}
+
+.folder-tree-row:hover {
+  background: var(--color-panel-2) !important;
+  color: var(--color-text-strong) !important;
+}
+
+.folder-tree-row.is-active {
+  background: var(--color-accent-surface) !important;
+  color: var(--color-accent-strong) !important;
+  font-weight: 600 !important;
+}
+
+.folder-tree-disclosure {
+  transition: transform 120ms cubic-bezier(0.4, 0, 0.2, 1) !important;
+}
+
+.folder-tree-actions button {
+  background: var(--color-panel-2) !important;
+  border: 1px solid var(--color-border) !important;
+  border-radius: var(--radius-sm) !important;
+  color: var(--color-muted) !important;
+  transition: all 120ms ease !important;
+}
+
+.folder-tree-actions button:hover:not(:disabled) {
+  background: var(--color-panel-3) !important;
+  border-color: var(--color-border-strong) !important;
+  color: var(--color-text-strong) !important;
+}
+
+.folder-tree-actions button:disabled {
+  opacity: 0.4 !important;
+  cursor: not-allowed !important;
+}
+
+/* File Explorer Search tab styling overrides */
+.search-disclosure-icon {
+  transition: transform 120ms ease !important;
+}
+
+.search-file-header {
+  border-radius: var(--radius-sm) !important;
+  padding: 4px 6px !important;
+  transition: background-color 120ms ease !important;
+  color: var(--color-text-strong) !important;
+}
+
+.search-match-line {
+  border-radius: var(--radius-sm) !important;
+  padding: 3px 6px 3px 24px !important;
+  transition: background-color 120ms ease !important;
+  font-size: 11.5px !important;
+  color: var(--color-muted) !important;
+}
+
+.search-matches-badge {
+  background: var(--color-accent-surface) !important;
+  color: var(--color-accent-strong) !important;
+  font-weight: 700 !important;
+  border: 1px solid var(--color-accent-muted) !important;
+}
+
+.search-match-highlight {
+  background: rgba(167, 139, 250, 0.35) !important;
+  color: var(--color-text-strong) !important;
+  border-bottom: 1.5px solid var(--color-accent) !important;
+  border-radius: 2px !important;
+  padding: 0 2px !important;
+}
