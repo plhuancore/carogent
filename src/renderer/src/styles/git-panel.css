@@ -5,8 +5,8 @@
   height: 100%;
   border-left: 1px solid #1b222b;
   background: #080a0d;
-  overflow: hidden;
-  z-index: 10;
+  overflow: visible;
+  z-index: 150;
   position: relative;
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
   font-size: 13px;
@@ -131,7 +131,8 @@
 .git-worktree-dropdown-list {
   position: absolute;
   top: 100%;
-  left: 0;
+  right: 0;
+  left: auto;
   margin-top: 6px;
   background: #161b22;
   border: 1px solid #30363d;

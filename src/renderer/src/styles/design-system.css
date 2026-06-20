@@ -1895,7 +1895,41 @@ textarea:focus-visible {
   box-shadow: var(--shadow-island);
   min-height: 0;
   flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
 }
+
+.footer-label {
+  color: var(--color-muted);
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.footer-value {
+  margin-top: 6px;
+  color: var(--color-text-strong);
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.footer-path {
+  overflow: hidden;
+  margin-top: 8px;
+  padding: 6px 8px;
+  background: rgba(0, 0, 0, 0.28);
+  border: 1px solid rgba(255, 255, 255, 0.03);
+  border-radius: var(--radius-sm);
+  color: var(--color-accent-strong);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.3);
+}
+
 
 .workspace-list {
   max-height: 270px;
