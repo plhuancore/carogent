@@ -7,6 +7,8 @@ import { findPane } from '../layout';
 import {
   AgentOverlayIcon,
   ChevronDownIcon,
+  CloseIcon,
+  MenuIcon,
   SearchIcon,
   ShellIcon,
   SplitDownIcon,
@@ -24,14 +26,14 @@ import {
 } from '../terminalHelpers';
 
 const HEADER_COLOR_PRESETS = [
-  '#0b0f14',
-  '#172554',
-  '#134e4a',
-  '#3b0764',
-  '#500724',
-  '#431407',
-  '#14532d',
-  '#1e293b'
+  '#191820',
+  '#211d34',
+  '#1c2337',
+  '#182b28',
+  '#301f31',
+  '#332819',
+  '#1c2d22',
+  '#24212c'
 ];
 
 function getHeaderColor(color?: string): string {
@@ -76,8 +78,9 @@ const SearchArrowDownIcon = (): JSX.Element => (
 );
 
 const SearchCloseIcon = (): JSX.Element => (
-  <svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true">
-    <path fill="currentColor" d="M3.72 3.72a.75.75 0 0 1 1.06 0L8 6.94l3.22-3.22a.75.75 0 1 1 1.06 1.06L9.06 8l3.22 3.22a.75.75 0 1 1-1.06 1.06L8 9.06l-3.22 3.22a.75.75 0 0 1-1.06-1.06L6.94 8 3.72 4.78a.75.75 0 0 1 0-1.06z" />
+  <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M18 6 6 18" />
+    <path d="m6 6 12 12" />
   </svg>
 );
 
@@ -318,6 +321,7 @@ function TerminalPane({
   const searchRef = useRef<HTMLDivElement | null>(null);
   const searchInputRef = useRef<HTMLInputElement | null>(null);
   const shellMenuRef = useRef<HTMLDivElement | null>(null);
+  const paneMoreMenuRef = useRef<HTMLDivElement | null>(null);
   const [editorOpen, setEditorOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -327,6 +331,7 @@ function TerminalPane({
   const [searchResultCount, setSearchResultCount] = useState(0);
   const [searchResultIndex, setSearchResultIndex] = useState<number | null>(null);
   const [shellMenuOpen, setShellMenuOpen] = useState(false);
+  const [paneMoreMenuOpen, setPaneMoreMenuOpen] = useState(false);
   const [dragActive, setDragActive] = useState(false);
   const [draftTitle, setDraftTitle] = useState(pane.customTitle || '');
   const [draftBrowserUrl, setDraftBrowserUrl] = useState(pane.browserUrl || '');
@@ -605,6 +610,22 @@ function TerminalPane({
     return () => document.removeEventListener('mousedown', handlePointerDown);
   }, [shellMenuOpen]);
 
+  useEffect(() => {
+    if (!paneMoreMenuOpen) {
+      return;
+    }
+
+    const handlePointerDown = (event: MouseEvent): void => {
+      if (!paneMoreMenuRef.current?.contains(event.target as Node)) {
+        setPaneMoreMenuOpen(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handlePointerDown);
+
+    return () => document.removeEventListener('mousedown', handlePointerDown);
+  }, [paneMoreMenuOpen]);
+
   const handleColorSelect = (color: string): void => {
     commitTitle();
     onUpdatePane(pane.paneId, { headerColor: color === HEADER_COLOR_PRESETS[0] ? undefined : color });
@@ -672,6 +693,45 @@ function TerminalPane({
     >
       <div className="pane-toolbar" style={{ backgroundColor: headerColor }}>
         <div className="pane-left-tools">
+          <div className="pane-more-menu-wrap" ref={paneMoreMenuRef} onMouseDown={(event) => event.stopPropagation()}>
+            <button
+              type="button"
+              title="Pane actions"
+              aria-haspopup="menu"
+              aria-expanded={paneMoreMenuOpen}
+              onClick={() => setPaneMoreMenuOpen((open) => !open)}
+            >
+              <MenuIcon />
+            </button>
+            {paneMoreMenuOpen && (
+              <div className="pane-more-menu" role="menu">
+                <button
+                  className="pane-more-menu-item"
+                  type="button"
+                  role="menuitem"
+                  onClick={() => {
+                    setPaneMoreMenuOpen(false);
+                    onPushToOverlay(pane.paneId);
+                  }}
+                >
+                  <AgentOverlayIcon />
+                  {isPinned ? 'Remove from Floating Bar' : 'Show in Floating Bar'}
+                </button>
+                <button
+                  className="pane-more-menu-item"
+                  type="button"
+                  role="menuitem"
+                  onClick={() => {
+                    setPaneMoreMenuOpen(false);
+                    openSearch();
+                  }}
+                >
+                  <SearchIcon />
+                  Search
+                </button>
+              </div>
+            )}
+          </div>
           <div className="shell-picker" ref={shellMenuRef} onMouseDown={(event) => event.stopPropagation()}>
             <button
               className="shell-picker-button"
@@ -877,17 +937,6 @@ function TerminalPane({
           </div>
         )}
         <div className="pane-actions">
-          <button
-            className={isPinned ? 'is-pinned' : ''}
-            type="button"
-            title={isPinned ? 'Remove from overlay' : 'Show in overlay'}
-            onClick={() => onPushToOverlay(pane.paneId)}
-          >
-            <AgentOverlayIcon />
-          </button>
-          <button type="button" title="Search" onClick={openSearch}>
-            <SearchIcon />
-          </button>
           <button type="button" title="Split right" onClick={() => onSplit(pane.paneId, 'row')}>
             <SplitRightIcon />
           </button>
@@ -895,7 +944,7 @@ function TerminalPane({
             <SplitDownIcon />
           </button>
           <button type="button" title="Close pane" onClick={() => onClose(pane.paneId)} disabled={!canClose}>
-            x
+            <CloseIcon />
           </button>
         </div>
       </div>

@@ -1,8 +1,48 @@
 :root {
-  color: #f1f5f9;
-  background: #050607;
+  --font-sans: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-mono: "Cascadia Mono", Consolas, "SF Mono", "SFMono-Regular", Menlo, Monaco, monospace;
+
+  --color-bg: #131217;
+  --color-bg-elevated: #191820;
+  --color-panel: rgba(28, 27, 35, 0.82);
+  --color-panel-2: rgba(35, 33, 44, 0.86);
+  --color-panel-3: rgba(43, 40, 54, 0.92);
+  --color-editor: #17161c;
+  --color-terminal: #15141a;
+  --color-border: rgba(111, 104, 137, 0.24);
+  --color-border-strong: rgba(177, 167, 221, 0.38);
+  --color-border-subtle: rgba(111, 104, 137, 0.14);
+  --color-glass-edge: rgba(255, 255, 255, 0.08);
+  --color-glass-edge-strong: rgba(255, 255, 255, 0.13);
+  --color-text: #e7e3ee;
+  --color-text-strong: #fffaff;
+  --color-muted: #a7a0b8;
+  --color-subtle: #7d778d;
+  --color-disabled: #555062;
+  --color-accent: #a78bfa;
+  --color-accent-strong: #c4b5fd;
+  --color-accent-muted: rgba(167, 139, 250, 0.18);
+  --color-accent-surface: rgba(167, 139, 250, 0.12);
+  --color-blue: #8bb9ff;
+  --color-blue-surface: rgba(139, 185, 255, 0.14);
+  --color-git: #b7d783;
+  --color-success: #8ee6b0;
+  --color-warning: #f5c77a;
+  --color-danger: #f38ba8;
+  --color-overlay: rgba(8, 7, 12, 0.7);
+  --shadow-menu: 0 24px 70px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.055);
+  --shadow-island: 0 18px 48px rgba(0, 0, 0, 0.38), inset 1px 1px 0 rgba(255, 255, 255, 0.075), inset -1px -1px 0 rgba(0, 0, 0, 0.28);
+  --shadow-focus: 0 0 0 1px var(--color-accent), 0 0 0 4px rgba(167, 139, 250, 0.13);
+  --radius-sm: 7px;
+  --radius-md: 10px;
+  --radius-lg: 10px;
+  --radius-xl: 12px;
+  --toolbar-height: 54px;
+
+  color: var(--color-text);
+  background: var(--color-bg);
   font-family:
-    Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    var(--font-sans);
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
@@ -116,7 +156,7 @@ button {
   -webkit-app-region: drag;
   box-shadow: 
     0 2px 6px rgba(0, 0, 0, 0.4), 
-    0 0 4px rgba(45, 212, 191, 0.08), 
+    0 0 4px rgba(167, 139, 250, 0.1), 
     inset 0 1px 0 rgba(255, 255, 255, 0.06);
   transition: box-shadow 0.25s ease, background-color 0.25s ease;
 }
@@ -125,7 +165,7 @@ button {
   background: linear-gradient(to bottom, rgba(16, 25, 38, 0.92), rgba(10, 15, 22, 0.96));
   box-shadow: 
     0 3px 10px rgba(0, 0, 0, 0.5), 
-    0 0 6px rgba(45, 212, 191, 0.15), 
+    0 0 6px rgba(167, 139, 250, 0.16), 
     inset 0 1px 0 rgba(255, 255, 255, 0.12);
 }
 
@@ -297,7 +337,7 @@ button {
   z-index: 10;
   box-shadow: 
     0 4px 12px rgba(0, 0, 0, 0.5), 
-    0 0 8px rgba(45, 212, 191, 0.05), 
+    0 0 8px rgba(167, 139, 250, 0.06), 
     inset 0 1px 0 rgba(255, 255, 255, 0.08);
   animation: agent-menu-slide-down 0.22s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
@@ -353,9 +393,9 @@ button {
 
 .agent-overlay-chip-workspace {
   max-width: 60px;
-  color: #2dd4bf;
-  background: rgba(45, 212, 191, 0.08);
-  border: 1px solid rgba(45, 212, 191, 0.18);
+  color: #c4b5fd;
+  background: rgba(167, 139, 250, 0.1);
+  border: 1px solid rgba(167, 139, 250, 0.2);
   font-size: 8px;
   font-weight: 600;
   padding: 0.5px 4px;

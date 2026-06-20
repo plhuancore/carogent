@@ -4,14 +4,14 @@ import { countPanes } from '../layout';
 import { CloseIcon } from './AppIcons';
 
 const WORKSPACE_COLOR_PRESETS = [
-  '#07090c',
-  '#2563eb',
-  '#0f766e',
-  '#7c3aed',
-  '#db2777',
-  '#d97706',
-  '#16a34a',
-  '#475569'
+  '#a78bfa',
+  '#8bb9ff',
+  '#8b5cf6',
+  '#f0abfc',
+  '#f5c77a',
+  '#8ee6b0',
+  '#a7a0b8',
+  '#131217'
 ];
 
 type WorkspaceItemProps = {
@@ -39,8 +39,8 @@ export function WorkspaceItem({
   const dotStyle = {
     backgroundColor: workspaceColor,
     boxShadow: active
-      ? `0 0 0 2px rgba(255, 255, 255, 0.58), 0 0 12px ${workspaceColor}, 0 0 24px ${workspaceColor}, 0 0 38px ${workspaceColor}`
-      : `0 0 0 1px rgba(255, 255, 255, 0.38), 0 0 12px ${workspaceColor}, 0 0 24px ${workspaceColor}`
+      ? `0 0 0 2px rgba(248, 250, 252, 0.58), 0 0 14px ${workspaceColor}`
+      : `0 0 0 1px rgba(248, 250, 252, 0.28), 0 0 10px ${workspaceColor}`
   };
 
   const commitName = (): void => {

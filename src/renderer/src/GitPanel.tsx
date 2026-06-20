@@ -775,9 +775,11 @@ export const GitPanel: React.FC<GitPanelProps> = ({
 
   const handleResizeStart = (e: React.PointerEvent<HTMLDivElement>) => {
     e.currentTarget.setPointerCapture(e.pointerId);
+    const startX = e.clientX;
+    const startWidth = width;
 
     const handlePointerMove = (moveEvent: PointerEvent) => {
-      const newWidth = window.innerWidth - moveEvent.clientX;
+      const newWidth = startWidth + (startX - moveEvent.clientX);
       const constrainedWidth = Math.max(280, Math.min(800, newWidth));
       onResize(constrainedWidth);
     };
@@ -1813,8 +1815,9 @@ export const GitPanel: React.FC<GitPanelProps> = ({
   );
 
   const CloseIcon = () => (
-    <svg className="git-svg-icon" viewBox="0 0 16 16" width="16" height="16">
-      <path fill="currentColor" d="M3.72 3.72a.75.75 0 0 1 1.06 0L8 6.94l3.22-3.22a.75.75 0 1 1 1.06 1.06L9.06 8l3.22 3.22a.75.75 0 1 1-1.06 1.06L8 9.06l-3.22 3.22a.75.75 0 0 1-1.06-1.06L6.94 8 3.72 4.78a.75.75 0 0 1 0-1.06z"/>
+    <svg className="git-svg-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M18 6 6 18" />
+      <path d="m6 6 12 12" />
     </svg>
   );
 
@@ -2044,7 +2047,7 @@ export const GitPanel: React.FC<GitPanelProps> = ({
   );
 
   return (
-    <aside className="git-panel" style={{ width, zIndex: isDiffMaximized ? 30 : undefined }}>
+    <aside className={`git-panel ${isDiffMaximized ? 'is-maximized' : ''}`} style={{ width, zIndex: isDiffMaximized ? 30 : undefined }}>
       <div className="git-sidebar-resize-handle" onPointerDown={handleResizeStart} />
       {/* 1. Header with Branch Name and Repo info */}
       <div className="git-panel-header">
@@ -2505,28 +2508,7 @@ export const GitPanel: React.FC<GitPanelProps> = ({
             </div>
           );
 
-          if (historyLoading && history.length === 0) {
-            return (
-              <div className="git-tab-content history-tab">
-                {historySearchToolbar}
-                <div className="git-panel-loading">
-                  <div className="git-spinner"></div>
-                  <span>Loading commit history...</span>
-                </div>
-              </div>
-            );
-          }
-
-          if (historyForGraph.length === 0) {
-            return (
-              <div className="git-tab-content history-tab">
-                {historySearchToolbar}
-                <div className="git-empty-state">
-                  <p>No commits found in this repository.</p>
-                </div>
-              </div>
-            );
-          }
+          // Keep table layout and search bar rendered to avoid layout shifts.
 
           const colWidth = 14;
           const paddingX = 24;
@@ -2565,163 +2547,182 @@ export const GitPanel: React.FC<GitPanelProps> = ({
                       </tr>
                     </thead>
                     <tbody>
-                      {graphRows.map((row, i) => {
-                        const { commit } = row;
-                        const isUncommitted = commit.isUncommitted;
-                        const shortHash = isUncommitted ? '*' : commit.hash.substring(0, 8);
-                        const isSelected = selectedCommit?.hash === commit.hash;
-                        const isHistoryMatch = historyMatchHashSet.has(commit.hash);
-                        const isActiveHistoryMatch = activeHistoryMatchHash === commit.hash;
-                        const rowZIndex = (30 - (i % 30)) * 2;
-                        const detailsZIndex = rowZIndex - 1;
+                      {historyLoading && graphRows.length === 0 ? (
+                        <tr style={{ background: 'transparent' }}>
+                          <td colSpan={5} style={{ textAlign: 'center', padding: '48px 10px', borderBottom: 'none' }}>
+                            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '12px', color: '#8b949e' }}>
+                              <div className="git-spinner"></div>
+                              <span>Loading commit history...</span>
+                            </div>
+                          </td>
+                        </tr>
+                      ) : graphRows.length === 0 ? (
+                        <tr style={{ background: 'transparent' }}>
+                          <td colSpan={5} style={{ textAlign: 'center', padding: '48px 24px', borderBottom: 'none' }}>
+                            <div className="git-empty-state">
+                              <p>No commits found in this repository.</p>
+                            </div>
+                          </td>
+                        </tr>
+                      ) : (
+                        graphRows.map((row, i) => {
+                          const { commit } = row;
+                          const isUncommitted = commit.isUncommitted;
+                          const shortHash = isUncommitted ? '*' : commit.hash.substring(0, 8);
+                          const isSelected = selectedCommit?.hash === commit.hash;
+                          const isHistoryMatch = historyMatchHashSet.has(commit.hash);
+                          const isActiveHistoryMatch = activeHistoryMatchHash === commit.hash;
+                          const rowZIndex = (30 - (i % 30)) * 2;
+                          const detailsZIndex = rowZIndex - 1;
 
-                        return (
-                          <React.Fragment key={commit.hash + '-' + i}>
-                            <tr
-                              ref={(node) => {
-                                if (node && !isUncommitted) {
-                                  historyRowRefs.current.set(commit.hash, node);
-                                } else {
-                                  historyRowRefs.current.delete(commit.hash);
-                                }
-                              }}
-                              className={`git-history-row ${isUncommitted ? 'uncommitted-row' : ''} ${isSelected ? 'selected' : ''} ${isHistoryMatch ? 'search-match' : ''} ${isActiveHistoryMatch ? 'active-search-match' : ''}`}
-                              style={{ zIndex: rowZIndex, cursor: isUncommitted ? 'default' : 'pointer' }}
-                              onClick={() => !isUncommitted && handleCommitRowClick(commit)}
-                            >
-                              <td className="col-graph" style={{ width: columnWidths.graph, minWidth: columnWidths.graph, maxWidth: columnWidths.graph, position: 'relative', zIndex: rowZIndex }}>
-                                <GraphCell
-                                  col={row.col}
-                                  incomingTracks={row.incomingTracks}
-                                  outgoingTracks={row.outgoingTracks}
-                                  isBranchHead={row.isBranchHead}
-                                  commit={commit}
-                                  graphWidth={graphWidth}
-                                  rowHeight={rowHeight}
-                                  colWidth={colWidth}
-                                  paddingX={paddingX}
-                                  rowIdx={i}
-                                  hashToIndexMap={hashToIndexMap}
-                                  parentCols={row.parentCols}
-                                  incomingColToOutgoingCol={row.incomingColToOutgoingCol}
-                                  incomingColors={row.incomingColors}
-                                  outgoingColors={row.outgoingColors}
-                                />
-                              </td>
-                              <td className="col-desc" style={{ width: columnWidths.desc, minWidth: columnWidths.desc, maxWidth: columnWidths.desc, overflow: 'hidden' }} title={commit.subject}>
-                                <div style={{ display: 'flex', alignItems: 'center', minWidth: 0, width: '100%', overflow: 'hidden' }}>
-                                  {renderRefBadges(commit.decorations)}
-                                  <span className="git-commit-subject">{renderHistorySearchHighlight(commit.subject)}</span>
-                                </div>
-                              </td>
-                              <td className="col-date" style={{ width: columnWidths.date, minWidth: columnWidths.date, maxWidth: columnWidths.date }}>
-                                <span className="git-history-date-time">{renderHistorySearchHighlight(commit.date)}</span>
-                              </td>
-                              <td className="col-author" style={{ width: columnWidths.author, minWidth: columnWidths.author, maxWidth: columnWidths.author }} title={commit.author}>
-                                <span className="git-history-author-name">{renderHistorySearchHighlight(commit.author)}</span>
-                              </td>
-                              <td className="col-commit" style={{ width: columnWidths.commit, minWidth: columnWidths.commit, maxWidth: columnWidths.commit }}>
-                                {isUncommitted ? (
-                                  <span style={{ color: '#8b949e', fontWeight: 600 }}>*</span>
-                                ) : (
-                                  <span className="git-history-hash-label">{renderHistorySearchHighlight(shortHash)}</span>
-                                )}
-                              </td>
-                            </tr>
-                            {isSelected && (
-                              <tr className="git-history-details-row" style={{ zIndex: detailsZIndex }}>
-                                <td className="col-graph" style={{ width: columnWidths.graph, minWidth: columnWidths.graph, maxWidth: columnWidths.graph, position: 'relative', zIndex: detailsZIndex, background: '#0d1117', padding: 0 }}>
-                                  <svg width={graphWidth} style={{ position: 'absolute', top: 0, bottom: 0, left: 0, display: 'block', overflow: 'visible', height: '100%' }}>
-                                    {row.outgoingTracks.map((hash, idx) => {
-                                      const x = idx * colWidth + paddingX;
-                                      const isGrey = hash === 'unstaged' || hash === 'staged' || hash === 'uncommitted';
-                                      const color = isGrey ? '#8b949e' : getColorForCol(row.outgoingColors[idx]);
-                                      return (
-                                        <line
-                                          key={idx}
-                                          x1={x}
-                                          y1={0}
-                                          x2={x}
-                                          y2="100%"
-                                          stroke={color}
-                                          strokeWidth={isGrey ? 1.5 : 2}
-                                        />
-                                      );
-                                    })}
-                                  </svg>
+                          return (
+                            <React.Fragment key={commit.hash + '-' + i}>
+                              <tr
+                                ref={(node) => {
+                                  if (node && !isUncommitted) {
+                                    historyRowRefs.current.set(commit.hash, node);
+                                  } else {
+                                    historyRowRefs.current.delete(commit.hash);
+                                  }
+                                }}
+                                className={`git-history-row ${isUncommitted ? 'uncommitted-row' : ''} ${isSelected ? 'selected' : ''} ${isHistoryMatch ? 'search-match' : ''} ${isActiveHistoryMatch ? 'active-search-match' : ''}`}
+                                style={{ zIndex: rowZIndex, cursor: isUncommitted ? 'default' : 'pointer' }}
+                                onClick={() => !isUncommitted && handleCommitRowClick(commit)}
+                              >
+                                <td className="col-graph" style={{ width: columnWidths.graph, minWidth: columnWidths.graph, maxWidth: columnWidths.graph, position: 'relative', zIndex: rowZIndex }}>
+                                  <GraphCell
+                                    col={row.col}
+                                    incomingTracks={row.incomingTracks}
+                                    outgoingTracks={row.outgoingTracks}
+                                    isBranchHead={row.isBranchHead}
+                                    commit={commit}
+                                    graphWidth={graphWidth}
+                                    rowHeight={rowHeight}
+                                    colWidth={colWidth}
+                                    paddingX={paddingX}
+                                    rowIdx={i}
+                                    hashToIndexMap={hashToIndexMap}
+                                    parentCols={row.parentCols}
+                                    incomingColToOutgoingCol={row.incomingColToOutgoingCol}
+                                    incomingColors={row.incomingColors}
+                                    outgoingColors={row.outgoingColors}
+                                  />
                                 </td>
-                                <td colSpan={4} className="git-history-details-cell" style={{ padding: '8px 12px 12px 12px', background: '#0d1117', borderBottom: '1px solid #21262d' }}>
-                                  <div className="git-commit-files-box" style={{ borderRadius: '6px', border: '1px solid #30363d', padding: '12px 16px', background: '#161b22', color: '#c9d1d9' }}>
-                                    {commitFilesLoading ? (
-                                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#8b949e' }}>
-                                        <div className="git-spinner" style={{ width: '14px', height: '14px' }}></div>
-                                        <span>Loading changed files...</span>
-                                      </div>
-                                    ) : commitFiles.length === 0 ? (
-                                      <div style={{ color: '#8b949e' }}>No changed files found.</div>
-                                    ) : (
-                                      <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', fontSize: '13px' }}>
-                                        {Object.entries(groupedCommitFiles).map(([dir, files]) => (
-                                          <div key={dir} style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#8b949e', fontWeight: 500 }}>
-                                              <svg className="git-svg-icon" viewBox="0 0 16 16" width="14" height="14" fill="currentColor">
-                                                <path d="M1.75 1A1.75 1.75 0 0 0 0 2.75v10.5C0 14.216.784 15 1.75 15h12.5A1.75 1.75 0 0 0 16 13.25v-8.5A1.75 1.75 0 0 0 14.25 3H7.5a.25.25 0 0 1-.2-.1l-.9-1.2A1.75 1.75 0 0 0 5 1H1.75z"/>
-                                              </svg>
-                                              <span>{dir ? dir.split('/').join(' / ') : '.'}</span>
-                                            </div>
-                                            <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', paddingLeft: '16px' }}>
-                                              {files.map((file) => {
-                                                const isFileSelected = selectedCommitFile?.path === file.path;
-                                                return (
-                                                  <div
-                                                    key={file.path}
-                                                    onClick={(e) => {
-                                                      e.stopPropagation();
-                                                      handleCommitFileClick(file.path);
-                                                    }}
-                                                    style={{
-                                                      display: 'flex',
-                                                      alignItems: 'center',
-                                                      justifyContent: 'space-between',
-                                                      padding: '4px 8px',
-                                                      borderRadius: '4px',
-                                                      cursor: 'pointer',
-                                                      background: isFileSelected ? '#1f6feb' : 'transparent',
-                                                      color: isFileSelected ? '#ffffff' : '#c9d1d9',
-                                                    }}
-                                                    className="git-commit-file-item"
-                                                  >
-                                                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                                      <svg className="git-svg-icon" viewBox="0 0 16 16" width="14" height="14" fill="currentColor" style={{ opacity: 0.8 }}>
-                                                        <path d="M2 1.75C2 .784 2.784 0 3.75 0h6.586c.464 0 .909.184 1.237.513l3.664 3.663c.33.329.513.774.513 1.238v8.836A1.75 1.75 0 0 1 14 16H3.75A1.75 1.75 0 0 1 2 14.25V1.75zm1.75-.25a.25.25 0 0 0-.25.25v12.5c0 .138.112.25.25.25h10.25a.25.25 0 0 0 .25-.25V5.5h-3a.75.75 0 0 1-.75-.75V1.5H3.75z"/>
-                                                      </svg>
-                                                      <span>{file.name}</span>
-                                                    </div>
-                                                    <span style={{ fontSize: '11px', fontFamily: 'monospace' }}>
-                                                      ( <span style={{ color: isFileSelected ? '#ffffff' : '#56d364' }}>+{file.additions}</span> | <span style={{ color: isFileSelected ? '#ffffff' : '#ff7b72' }}>-{file.deletions}</span> )
-                                                    </span>
-                                                  </div>
-                                                );
-                                              })}
-                                            </div>
-                                          </div>
-                                        ))}
-                                        {(hiddenCommitFilesCount > 0 || commitFilesHasMore) && (
-                                          <div style={{ color: '#8b949e', fontStyle: 'italic', paddingLeft: '18px', paddingTop: '4px' }}>
-                                            {hiddenCommitFilesCount > 0
-                                              ? `... and ${hiddenCommitFilesCount} more files not shown.`
-                                              : '... more files not shown.'}
-                                          </div>
-                                        )}
-                                      </div>
-                                    )}
+                                <td className="col-desc" style={{ width: columnWidths.desc, minWidth: columnWidths.desc, maxWidth: columnWidths.desc, overflow: 'hidden' }} title={commit.subject}>
+                                  <div style={{ display: 'flex', alignItems: 'center', minWidth: 0, width: '100%', overflow: 'hidden' }}>
+                                    {renderRefBadges(commit.decorations)}
+                                    <span className="git-commit-subject">{renderHistorySearchHighlight(commit.subject)}</span>
                                   </div>
                                 </td>
+                                <td className="col-date" style={{ width: columnWidths.date, minWidth: columnWidths.date, maxWidth: columnWidths.date }}>
+                                  <span className="git-history-date-time">{renderHistorySearchHighlight(commit.date)}</span>
+                                </td>
+                                <td className="col-author" style={{ width: columnWidths.author, minWidth: columnWidths.author, maxWidth: columnWidths.author }} title={commit.author}>
+                                  <span className="git-history-author-name">{renderHistorySearchHighlight(commit.author)}</span>
+                                </td>
+                                <td className="col-commit" style={{ width: columnWidths.commit, minWidth: columnWidths.commit, maxWidth: columnWidths.commit }}>
+                                  {isUncommitted ? (
+                                    <span style={{ color: '#8b949e', fontWeight: 600 }}>*</span>
+                                  ) : (
+                                    <span className="git-history-hash-label">{renderHistorySearchHighlight(shortHash)}</span>
+                                  )}
+                                </td>
                               </tr>
-                            )}
-                          </React.Fragment>
-                        );
-                      })}
+                              {isSelected && (
+                                <tr className="git-history-details-row" style={{ zIndex: detailsZIndex }}>
+                                  <td className="col-graph" style={{ width: columnWidths.graph, minWidth: columnWidths.graph, maxWidth: columnWidths.graph, position: 'relative', zIndex: detailsZIndex, background: '#0d1117', padding: 0 }}>
+                                    <svg width={graphWidth} style={{ position: 'absolute', top: 0, bottom: 0, left: 0, display: 'block', overflow: 'visible', height: '100%' }}>
+                                      {row.outgoingTracks.map((hash, idx) => {
+                                        const x = idx * colWidth + paddingX;
+                                        const isGrey = hash === 'unstaged' || hash === 'staged' || hash === 'uncommitted';
+                                        const color = isGrey ? '#8b949e' : getColorForCol(row.outgoingColors[idx]);
+                                        return (
+                                          <line
+                                            key={idx}
+                                            x1={x}
+                                            y1={0}
+                                            x2={x}
+                                            y2="100%"
+                                            stroke={color}
+                                            strokeWidth={isGrey ? 1.5 : 2}
+                                          />
+                                        );
+                                      })}
+                                    </svg>
+                                  </td>
+                                  <td colSpan={4} className="git-history-details-cell" style={{ padding: '8px 12px 12px 12px', background: '#0d1117', borderBottom: '1px solid #21262d' }}>
+                                    <div className="git-commit-files-box" style={{ borderRadius: '6px', border: '1px solid #30363d', padding: '12px 16px', background: '#161b22', color: '#c9d1d9' }}>
+                                      {commitFilesLoading ? (
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#8b949e' }}>
+                                          <div className="git-spinner" style={{ width: '14px', height: '14px' }}></div>
+                                          <span>Loading changed files...</span>
+                                        </div>
+                                      ) : commitFiles.length === 0 ? (
+                                        <div style={{ color: '#8b949e' }}>No changed files found.</div>
+                                      ) : (
+                                        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', fontSize: '13px' }}>
+                                          {Object.entries(groupedCommitFiles).map(([dir, files]) => (
+                                            <div key={dir} style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                                              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#8b949e', fontWeight: 500 }}>
+                                                <svg className="git-svg-icon" viewBox="0 0 16 16" width="14" height="14" fill="currentColor">
+                                                  <path d="M1.75 1A1.75 1.75 0 0 0 0 2.75v10.5C0 14.216.784 15 1.75 15h12.5A1.75 1.75 0 0 0 16 13.25v-8.5A1.75 1.75 0 0 0 14.25 3H7.5a.25.25 0 0 1-.2-.1l-.9-1.2A1.75 1.75 0 0 0 5 1H1.75z"/>
+                                                </svg>
+                                                <span>{dir ? dir.split('/').join(' / ') : '.'}</span>
+                                              </div>
+                                              <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', paddingLeft: '16px' }}>
+                                                {files.map((file) => {
+                                                  const isFileSelected = selectedCommitFile?.path === file.path;
+                                                  return (
+                                                    <div
+                                                      key={file.path}
+                                                      onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        handleCommitFileClick(file.path);
+                                                      }}
+                                                      style={{
+                                                        display: 'flex',
+                                                        alignItems: 'center',
+                                                        justifyContent: 'space-between',
+                                                        padding: '4px 8px',
+                                                        borderRadius: '4px',
+                                                        cursor: 'pointer',
+                                                        background: isFileSelected ? '#1f6feb' : 'transparent',
+                                                        color: isFileSelected ? '#ffffff' : '#c9d1d9',
+                                                      }}
+                                                      className="git-commit-file-item"
+                                                    >
+                                                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                                        <svg className="git-svg-icon" viewBox="0 0 16 16" width="14" height="14" fill="currentColor" style={{ opacity: 0.8 }}>
+                                                          <path d="M2 1.75C2 .784 2.784 0 3.75 0h6.586c.464 0 .909.184 1.237.513l3.664 3.663c.33.329.513.774.513 1.238v8.836A1.75 1.75 0 0 1 14 16H3.75A1.75 1.75 0 0 1 2 14.25V1.75zm1.75-.25a.25.25 0 0 0-.25.25v12.5c0 .138.112.25.25.25h10.25a.25.25 0 0 0 .25-.25V5.5h-3a.75.75 0 0 1-.75-.75V1.5H3.75z"/>
+                                                        </svg>
+                                                        <span>{file.name}</span>
+                                                      </div>
+                                                      <span style={{ fontSize: '11px', fontFamily: 'monospace' }}>
+                                                        ( <span style={{ color: isFileSelected ? '#ffffff' : '#56d364' }}>+{file.additions}</span> | <span style={{ color: isFileSelected ? '#ffffff' : '#ff7b72' }}>-{file.deletions}</span> )
+                                                      </span>
+                                                    </div>
+                                                  );
+                                                })}
+                                              </div>
+                                            </div>
+                                          ))}
+                                          {(hiddenCommitFilesCount > 0 || commitFilesHasMore) && (
+                                            <div style={{ color: '#8b949e', fontStyle: 'italic', paddingLeft: '18px', paddingTop: '4px' }}>
+                                              {hiddenCommitFilesCount > 0
+                                                ? `... and ${hiddenCommitFilesCount} more files not shown.`
+                                                : '... more files not shown.'}
+                                            </div>
+                                          )}
+                                        </div>
+                                      )}
+                                    </div>
+                                  </td>
+                                </tr>
+                              )}
+                            </React.Fragment>
+                          );
+                        })
+                      )}
                       {hasMoreHistory && (
                         <tr ref={loaderRef} className="git-history-load-more-row" style={{ background: 'transparent' }}>
                           <td colSpan={5} style={{ textAlign: 'center', padding: '12px 10px', borderBottom: 'none' }}>

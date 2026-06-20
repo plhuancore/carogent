@@ -5,7 +5,7 @@ import type {
   MouseEvent as ReactMouseEvent
 } from 'react';
 import type { DirectoryEntry, DirectoryListResult } from '../../../shared/ipcTypes';
-import { ChevronDownIcon, ChevronUpIcon, FileTreeIcon, ParentFolderIcon, RefreshIcon } from './AppIcons';
+import { ChevronDownIcon, ChevronUpIcon, FileTreeIcon, OpenFileIcon, ParentFolderIcon, RefreshIcon } from './AppIcons';
 
 function isImageFile(entry: DirectoryEntry): boolean {
   return entry.type === 'file' && /\.(png|jpe?g|gif|webp|bmp|svg)$/i.test(entry.name);
@@ -185,7 +185,9 @@ export function PinnedFolderPanel({
   return (
     <section className={`pinned-folder ${collapsed ? 'is-collapsed' : ''}`}>
       <div className="pinned-folder-header">
-        <span>Pinned Folder</span>
+        <div className="pinned-folder-heading">
+          <span className="pinned-folder-title">Pinned Folder</span>
+        </div>
         <div className="pinned-folder-header-actions">
           {!collapsed && (
             <button
@@ -217,10 +219,11 @@ export function PinnedFolderPanel({
         <input
           value={draftPath}
           placeholder="Folder path"
+          aria-label="Pinned folder path"
           onChange={(event) => setDraftPath(event.target.value)}
         />
-        <button type="submit" disabled={!draftPath.trim() || loading}>
-          Open
+        <button type="submit" title="Open pinned folder" aria-label="Open pinned folder" disabled={!draftPath.trim() || loading}>
+          <OpenFileIcon />
         </button>
       </form>
       {directory && (
@@ -245,7 +248,7 @@ export function PinnedFolderPanel({
         {directory?.entries.map((entry) => (
           <button
             key={entry.path}
-            className="pinned-folder-row"
+            className={`pinned-folder-row is-${entry.type}`}
             type="button"
             draggable
             onClick={() => {

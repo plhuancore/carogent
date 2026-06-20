@@ -95,25 +95,25 @@ type AgentDoneItem = {
 };
 
 const WORKSPACE_COLOR_PRESETS = [
-  '#07090c',
-  '#2563eb',
-  '#0f766e',
-  '#7c3aed',
-  '#db2777',
-  '#d97706',
-  '#16a34a',
-  '#475569'
+  '#a78bfa',
+  '#8bb9ff',
+  '#8b5cf6',
+  '#f0abfc',
+  '#f5c77a',
+  '#8ee6b0',
+  '#a7a0b8',
+  '#131217'
 ];
 
 const HEADER_COLOR_PRESETS = [
-  '#0b0f14',
-  '#172554',
-  '#134e4a',
-  '#3b0764',
-  '#500724',
-  '#431407',
-  '#14532d',
-  '#1e293b'
+  '#191820',
+  '#211d34',
+  '#1c2337',
+  '#182b28',
+  '#301f31',
+  '#332819',
+  '#1c2d22',
+  '#24212c'
 ];
 
 const OVERLAY_PREVIEW_UPDATE_MS = 1000;
@@ -1422,7 +1422,21 @@ function App(): JSX.Element {
             <div className="workspace-list-header">
               <span>Workspaces</span>
               <button className="workspace-add-button" type="button" title="Add workspace" onClick={handleAddWorkspace}>
-                +
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  width="14"
+                  height="14"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  className="lucide lucide-plus-icon lucide-plus"
+                >
+                  <path d="M5 12h14" />
+                  <path d="M12 5v14" />
+                </svg>
               </button>
             </div>
             {workspaces.map((workspace) => (
@@ -1492,7 +1506,7 @@ function App(): JSX.Element {
               type="button"
               onClick={() => setIsGitSidebarOpen((open) => !open)}
               title="Toggle Git Control Sidebar"
-              style={isGitSidebarOpen ? { borderColor: '#a3be5c', color: '#a3be5c' } : undefined}
+              style={isGitSidebarOpen ? { borderColor: 'var(--color-git)', color: 'var(--color-git)' } : undefined}
             >
               <svg viewBox="0 0 16 16" width="12" height="12" style={{ fill: 'currentColor' }}>
                 <path d="M5 3.25a.75.75 0 1 1-1.5 0 .75.75 0 0 1 1.5 0zm0 2.122a2.25 2.25 0 1 0-1.5 0v5.256a2.251 2.251 0 1 0 1.5 0V5.372zm8-.25a.75.75 0 1 1-1.5 0 .75.75 0 0 1 1.5 0zM11.5 7.25a2.25 2.25 0 1 0 0 4.5 2.25 2.25 0 0 0 0-4.5z"/>
@@ -1505,7 +1519,7 @@ function App(): JSX.Element {
               onClick={() => setIsExplorerSidebarOpen((open) => !open)}
               title="Toggle current folder explorer"
               aria-label="Toggle current folder explorer"
-              style={isExplorerSidebarOpen ? { borderColor: '#67e8f9', color: '#67e8f9' } : undefined}
+              style={isExplorerSidebarOpen ? { borderColor: 'var(--color-accent-strong)', color: 'var(--color-accent-strong)' } : undefined}
             >
               <WrenchIcon />
             </button>

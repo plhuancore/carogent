@@ -11,9 +11,19 @@ export function SearchIcon(): JSX.Element {
 
 export function CloseIcon(): JSX.Element {
   return (
-    <svg aria-hidden="true" viewBox="0 0 16 16">
-      <path d="m4.75 4.75 6.5 6.5" />
-      <path d="m11.25 4.75-6.5 6.5" />
+    <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M18 6 6 18" />
+      <path d="m6 6 12 12" />
+    </svg>
+  );
+}
+
+export function MenuIcon(): JSX.Element {
+  return (
+    <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="12" cy="12" r="1" />
+      <circle cx="19" cy="12" r="1" />
+      <circle cx="5" cy="12" r="1" />
     </svg>
   );
 }
@@ -48,20 +58,18 @@ export function FileTreeIcon({ type }: { type: 'file' | 'directory' }): JSX.Elem
 
 export function SplitRightIcon(): JSX.Element {
   return (
-    <svg aria-hidden="true" viewBox="0 0 16 16">
-      <rect x="2.5" y="2.5" width="11" height="11" rx="2" />
-      <path d="M8 3v10" />
-      <path className="icon-accent" d="M10.5 6.25 12.25 8l-1.75 1.75" />
+    <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <rect width="18" height="18" x="3" y="3" rx="2" />
+      <path d="M15 3v18" />
     </svg>
   );
 }
 
 export function SplitDownIcon(): JSX.Element {
   return (
-    <svg aria-hidden="true" viewBox="0 0 16 16">
-      <rect x="2.5" y="2.5" width="11" height="11" rx="2" />
-      <path d="M3 8h10" />
-      <path className="icon-accent" d="M6.25 10.5 8 12.25l1.75-1.75" />
+    <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <rect width="18" height="18" x="3" y="3" rx="2" />
+      <path d="M3 15h18" />
     </svg>
   );
 }
