@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback, memo } from 'react';
 import type { FileSearchResultEntry, FileSearchResultMatch } from '../../../shared/ipcTypes';
 import { ChevronDownIcon, CloseIcon, FileTreeIcon, SearchIcon } from './AppIcons';
 
@@ -7,6 +7,7 @@ type SearchPanelProps = {
   onClose: () => void;
   onOpenFile: (path: string, lineNumber?: number) => void;
   activeFilePath?: string;
+  activeLineNumber?: number;
 };
 
 function HighlightedLine({
@@ -40,11 +41,93 @@ function HighlightedLine({
   return <span className="search-line-content">{elements}</span>;
 }
 
+const SearchResultsList = memo(({
+  results,
+  activeFilePath,
+  activeLineNumber,
+  expandedFiles,
+  toggleFileExpanded,
+  onOpenFile
+}: {
+  results: FileSearchResultEntry[];
+  activeFilePath?: string;
+  activeLineNumber?: number;
+  expandedFiles: Record<string, boolean>;
+  toggleFileExpanded: (path: string) => void;
+  onOpenFile: (path: string, line?: number) => void;
+}) => {
+  return (
+    <div className="search-results-list">
+      {results.map((entry) => {
+        const expanded = expandedFiles[entry.filePath] !== false;
+        
+        const matchesByLine: Record<number, FileSearchResultMatch[]> = {};
+        entry.matches.forEach((m) => {
+          if (!matchesByLine[m.lineNumber]) {
+            matchesByLine[m.lineNumber] = [];
+          }
+          matchesByLine[m.lineNumber].push(m);
+        });
+
+        return (
+          <div key={entry.filePath} className="search-file-entry">
+            <button
+              type="button"
+              className="search-file-header"
+              onClick={() => toggleFileExpanded(entry.filePath)}
+            >
+              <span className={`search-disclosure-icon ${expanded ? 'is-expanded' : ''}`}>
+                <ChevronDownIcon />
+              </span>
+              <span className="search-file-icon">
+                <FileTreeIcon type="file" />
+              </span>
+              <span className="search-file-name" title={entry.filePath}>
+                {entry.relativeFilePath.split(/[\\/]/).pop()}
+              </span>
+              <span className="search-file-path" title={entry.filePath}>
+                {entry.relativeFilePath.split(/[\\/]/).slice(0, -1).join('/') || '.'}
+              </span>
+              <span className="search-matches-badge">{entry.matches.length}</span>
+            </button>
+
+            {expanded && (
+              <div className="search-file-matches">
+                {Object.keys(matchesByLine)
+                  .map(Number)
+                  .sort((a, b) => a - b)
+                  .map((lineNum) => {
+                    const matches = matchesByLine[lineNum];
+                    const firstMatch = matches[0];
+                    return (
+                      <button
+                        key={lineNum}
+                        className={`search-match-line ${activeFilePath === entry.filePath && activeLineNumber === lineNum ? 'is-in-active-file' : ''}`}
+                        type="button"
+                        onClick={() => onOpenFile(entry.filePath, lineNum)}
+                      >
+                        <span className="search-match-line-number">{lineNum}</span>
+                        <HighlightedLine content={firstMatch.lineContent} matchesInLine={matches} />
+                      </button>
+                    );
+                  })}
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+});
+
+SearchResultsList.displayName = 'SearchResultsList';
+
 export function SearchPanel({
   rootPath,
   onClose,
   onOpenFile,
-  activeFilePath
+  activeFilePath,
+  activeLineNumber
 }: SearchPanelProps): JSX.Element {
   const [query, setQuery] = useState('');
   const [caseSensitive, setCaseSensitive] = useState(false);
@@ -67,13 +150,14 @@ export function SearchPanel({
       setTotalResults(0);
       setTotalFiles(0);
       setError(undefined);
+      setLoading(false);
       return;
     }
 
-    setLoading(true);
     setError(undefined);
 
     const timer = window.setTimeout(() => {
+      setLoading(true);
       window.terminalApi
         .searchFiles({
           rootPath,
@@ -114,12 +198,16 @@ export function SearchPanel({
     return () => window.clearTimeout(timer);
   }, [query, rootPath, caseSensitive, wholeWord, useRegex]);
 
-  const toggleFileExpanded = (filePath: string) => {
+  const toggleFileExpanded = useCallback((filePath: string) => {
     setExpandedFiles((current) => ({
       ...current,
       [filePath]: !current[filePath]
     }));
-  };
+  }, []);
+
+  const handleOpenFile = useCallback((path: string, lineNumber?: number) => {
+    onOpenFile(path, lineNumber);
+  }, [onOpenFile]);
 
   const handleClear = () => {
     setQuery('');
@@ -187,76 +275,25 @@ export function SearchPanel({
       </div>
 
       <div className="search-results-container">
-        {loading && <div className="search-status-message">Searching...</div>}
+        {loading && results.length === 0 && <div className="search-status-message">Searching...</div>}
         {error && <div className="search-status-message is-error">{error}</div>}
         {!loading && !error && query && results.length === 0 && (
           <div className="search-status-message">No results found.</div>
         )}
-        {!loading && !error && results.length > 0 && (
+        {!error && results.length > 0 && (
           <>
-            <div className="search-results-summary">
+            <div className="search-results-summary" style={{ opacity: loading ? 0.6 : 1 }}>
               {totalResults} result{totalResults === 1 ? '' : 's'} in {totalFiles} file{totalFiles === 1 ? '' : 's'}
+              {loading && ' (Searching...)'}
             </div>
-            <div className="search-results-list">
-              {results.map((entry) => {
-                const expanded = expandedFiles[entry.filePath] !== false;
-                
-                const matchesByLine: Record<number, FileSearchResultMatch[]> = {};
-                entry.matches.forEach((m) => {
-                  if (!matchesByLine[m.lineNumber]) {
-                    matchesByLine[m.lineNumber] = [];
-                  }
-                  matchesByLine[m.lineNumber].push(m);
-                });
-
-                return (
-                  <div key={entry.filePath} className="search-file-entry">
-                    <button
-                      type="button"
-                      className="search-file-header"
-                      onClick={() => toggleFileExpanded(entry.filePath)}
-                    >
-                      <span className={`search-disclosure-icon ${expanded ? 'is-expanded' : ''}`}>
-                        <ChevronDownIcon />
-                      </span>
-                      <span className="search-file-icon">
-                        <FileTreeIcon type="file" />
-                      </span>
-                      <span className="search-file-name" title={entry.filePath}>
-                        {entry.relativeFilePath.split(/[\\/]/).pop()}
-                      </span>
-                      <span className="search-file-path" title={entry.filePath}>
-                        {entry.relativeFilePath.split(/[\\/]/).slice(0, -1).join('/') || '.'}
-                      </span>
-                      <span className="search-matches-badge">{entry.matches.length}</span>
-                    </button>
-
-                    {expanded && (
-                      <div className="search-file-matches">
-                        {Object.keys(matchesByLine)
-                          .map(Number)
-                          .sort((a, b) => a - b)
-                          .map((lineNum) => {
-                            const matches = matchesByLine[lineNum];
-                            const firstMatch = matches[0];
-                            return (
-                              <button
-                                key={lineNum}
-                                className={`search-match-line ${activeFilePath === entry.filePath ? 'is-in-active-file' : ''}`}
-                                type="button"
-                                onClick={() => onOpenFile(entry.filePath, lineNum)}
-                              >
-                                <span className="search-match-line-number">{lineNum}</span>
-                                <HighlightedLine content={firstMatch.lineContent} matchesInLine={matches} />
-                              </button>
-                            );
-                          })}
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
+            <SearchResultsList
+              results={results}
+              activeFilePath={activeFilePath}
+              activeLineNumber={activeLineNumber}
+              expandedFiles={expandedFiles}
+              toggleFileExpanded={toggleFileExpanded}
+              onOpenFile={handleOpenFile}
+            />
           </>
         )}
       </div>

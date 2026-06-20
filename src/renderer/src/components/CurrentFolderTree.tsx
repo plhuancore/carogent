@@ -17,6 +17,13 @@ type CurrentFolderTreeProps = {
   activeFilePath?: string;
 };
 
+const DIRECTORY_LOAD_TIMEOUT_MS = 10000;
+
+function getPathKey(path: string): string {
+  const normalized = path.trim().replace(/[\\/]+$/, '');
+  return /^[A-Za-z]:[\\/]/.test(normalized) ? normalized.toLowerCase() : normalized;
+}
+
 function getFolderName(path: string): string {
   const normalized = path.replace(/[\\/]+$/, '');
   const parts = normalized.split(/[\\/]/);
@@ -59,6 +66,7 @@ export function CurrentFolderTree({
 }: CurrentFolderTreeProps): JSX.Element {
   const [nodes, setNodes] = useState<Record<string, TreeNodeState>>({});
   const lastScrolledPathRef = useRef<string | null>(null);
+  const directoryRequestIdsRef = useRef<Record<string, number>>({});
 
   const [filterQuery, setFilterQuery] = useState('');
   const [filterResults, setFilterResults] = useState<FindFilesResultEntry[]>([]);
@@ -114,29 +122,40 @@ export function CurrentFolderTree({
     [activeFilePath]
   );
 
-  const loadDirectory = useCallback((path: string, expanded = true): void => {
+  const loadDirectory = useCallback((path: string, expanded = true, revealDuringLoad = true): Promise<void> => {
     const nextPath = path.trim();
+    const nodeKey = getPathKey(nextPath);
 
     if (!nextPath) {
-      return;
+      return Promise.resolve();
     }
+
+    const requestId = (directoryRequestIdsRef.current[nodeKey] || 0) + 1;
+    directoryRequestIdsRef.current[nodeKey] = requestId;
 
     setNodes((current) => ({
       ...current,
-      [nextPath]: {
-        ...current[nextPath],
-        expanded,
+      [nodeKey]: {
+        ...current[nodeKey],
+        expanded: revealDuringLoad ? expanded : Boolean(current[nodeKey]?.expanded && current[nodeKey]?.directory),
         loading: true,
         error: undefined
       }
     }));
 
-    window.terminalApi
-      .listDirectory({ path: nextPath })
+    const timeoutPromise = new Promise<never>((_, reject) =>
+      window.setTimeout(() => reject(new Error('Folder load timed out.')), DIRECTORY_LOAD_TIMEOUT_MS)
+    );
+
+    return Promise.race([window.terminalApi.listDirectory({ path: nextPath }), timeoutPromise])
       .then((directory) => {
+        if (directoryRequestIdsRef.current[nodeKey] !== requestId) {
+          return;
+        }
+
         setNodes((current) => ({
           ...current,
-          [nextPath]: {
+          [nodeKey]: {
             directory,
             expanded,
             loading: false
@@ -144,10 +163,14 @@ export function CurrentFolderTree({
         }));
       })
       .catch((error: unknown) => {
+        if (directoryRequestIdsRef.current[nodeKey] !== requestId) {
+          return;
+        }
+
         setNodes((current) => ({
           ...current,
-          [nextPath]: {
-            ...current[nextPath],
+          [nodeKey]: {
+            ...current[nodeKey],
             expanded,
             loading: false,
             error: error instanceof Error ? error.message : String(error)
@@ -174,72 +197,34 @@ export function CurrentFolderTree({
       return;
     }
 
-    const pathsToLoad: string[] = [];
+    let cancelled = false;
 
-    setNodes((current) => {
-      let changed = false;
-      const nextNodes = { ...current };
-
+    const revealActiveFile = async (): Promise<void> => {
       for (const ancestor of ancestors) {
-        const node = nextNodes[ancestor];
-        if (!node || !node.directory || !node.expanded) {
-          if (!node || (!node.directory && !node.loading)) {
-            pathsToLoad.push(ancestor);
-            nextNodes[ancestor] = {
-              ...node,
-              expanded: true,
-              loading: true,
-              error: undefined
-            };
-            changed = true;
-          } else if (!node.expanded) {
-            nextNodes[ancestor] = {
-              ...node,
-              expanded: true
-            };
-            changed = true;
-          }
+        if (cancelled) {
+          return;
         }
+
+        await loadDirectory(ancestor, true, false);
       }
+    };
 
-      return changed ? nextNodes : current;
-    });
+    revealActiveFile().catch(() => {});
 
-    for (const path of pathsToLoad) {
-      window.terminalApi
-        .listDirectory({ path })
-        .then((directory) => {
-          setNodes((current) => ({
-            ...current,
-            [path]: {
-              directory,
-              expanded: true,
-              loading: false
-            }
-          }));
-        })
-        .catch((error: unknown) => {
-          setNodes((current) => ({
-            ...current,
-            [path]: {
-              ...current[path],
-              expanded: true,
-              loading: false,
-              error: error instanceof Error ? error.message : String(error)
-            }
-          }));
-        });
-    }
-  }, [activeFilePath, rootPath]);
+    return () => {
+      cancelled = true;
+    };
+  }, [activeFilePath, loadDirectory, rootPath]);
 
   const toggleDirectory = (path: string): void => {
-    const node = nodes[path];
+    const nodeKey = getPathKey(path);
+    const node = nodes[nodeKey];
 
     if (node?.expanded) {
       setNodes((current) => ({
         ...current,
-        [path]: {
-          ...current[path],
+        [nodeKey]: {
+          ...current[nodeKey],
           expanded: false
         }
       }));
@@ -249,8 +234,8 @@ export function CurrentFolderTree({
     if (node?.directory) {
       setNodes((current) => ({
         ...current,
-        [path]: {
-          ...current[path],
+        [nodeKey]: {
+          ...current[nodeKey],
           expanded: true
         }
       }));
@@ -268,7 +253,7 @@ export function CurrentFolderTree({
 
   const renderEntry = (entry: DirectoryEntry, depth: number): JSX.Element => {
     const isDirectory = entry.type === 'directory';
-    const node = nodes[entry.path];
+    const node = nodes[getPathKey(entry.path)];
     const expanded = Boolean(node?.expanded);
     const isActive = entry.path === activeFilePath;
 
@@ -294,7 +279,20 @@ export function CurrentFolderTree({
         </button>
         {isDirectory && expanded && (
           <div className="folder-tree-children">
-            {node?.loading && <div className="folder-tree-status" style={{ paddingLeft: 30 + depth * 14 }}>Loading...</div>}
+            {node?.loading && !node.directory && (
+              <>
+                {[0.7, 0.5, 0.85].map((w, i) => (
+                  <div
+                    key={i}
+                    className="folder-tree-skeleton-row"
+                    style={{ paddingLeft: 8 + (depth + 1) * 14 }}
+                  >
+                    <span className="folder-tree-skeleton-icon" />
+                    <span className="folder-tree-skeleton-label" style={{ width: `${w * 100}%` }} />
+                  </div>
+                ))}
+              </>
+            )}
             {node?.error && <div className="folder-tree-status is-error" style={{ paddingLeft: 30 + depth * 14 }}>{node.error}</div>}
             {node?.directory?.entries.map((child) => renderEntry(child, depth + 1))}
             {node?.directory && node.directory.entries.length === 0 && (
@@ -306,7 +304,7 @@ export function CurrentFolderTree({
     );
   };
 
-  const rootNode = rootPath.trim() ? nodes[rootPath.trim()] : undefined;
+  const rootNode = rootPath.trim() ? nodes[getPathKey(rootPath)] : undefined;
 
   return (
     <section className="folder-tree-panel">

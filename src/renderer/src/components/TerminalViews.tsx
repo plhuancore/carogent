@@ -58,7 +58,7 @@ function formatBrowserUrlLabel(value?: string): string {
 }
 
 function escapeTerminalPath(path: string): string {
-  if (/^[A-Za-z]:[\\/]/.test(path) || path.includes('\\')) {
+    if (/^[A-Za-z]:[\\/]/.test(path) || path.includes('\\')) {
     return `"${path.replace(/"/g, '\\"')}"`;
   }
 

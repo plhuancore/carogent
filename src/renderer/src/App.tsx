@@ -1400,6 +1400,7 @@ function App(): JSX.Element {
                       setActiveEditorLineNumber(line);
                     }}
                     activeFilePath={activeEditorFilePath}
+                    activeLineNumber={activeEditorLineNumber}
                   />
                 )}
               </div>
@@ -1586,6 +1587,10 @@ function App(): JSX.Element {
             activeFilePath={activeEditorFilePath}
             activeLineNumber={activeEditorLineNumber}
             rootPath={activePaneCwd}
+            onActiveFileChange={(path) => {
+              setActiveEditorFilePath(path);
+              setActiveEditorLineNumber(undefined);
+            }}
           />
         ) : (
           <div className="terminal-canvas">

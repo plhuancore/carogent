@@ -597,6 +597,38 @@
   white-space: normal;
 }
 
+.folder-tree-skeleton-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding-right: 6px;
+}
+
+.folder-tree-skeleton-icon {
+  flex-shrink: 0;
+  width: 14px;
+  height: 14px;
+  border-radius: 3px;
+  background: linear-gradient(90deg, rgba(167, 139, 250, 0.08) 25%, rgba(167, 139, 250, 0.16) 50%, rgba(167, 139, 250, 0.08) 75%);
+  background-size: 200% 100%;
+  animation: skeleton-shimmer 1.4s ease infinite;
+}
+
+.folder-tree-skeleton-label {
+  height: 9px;
+  border-radius: 4px;
+  max-width: 80%;
+  background: linear-gradient(90deg, rgba(167, 139, 250, 0.08) 25%, rgba(167, 139, 250, 0.16) 50%, rgba(167, 139, 250, 0.08) 75%);
+  background-size: 200% 100%;
+  animation: skeleton-shimmer 1.4s ease infinite;
+}
+
+@keyframes skeleton-shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
 .pinned-folder-list {
   display: flex;
   min-height: 0;
@@ -944,6 +976,7 @@
 }
 
 .file-editor-surface {
+  position: relative;
   display: grid;
   min-width: 0;
   min-height: 0;
@@ -1093,6 +1126,34 @@
 .file-editor-empty-text {
   color: #7c8797;
   font-size: 12px;
+}
+
+.file-editor-loading-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  background: rgba(21, 20, 26, 0.85);
+  backdrop-filter: blur(4px);
+  color: #a7a0b8;
+  font-size: 13px;
+}
+
+.file-editor-loading-spinner {
+  width: 24px;
+  height: 24px;
+  border: 2px solid rgba(167, 139, 250, 0.2);
+  border-top-color: #a78bfa;
+  border-radius: 50%;
+  animation: spinner-rotate 0.7s linear infinite;
+}
+
+@keyframes spinner-rotate {
+  to { transform: rotate(360deg); }
 }
 
 .workspace-full {

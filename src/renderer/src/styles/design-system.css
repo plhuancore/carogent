@@ -1741,23 +1741,25 @@ textarea:focus-visible {
 
 /* Thinner webkit scrollbars for list views */
 .workspace-list::-webkit-scrollbar,
-.folder-tree-list::-webkit-scrollbar,
 .quick-access-results::-webkit-scrollbar,
 .quick-access-manager-list::-webkit-scrollbar {
   width: 6px;
   height: 6px;
 }
 
-/* Scrollbars for editor, terminal, and pinned folder list */
+/* Scrollbars for editor, terminal, pinned folder */
 .terminal-viewport .xterm .xterm-viewport::-webkit-scrollbar,
-.pinned-folder-list::-webkit-scrollbar {
+.pinned-folder-list::-webkit-scrollbar,
+.file-editor-surface::-webkit-scrollbar {
   width: 8px;
   height: 8px;
 }
 
-.file-editor-surface::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+/* Scrollbars for folder tree and search results (1.5x wider for easier clicking) */
+.folder-tree-list::-webkit-scrollbar,
+.search-results-list::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
 }
 
 /* Fully transparent tracks & corners */
@@ -1770,6 +1772,7 @@ textarea:focus-visible {
 .quick-access-manager-list::-webkit-scrollbar-track,
 .file-editor-surface::-webkit-scrollbar-track,
 .file-editor-tabs::-webkit-scrollbar-track,
+.search-results-list::-webkit-scrollbar-track,
 ::-webkit-scrollbar-corner {
   background: transparent !important;
 }
@@ -1781,7 +1784,8 @@ textarea:focus-visible {
 .quick-access-results::-webkit-scrollbar-thumb,
 .quick-access-manager-list::-webkit-scrollbar-thumb,
 .file-editor-surface::-webkit-scrollbar-thumb,
-.file-editor-tabs::-webkit-scrollbar-thumb {
+.file-editor-tabs::-webkit-scrollbar-thumb,
+.search-results-list::-webkit-scrollbar-thumb {
   border: 2px solid transparent !important;
   border-radius: 999px !important;
   background: rgba(167, 139, 250, 0.22) !important;
@@ -2079,10 +2083,21 @@ textarea:focus-visible {
 
 .search-match-line {
   border-radius: var(--radius-sm) !important;
-  padding: 3px 6px 3px 24px !important;
-  transition: background-color 120ms ease !important;
+  padding: 3px 6px !important;
+  transition: all 120ms ease !important;
   font-size: 11.5px !important;
-  color: var(--color-muted) !important;
+  color: #c8c3d3 !important;
+}
+
+.search-match-line:hover {
+  background: var(--color-panel-2) !important;
+  color: var(--color-text-strong) !important;
+}
+
+.search-match-line.is-in-active-file {
+  border-left: none !important;
+  border-radius: var(--radius-sm) !important;
+  background: var(--color-accent-surface) !important;
 }
 
 .search-matches-badge {
@@ -2095,7 +2110,17 @@ textarea:focus-visible {
 .search-match-highlight {
   background: rgba(167, 139, 250, 0.35) !important;
   color: var(--color-text-strong) !important;
-  border-bottom: 1.5px solid var(--color-accent) !important;
   border-radius: 2px !important;
   padding: 0 2px !important;
+}
+
+/* Sidebar scrollbars layout alignment and padding gap */
+.search-results-container {
+  overflow: visible !important;
+}
+
+.folder-tree-list,
+.search-results-list {
+  margin-right: -10px !important;
+  padding-right: 8px !important;
 }

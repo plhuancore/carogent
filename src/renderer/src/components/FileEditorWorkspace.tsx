@@ -21,6 +21,7 @@ type FileEditorWorkspaceProps = {
   activeFilePath: string;
   activeLineNumber?: number;
   rootPath: string;
+  onActiveFileChange?: (path: string) => void;
 };
 
 function getFileName(path: string): string {
@@ -111,7 +112,12 @@ const EditorGutter = memo(
 );
 EditorGutter.displayName = 'EditorGutter';
 
-export function FileEditorWorkspace({ activeFilePath, activeLineNumber, rootPath }: FileEditorWorkspaceProps): JSX.Element {
+export function FileEditorWorkspace({
+  activeFilePath,
+  activeLineNumber,
+  rootPath,
+  onActiveFileChange
+}: FileEditorWorkspaceProps): JSX.Element {
   const [tabs, setTabs] = useState<EditorTab[]>([]);
   const [selectedPath, setSelectedPath] = useState('');
   const tabsRef = useRef<EditorTab[]>([]);
@@ -161,8 +167,11 @@ export function FileEditorWorkspace({ activeFilePath, activeLineNumber, rootPath
       ];
     });
 
-    window.terminalApi
-      .readTextFile({ path: nextPath })
+    const timeoutPromise = new Promise<never>((_, reject) =>
+      window.setTimeout(() => reject(new Error('File load timed out (10s). File may be too large or inaccessible.')), 10000)
+    );
+
+    Promise.race([window.terminalApi.readTextFile({ path: nextPath }), timeoutPromise])
       .then((result) => {
         setTabs((current) =>
           current.map((tab) =>
@@ -356,6 +365,9 @@ export function FileEditorWorkspace({ activeFilePath, activeLineNumber, rootPath
     if (selectedPath === path) {
       const nextSelected = nextTabs[Math.max(0, closedIndex - 1)] || nextTabs[0];
       setSelectedPath(nextSelected?.path || '');
+      if (nextSelected?.path) {
+        onActiveFileChange?.(nextSelected.path);
+      }
     }
   };
 
@@ -456,7 +468,10 @@ export function FileEditorWorkspace({ activeFilePath, activeLineNumber, rootPath
               className={`file-editor-tab${tab.path === selectedPath ? ' is-active' : ''}${dirty ? ' is-dirty' : ''}`}
               type="button"
               title={tab.path}
-              onClick={() => setSelectedPath(tab.path)}
+              onClick={() => {
+                setSelectedPath(tab.path);
+                onActiveFileChange?.(tab.path);
+              }}
             >
               <span className="file-editor-tab-name">{tab.name}{dirty ? ' *' : ''}</span>
               <span
@@ -605,6 +620,12 @@ export function FileEditorWorkspace({ activeFilePath, activeLineNumber, rootPath
           )}
 
           <div ref={surfaceRef} className="file-editor-surface">
+            {selectedTab.loading && (
+              <div className="file-editor-loading-overlay">
+                <div className="file-editor-loading-spinner" />
+                <span>Loading file...</span>
+              </div>
+            )}
             <EditorGutter
               lineCount={lineCount}
               activeLineNumber={activeLineNumber}
