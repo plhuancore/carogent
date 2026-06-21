@@ -1364,7 +1364,10 @@ textarea:focus-visible {
 
 .git-file-name {
   color: var(--color-text-strong);
-  font-weight: 400;
+  font-size: 13.5px;
+  font-weight: 500;
+  -webkit-font-smoothing: subpixel-antialiased;
+  -moz-osx-font-smoothing: auto;
 }
 
 .git-file-dir {
@@ -1949,7 +1952,14 @@ textarea:focus-visible {
 /* Use standard highly readable monospace stack for Diff Preview body code */
 .git-panel .git-diff-body,
 .git-panel .git-diff-body * {
-  font-family: Consolas, "Courier New", monospace !important;
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace !important;
+}
+
+.git-panel .git-diff-body {
+  font-size: 13.5px !important;
+  font-weight: 500 !important;
+  -webkit-font-smoothing: subpixel-antialiased !important;
+  -moz-osx-font-smoothing: auto !important;
 }
 
 /* Style sidebar-close-button default state like hover state */
@@ -2031,8 +2041,16 @@ textarea:focus-visible {
   padding-right: 6px !important;
   margin: 1px 0 !important;
   transition: background-color 120ms ease, color 120ms ease !important;
-  font-size: 12.5px !important;
+  font-size: 13px !important;
+  font-weight: 500 !important;
   color: var(--color-text) !important;
+  -webkit-font-smoothing: subpixel-antialiased !important;
+  -moz-osx-font-smoothing: auto !important;
+}
+
+.folder-tree-name {
+  font-size: 13px !important;
+  font-weight: 500 !important;
 }
 
 .folder-tree-row:hover {

@@ -17,6 +17,12 @@ type EditorTab = {
   error?: string;
 };
 
+type HistoryEntry = {
+  content: string;
+  selectionStart: number;
+  selectionEnd: number;
+};
+
 type FileEditorWorkspaceProps = {
   activeFilePath: string;
   activeLineNumber?: number;
@@ -123,6 +129,11 @@ export function FileEditorWorkspace({
   const [tabs, setTabs] = useState<EditorTab[]>([]);
   const [selectedPath, setSelectedPath] = useState('');
   const tabsRef = useRef<EditorTab[]>([]);
+  const selectedPathRef = useRef('');
+
+  useEffect(() => {
+    selectedPathRef.current = selectedPath;
+  }, [selectedPath]);
 
   useEffect(() => {
     if (onActiveFilePathChange) {
@@ -133,6 +144,12 @@ export function FileEditorWorkspace({
   const surfaceRef = useRef<HTMLDivElement>(null);
   const isCopiedLineRef = useRef(false);
   const lastCopiedLineTextRef = useRef('');
+
+  // Custom Undo/Redo History Stack
+  const historyRef = useRef<Record<string, { past: HistoryEntry[]; future: HistoryEntry[] }>>({});
+  const lastEditTimeRef = useRef(0);
+  const lastActionTypeRef = useRef('');
+  const lastSelectionRef = useRef({ start: 0, end: 0 });
 
   // Local Find states
   const [findActive, setFindActive] = useState(false);
@@ -382,13 +399,107 @@ export function FileEditorWorkspace({
     }
   };
 
-  const updateSelectedContent = (content: string): void => {
-    if (!selectedTab) {
+  const updateSelectedContent = useCallback((content: string): void => {
+    const path = selectedPathRef.current;
+    if (!path) {
       return;
     }
 
-    setTabs((current) => current.map((tab) => (tab.path === selectedTab.path ? { ...tab, content } : tab)));
-  };
+    setTabs((current) => current.map((tab) => (tab.path === path ? { ...tab, content } : tab)));
+  }, []);
+
+  const pushHistory = useCallback((
+    path: string,
+    content: string,
+    selectionStart: number,
+    selectionEnd: number,
+    actionType: 'type' | 'cut' | 'paste' | 'tab' | 'move' | 'other' = 'other'
+  ) => {
+    if (!historyRef.current[path]) {
+      historyRef.current[path] = { past: [], future: [] };
+    }
+    const hist = historyRef.current[path];
+    const lastEntry = hist.past[hist.past.length - 1];
+
+    if (!lastEntry || lastEntry.content !== content) {
+      const now = Date.now();
+      const timeDiff = now - lastEditTimeRef.current;
+
+      const shouldGroup =
+        actionType === 'type' &&
+        lastActionTypeRef.current === 'type' &&
+        timeDiff < 1200 &&
+        !content.endsWith(' ') &&
+        !content.endsWith('\n');
+
+      if (!shouldGroup) {
+        if (hist.past.length >= 200) {
+          hist.past.shift();
+        }
+        hist.past.push({ content, selectionStart, selectionEnd });
+        hist.future = [];
+      }
+
+      lastEditTimeRef.current = now;
+      lastActionTypeRef.current = actionType;
+    }
+  }, []);
+
+  const handleUndo = useCallback((path: string, textarea: HTMLTextAreaElement) => {
+    const hist = historyRef.current[path];
+    if (!hist || hist.past.length === 0) return;
+
+    const currentContent = textarea.value;
+    const currentStart = textarea.selectionStart;
+    const currentEnd = textarea.selectionEnd;
+
+    const prevEntry = hist.past.pop()!;
+
+    hist.future.push({
+      content: currentContent,
+      selectionStart: currentStart,
+      selectionEnd: currentEnd
+    });
+
+    updateSelectedContent(prevEntry.content);
+
+    lastEditTimeRef.current = 0;
+    lastActionTypeRef.current = '';
+
+    window.requestAnimationFrame(() => {
+      textarea.focus();
+      textarea.selectionStart = prevEntry.selectionStart;
+      textarea.selectionEnd = prevEntry.selectionEnd;
+    });
+  }, [updateSelectedContent]);
+
+  const handleRedo = useCallback((path: string, textarea: HTMLTextAreaElement) => {
+    const hist = historyRef.current[path];
+    if (!hist || hist.future.length === 0) return;
+
+    const currentContent = textarea.value;
+    const currentStart = textarea.selectionStart;
+    const currentEnd = textarea.selectionEnd;
+
+    const nextEntry = hist.future.pop()!;
+
+    hist.past.push({
+      content: currentContent,
+      selectionStart: currentStart,
+      selectionEnd: currentEnd
+    });
+
+    updateSelectedContent(nextEntry.content);
+
+    lastEditTimeRef.current = 0;
+    lastActionTypeRef.current = '';
+
+    window.requestAnimationFrame(() => {
+      textarea.focus();
+      textarea.selectionStart = nextEntry.selectionStart;
+      textarea.selectionEnd = nextEntry.selectionEnd;
+    });
+  }, [updateSelectedContent]);
 
   const navigateFind = useCallback((direction: 'next' | 'prev') => {
     if (localMatches.length === 0) return;
@@ -455,6 +566,9 @@ export function FileEditorWorkspace({
       isCopiedLineRef.current = true;
       lastCopiedLineTextRef.current = lineText;
       
+      if (selectedTab) {
+        pushHistory(selectedTab.path, content, selectionStart, selectionStart, 'cut');
+      }
       updateSelectedContent(nextContent);
       window.requestAnimationFrame(() => {
         textarea.selectionStart = nextCursorPos;
@@ -480,6 +594,9 @@ export function FileEditorWorkspace({
       const lineStart = content.lastIndexOf('\n', selectionStart - 1) + 1;
       const nextContent = content.substring(0, lineStart) + clipboardText + content.substring(lineStart);
       
+      if (selectedTab) {
+        pushHistory(selectedTab.path, content, selectionStart, selectionStart, 'paste');
+      }
       updateSelectedContent(nextContent);
       
       const nextCursorPos = selectionStart + clipboardText.length;
@@ -509,10 +626,37 @@ export function FileEditorWorkspace({
   };
 
   const handleEditorKeyDown = (event: ReactKeyboardEvent<HTMLTextAreaElement>): void => {
+    // Record current selection for onChange history
+    const textarea = event.currentTarget;
+    lastSelectionRef.current = {
+      start: textarea.selectionStart,
+      end: textarea.selectionEnd
+    };
+
+    // Undo shortcut: Cmd/Ctrl + Z (but NOT shift)
+    if ((event.metaKey || event.ctrlKey) && !event.shiftKey && event.key.toLowerCase() === 'z') {
+      event.preventDefault();
+      if (selectedTab) {
+        handleUndo(selectedTab.path, event.currentTarget);
+      }
+      return;
+    }
+
+    // Redo shortcut: Cmd/Ctrl + Shift + Z OR Cmd/Ctrl + Y
+    if (
+      ((event.metaKey || event.ctrlKey) && event.shiftKey && event.key.toLowerCase() === 'z') ||
+      ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'y')
+    ) {
+      event.preventDefault();
+      if (selectedTab) {
+        handleRedo(selectedTab.path, event.currentTarget);
+      }
+      return;
+    }
+
     if (event.altKey && (event.key === 'ArrowUp' || event.key === 'ArrowDown')) {
       event.preventDefault();
       if (!selectedTab) return;
-      const textarea = event.currentTarget;
       const content = textarea.value;
       const selStart = textarea.selectionStart;
       const selEnd = textarea.selectionEnd;
@@ -563,6 +707,7 @@ export function FileEditorWorkspace({
           const newSelStart = getIndexFromPos(newLines, startPos.line - 1, startPos.col);
           const newSelEnd = getIndexFromPos(newLines, endPos.line - 1, endPos.col);
           
+          pushHistory(selectedTab.path, content, selStart, selEnd, 'move');
           updateSelectedContent(newContent);
           window.requestAnimationFrame(() => {
             textarea.selectionStart = newSelStart;
@@ -580,6 +725,7 @@ export function FileEditorWorkspace({
           const newSelStart = getIndexFromPos(newLines, startPos.line + 1, startPos.col);
           const newSelEnd = getIndexFromPos(newLines, endPos.line + 1, endPos.col);
           
+          pushHistory(selectedTab.path, content, selStart, selEnd, 'move');
           updateSelectedContent(newContent);
           window.requestAnimationFrame(() => {
             textarea.selectionStart = newSelStart;
@@ -617,11 +763,13 @@ export function FileEditorWorkspace({
 
     if (event.key === 'Tab') {
       event.preventDefault();
-      const textarea = event.currentTarget;
       const start = textarea.selectionStart;
       const end = textarea.selectionEnd;
       const nextContent = `${selectedTab?.content.slice(0, start) || ''}  ${selectedTab?.content.slice(end) || ''}`;
 
+      if (selectedTab) {
+        pushHistory(selectedTab.path, selectedTab.content, start, end, 'tab');
+      }
       updateSelectedContent(nextContent);
       window.requestAnimationFrame(() => {
         textarea.selectionStart = start + 2;
@@ -863,8 +1011,24 @@ export function FileEditorWorkspace({
                 spellCheck={false}
                 disabled={selectedTab.loading}
                 style={{ minHeight: `${editorHeight}px` }}
-                onChange={(event) => updateSelectedContent(event.target.value)}
+                onChange={(event) => {
+                  const nextVal = event.target.value;
+                  const textarea = event.currentTarget;
+                  pushHistory(selectedTab.path, selectedTab.content, lastSelectionRef.current.start, lastSelectionRef.current.end, 'type');
+                  updateSelectedContent(nextVal);
+                  lastSelectionRef.current = {
+                    start: textarea.selectionStart,
+                    end: textarea.selectionEnd
+                  };
+                }}
                 onKeyDown={handleEditorKeyDown}
+                onSelect={(event) => {
+                  const textarea = event.currentTarget;
+                  lastSelectionRef.current = {
+                    start: textarea.selectionStart,
+                    end: textarea.selectionEnd
+                  };
+                }}
                 onCopy={handleCopy}
                 onCut={handleCut}
                 onPaste={handlePaste}
