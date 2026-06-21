@@ -178,6 +178,10 @@ function App(): JSX.Element {
   const [quickAccessSelectedIndex, setQuickAccessSelectedIndex] = useState(0);
   const [paletteMode, setPaletteMode] = useState<PaletteMode>('quick-access');
   const [quickAccessManagerOpen, setQuickAccessManagerOpen] = useState(false);
+  const [globalSearchQuery, setGlobalSearchQuery] = useState('');
+  const [globalSearchCaseSensitive, setGlobalSearchCaseSensitive] = useState(false);
+  const [globalSearchWholeWord, setGlobalSearchWholeWord] = useState(false);
+  const [globalSearchUseRegex, setGlobalSearchUseRegex] = useState(false);
   const [fileSearchResults, setFileSearchResults] = useState<CommandPaletteItem[]>([]);
   const [settingsMenuOpen, setSettingsMenuOpen] = useState(false);
   const [mcpSettingsOpen, setMcpSettingsOpen] = useState(false);
@@ -201,6 +205,18 @@ function App(): JSX.Element {
     const parsed = saved ? parseInt(saved, 10) : 244;
     return Number.isFinite(parsed) ? Math.max(160, Math.min(600, parsed)) : 244;
   });
+
+  const handleCommitSearchHighlight = useCallback((options: {
+    query: string;
+    caseSensitive: boolean;
+    wholeWord: boolean;
+    useRegex: boolean;
+  }) => {
+    setGlobalSearchQuery(options.query);
+    setGlobalSearchCaseSensitive(options.caseSensitive);
+    setGlobalSearchWholeWord(options.wholeWord);
+    setGlobalSearchUseRegex(options.useRegex);
+  }, []);
 
   const handleLeftResizeStart = (e: React.PointerEvent<HTMLDivElement>) => {
     e.currentTarget.setPointerCapture(e.pointerId);
@@ -1423,6 +1439,7 @@ function App(): JSX.Element {
                       setActiveEditorFilePath(path);
                       setActiveEditorLineNumber(line);
                     }}
+                    onCommitSearchHighlight={handleCommitSearchHighlight}
                     activeFilePath={activeEditorFilePath}
                     activeLineNumber={activeEditorLineNumber}
                   />
@@ -1615,6 +1632,10 @@ function App(): JSX.Element {
               setActiveEditorFilePath(path);
               setActiveEditorLineNumber(undefined);
             }}
+            globalSearchQuery={globalSearchQuery}
+            globalSearchCaseSensitive={globalSearchCaseSensitive}
+            globalSearchWholeWord={globalSearchWholeWord}
+            globalSearchUseRegex={globalSearchUseRegex}
           />
         ) : (
           <div className="terminal-canvas">

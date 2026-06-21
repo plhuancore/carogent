@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, memo } from 'react';
+import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState, memo } from 'react';
 import type { KeyboardEvent as ReactKeyboardEvent, ClipboardEvent as ReactClipboardEvent } from 'react';
 import { CloseIcon, RefreshIcon } from './AppIcons';
 import { highlightCodeLine } from '../git/syntaxHighlight';
@@ -29,6 +29,10 @@ type FileEditorWorkspaceProps = {
   rootPath: string;
   onActiveFileChange?: (path: string) => void;
   onActiveFilePathChange?: (path: string) => void;
+  globalSearchQuery?: string;
+  globalSearchCaseSensitive?: boolean;
+  globalSearchWholeWord?: boolean;
+  globalSearchUseRegex?: boolean;
 };
 
 function getFileName(path: string): string {
@@ -124,7 +128,11 @@ export function FileEditorWorkspace({
   activeLineNumber,
   rootPath,
   onActiveFileChange,
-  onActiveFilePathChange
+  onActiveFilePathChange,
+  globalSearchQuery = '',
+  globalSearchCaseSensitive = false,
+  globalSearchWholeWord = false,
+  globalSearchUseRegex = false
 }: FileEditorWorkspaceProps): JSX.Element {
   const [tabs, setTabs] = useState<EditorTab[]>([]);
   const [selectedPath, setSelectedPath] = useState('');
@@ -257,15 +265,22 @@ export function FileEditorWorkspace({
   }, [activeLineNumber, selectedPath]);
 
   const selectedTab = tabs.find((tab) => tab.path === selectedPath) || null;
+  const selectedLines = useMemo(() => {
+    if (!selectedTab) {
+      return [''];
+    }
+
+    return selectedTab.content.split('\n');
+  }, [selectedTab?.content]);
+  const deferredGlobalSearchQuery = useDeferredValue(globalSearchQuery);
 
   const localMatches = useMemo(() => {
     if (!selectedTab || !findQuery) return [];
-    const lines = selectedTab.content.split('\n');
     const regex = getSearchRegex(findQuery, findCaseSensitive, findWholeWord, findUseRegex);
     if (!regex) return [];
 
     const list: { lineIndex: number; charIndex: number; length: number }[] = [];
-    lines.forEach((line, lineIndex) => {
+    selectedLines.forEach((line, lineIndex) => {
       let match;
       regex.lastIndex = 0;
       while ((match = regex.exec(line)) !== null) {
@@ -281,11 +296,20 @@ export function FileEditorWorkspace({
       }
     });
     return list;
-  }, [selectedTab?.content, findQuery, findCaseSensitive, findWholeWord, findUseRegex]);
+  }, [selectedLines, selectedTab, findQuery, findCaseSensitive, findWholeWord, findUseRegex]);
 
-  const regexForLineHighlight = useMemo(() => {
+  const localFindRegexForLineHighlight = useMemo(() => {
     return getSearchRegex(findQuery, findCaseSensitive, findWholeWord, findUseRegex);
   }, [findQuery, findCaseSensitive, findWholeWord, findUseRegex]);
+
+  const globalSearchRegexForLineHighlight = useMemo(() => {
+    return getSearchRegex(
+      deferredGlobalSearchQuery,
+      globalSearchCaseSensitive,
+      globalSearchWholeWord,
+      globalSearchUseRegex
+    );
+  }, [deferredGlobalSearchQuery, globalSearchCaseSensitive, globalSearchUseRegex, globalSearchWholeWord]);
 
   useEffect(() => {
     if (localMatches.length === 0) {
@@ -337,9 +361,17 @@ export function FileEditorWorkspace({
       return 1;
     }
 
-    return Math.max(1, selectedTab.content.split('\n').length);
-  }, [selectedTab]);
+    return Math.max(1, selectedLines.length);
+  }, [selectedLines, selectedTab]);
   const editorHeight = lineCount * 20 + 24;
+  const editorContentWidth = useMemo(() => {
+    const longestLineLength = selectedLines.reduce((maxLength, line) => {
+      const visualLength = line.replace(/\t/g, '  ').length;
+      return Math.max(maxLength, visualLength);
+    }, 0);
+
+    return Math.max(0, longestLineLength * 8 + 32);
+  }, [selectedLines]);
 
   const saveFile = useCallback((path = selectedPath): void => {
     const tab = tabs.find((item) => item.path === path);
@@ -962,11 +994,18 @@ export function FileEditorWorkspace({
               activeLineNumber={activeLineNumber}
               editorHeight={editorHeight}
             />
-            <div className="file-editor-container" style={{ minHeight: `${editorHeight}px` }}>
+            <div
+              className="file-editor-container"
+              style={{ minHeight: `${editorHeight}px`, minWidth: `${editorContentWidth}px` }}
+            >
               <pre className="file-editor-highlight" style={{ minHeight: `${editorHeight}px` }}>
-                {selectedTab.content.split('\n').map((line, index) => {
+                {selectedLines.map((line, index) => {
                   let localMatchRanges: LocalMatchRange[] | undefined = undefined;
-                  if (findActive && regexForLineHighlight) {
+                  const regexForLineHighlight = findActive
+                    ? localFindRegexForLineHighlight
+                    : globalSearchRegexForLineHighlight;
+
+                  if (regexForLineHighlight) {
                     let match;
                     regexForLineHighlight.lastIndex = 0;
                     while ((match = regexForLineHighlight.exec(line)) !== null) {
@@ -978,6 +1017,7 @@ export function FileEditorWorkspace({
                       }
                       
                       const isActiveMatch =
+                        findActive &&
                         localMatches[activeFindIndex] &&
                         localMatches[activeFindIndex].lineIndex === index &&
                         localMatches[activeFindIndex].charIndex === matchIndex;

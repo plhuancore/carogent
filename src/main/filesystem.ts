@@ -279,16 +279,19 @@ export async function searchFiles(request: FileSearchRequest): Promise<FileSearc
 
       if (regex) {
         regex.lastIndex = 0;
-        const matches = [...lineContent.matchAll(regex)];
-        for (const m of matches) {
-          if (m.index !== undefined) {
-            fileMatches.push({
-              lineNumber,
-              lineContent,
-              matchIndex: m.index,
-              matchLength: m[0].length
-            });
+        let regexMatch;
+        while ((regexMatch = regex.exec(lineContent)) !== null) {
+          if (regexMatch[0].length === 0) {
+            regex.lastIndex++;
+            continue;
           }
+
+          fileMatches.push({
+            lineNumber,
+            lineContent,
+            matchIndex: regexMatch.index,
+            matchLength: regexMatch[0].length
+          });
         }
       } else {
         let pos = 0;
@@ -391,16 +394,19 @@ export async function searchFiles(request: FileSearchRequest): Promise<FileSearc
 
               if (regex) {
                 regex.lastIndex = 0;
-                const matches = [...line.matchAll(regex)];
-                for (const m of matches) {
-                  if (m.index !== undefined) {
-                    fileMatches.push({
-                      lineNumber: lineIndex + 1,
-                      lineContent: line,
-                      matchIndex: m.index,
-                      matchLength: m[0].length
-                    });
+                let regexMatch;
+                while ((regexMatch = regex.exec(line)) !== null) {
+                  if (regexMatch[0].length === 0) {
+                    regex.lastIndex++;
+                    continue;
                   }
+
+                  fileMatches.push({
+                    lineNumber: lineIndex + 1,
+                    lineContent: line,
+                    matchIndex: regexMatch.index,
+                    matchLength: regexMatch[0].length
+                  });
                 }
               } else {
                 let pos = 0;

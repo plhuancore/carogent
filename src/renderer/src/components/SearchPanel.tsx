@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, memo } from 'react';
+import { useEffect, useState, useCallback, useMemo, useRef, memo } from 'react';
 import type { FileSearchResultEntry, FileSearchResultMatch } from '../../../shared/ipcTypes';
 import { ChevronDownIcon, CloseIcon, FileTreeIcon, SearchIcon } from './AppIcons';
 
@@ -6,9 +6,18 @@ type SearchPanelProps = {
   rootPath: string;
   onClose: () => void;
   onOpenFile: (path: string, lineNumber?: number) => void;
+  onCommitSearchHighlight: (options: {
+    query: string;
+    caseSensitive: boolean;
+    wholeWord: boolean;
+    useRegex: boolean;
+  }) => void;
   activeFilePath?: string;
   activeLineNumber?: number;
 };
+
+const SEARCH_FILE_BATCH_SIZE = 30;
+const SEARCH_MATCH_LINE_BATCH_SIZE = 80;
 
 function HighlightedLine({
   content,
@@ -41,6 +50,105 @@ function HighlightedLine({
   return <span className="search-line-content">{elements}</span>;
 }
 
+const SearchFileResult = memo(({
+  entry,
+  activeFilePath,
+  activeLineNumber,
+  expanded,
+  onToggleExpanded,
+  onOpenFile
+}: {
+  entry: FileSearchResultEntry;
+  activeFilePath?: string;
+  activeLineNumber?: number;
+  expanded: boolean;
+  onToggleExpanded: (path: string) => void;
+  onOpenFile: (path: string, line?: number) => void;
+}) => {
+  const [visibleLineCount, setVisibleLineCount] = useState(SEARCH_MATCH_LINE_BATCH_SIZE);
+  const matchesByLine = useMemo(() => {
+    const grouped: Record<number, FileSearchResultMatch[]> = {};
+    entry.matches.forEach((match) => {
+      if (!grouped[match.lineNumber]) {
+        grouped[match.lineNumber] = [];
+      }
+      grouped[match.lineNumber].push(match);
+    });
+
+    return Object.keys(grouped)
+      .map(Number)
+      .sort((a, b) => a - b)
+      .map((lineNumber) => ({
+        lineNumber,
+        matches: grouped[lineNumber]
+      }));
+  }, [entry.matches]);
+
+  useEffect(() => {
+    setVisibleLineCount(SEARCH_MATCH_LINE_BATCH_SIZE);
+  }, [entry.matches]);
+
+  const visibleMatchesByLine = matchesByLine.slice(0, visibleLineCount);
+
+  return (
+    <div className="search-file-entry">
+      <button
+        type="button"
+        className="search-file-header"
+        onClick={() => onToggleExpanded(entry.filePath)}
+      >
+        <span className={`search-disclosure-icon ${expanded ? 'is-expanded' : ''}`}>
+          <ChevronDownIcon />
+        </span>
+        <span className="search-file-icon">
+          <FileTreeIcon type="file" />
+        </span>
+        <span className="search-file-name" title={entry.filePath}>
+          {entry.relativeFilePath.split(/[\\/]/).pop()}
+        </span>
+        <span className="search-file-path" title={entry.filePath}>
+          {entry.relativeFilePath.split(/[\\/]/).slice(0, -1).join('/') || '.'}
+        </span>
+        <span className="search-matches-badge">{entry.matches.length}</span>
+      </button>
+
+      {expanded && (
+        <div className="search-file-matches">
+          {visibleMatchesByLine.map(({ lineNumber, matches }) => {
+            const firstMatch = matches[0];
+            return (
+              <button
+                key={lineNumber}
+                className={`search-match-line ${activeFilePath === entry.filePath && activeLineNumber === lineNumber ? 'is-in-active-file' : ''}`}
+                type="button"
+                onClick={() => onOpenFile(entry.filePath, lineNumber)}
+              >
+                <span className="search-match-line-number">{lineNumber}</span>
+                <HighlightedLine content={firstMatch.lineContent} matchesInLine={matches} />
+              </button>
+            );
+          })}
+
+          {visibleLineCount < matchesByLine.length && (
+            <button
+              type="button"
+              className="search-match-line"
+              onClick={() => setVisibleLineCount((count) => count + SEARCH_MATCH_LINE_BATCH_SIZE)}
+            >
+              <span className="search-match-line-number">+</span>
+              <span className="search-line-content">
+                Show {Math.min(SEARCH_MATCH_LINE_BATCH_SIZE, matchesByLine.length - visibleLineCount)} more match lines
+              </span>
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  );
+});
+
+SearchFileResult.displayName = 'SearchFileResult';
+
 const SearchResultsList = memo(({
   results,
   activeFilePath,
@@ -58,64 +166,17 @@ const SearchResultsList = memo(({
 }) => {
   return (
     <div className="search-results-list">
-      {results.map((entry) => {
-        const expanded = expandedFiles[entry.filePath] !== false;
-        
-        const matchesByLine: Record<number, FileSearchResultMatch[]> = {};
-        entry.matches.forEach((m) => {
-          if (!matchesByLine[m.lineNumber]) {
-            matchesByLine[m.lineNumber] = [];
-          }
-          matchesByLine[m.lineNumber].push(m);
-        });
-
-        return (
-          <div key={entry.filePath} className="search-file-entry">
-            <button
-              type="button"
-              className="search-file-header"
-              onClick={() => toggleFileExpanded(entry.filePath)}
-            >
-              <span className={`search-disclosure-icon ${expanded ? 'is-expanded' : ''}`}>
-                <ChevronDownIcon />
-              </span>
-              <span className="search-file-icon">
-                <FileTreeIcon type="file" />
-              </span>
-              <span className="search-file-name" title={entry.filePath}>
-                {entry.relativeFilePath.split(/[\\/]/).pop()}
-              </span>
-              <span className="search-file-path" title={entry.filePath}>
-                {entry.relativeFilePath.split(/[\\/]/).slice(0, -1).join('/') || '.'}
-              </span>
-              <span className="search-matches-badge">{entry.matches.length}</span>
-            </button>
-
-            {expanded && (
-              <div className="search-file-matches">
-                {Object.keys(matchesByLine)
-                  .map(Number)
-                  .sort((a, b) => a - b)
-                  .map((lineNum) => {
-                    const matches = matchesByLine[lineNum];
-                    const firstMatch = matches[0];
-                    return (
-                      <button
-                        key={lineNum}
-                        className={`search-match-line ${activeFilePath === entry.filePath && activeLineNumber === lineNum ? 'is-in-active-file' : ''}`}
-                        type="button"
-                        onClick={() => onOpenFile(entry.filePath, lineNum)}
-                      >
-                        <span className="search-match-line-number">{lineNum}</span>
-                        <HighlightedLine content={firstMatch.lineContent} matchesInLine={matches} />
-                      </button>
-                    );
-                  })}
-              </div>
-            )}
-          </div>
-        );
-      })}
+      {results.map((entry) => (
+        <SearchFileResult
+          key={entry.filePath}
+          entry={entry}
+          activeFilePath={activeFilePath}
+          activeLineNumber={activeLineNumber}
+          expanded={expandedFiles[entry.filePath] !== false}
+          onToggleExpanded={toggleFileExpanded}
+          onOpenFile={onOpenFile}
+        />
+      ))}
     </div>
   );
 });
@@ -126,29 +187,34 @@ export function SearchPanel({
   rootPath,
   onClose,
   onOpenFile,
+  onCommitSearchHighlight,
   activeFilePath,
   activeLineNumber
 }: SearchPanelProps): JSX.Element {
-  const [query, setQuery] = useState('');
+
+  const [localQuery, setLocalQuery] = useState('');
   const [caseSensitive, setCaseSensitive] = useState(false);
   const [wholeWord, setWholeWord] = useState(false);
   const [useRegex, setUseRegex] = useState(false);
-
   const [results, setResults] = useState<FileSearchResultEntry[]>([]);
   const [totalResults, setTotalResults] = useState(0);
   const [totalFiles, setTotalFiles] = useState(0);
+  const [visibleFileCount, setVisibleFileCount] = useState(SEARCH_FILE_BATCH_SIZE);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | undefined>(undefined);
 
   const [expandedFiles, setExpandedFiles] = useState<Record<string, boolean>>({});
+  const searchRequestSeqRef = useRef(0);
 
   // Auto-search as the user types with a 150ms debounce
   useEffect(() => {
-    const trimmed = query.trim();
+    const requestSeq = ++searchRequestSeqRef.current;
+    const trimmed = localQuery.trim();
     if (!trimmed) {
       setResults([]);
       setTotalResults(0);
       setTotalFiles(0);
+      setVisibleFileCount(SEARCH_FILE_BATCH_SIZE);
       setError(undefined);
       setLoading(false);
       return;
@@ -167,55 +233,98 @@ export function SearchPanel({
           useRegex
         })
         .then((result) => {
+          if (requestSeq !== searchRequestSeqRef.current) {
+            return;
+          }
+
           if (result.error) {
             setError(result.error);
             setResults([]);
             setTotalResults(0);
             setTotalFiles(0);
+            setVisibleFileCount(SEARCH_FILE_BATCH_SIZE);
           } else {
             setResults(result.results);
             setTotalResults(result.totalResults);
             setTotalFiles(result.totalFiles);
-
-            const initialExpanded: Record<string, boolean> = {};
-            result.results.forEach((entry) => {
-              initialExpanded[entry.filePath] = true;
-            });
-            setExpandedFiles(initialExpanded);
+            setVisibleFileCount(SEARCH_FILE_BATCH_SIZE);
+            setExpandedFiles({});
           }
         })
         .catch((err: unknown) => {
+          if (requestSeq !== searchRequestSeqRef.current) {
+            return;
+          }
+
           setError(err instanceof Error ? err.message : String(err));
           setResults([]);
           setTotalResults(0);
           setTotalFiles(0);
+          setVisibleFileCount(SEARCH_FILE_BATCH_SIZE);
         })
         .finally(() => {
-          setLoading(false);
+          if (requestSeq === searchRequestSeqRef.current) {
+            setLoading(false);
+          }
         });
     }, 150);
 
     return () => window.clearTimeout(timer);
-  }, [query, rootPath, caseSensitive, wholeWord, useRegex]);
+  }, [localQuery, rootPath, caseSensitive, wholeWord, useRegex]);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      onCommitSearchHighlight({
+        query: localQuery.trim(),
+        caseSensitive,
+        wholeWord,
+        useRegex
+      });
+    }, 120);
+
+    return () => window.clearTimeout(timer);
+  }, [caseSensitive, localQuery, onCommitSearchHighlight, useRegex, wholeWord]);
 
   const toggleFileExpanded = useCallback((filePath: string) => {
     setExpandedFiles((current) => ({
       ...current,
-      [filePath]: !current[filePath]
+      [filePath]: current[filePath] === false
     }));
   }, []);
 
   const handleOpenFile = useCallback((path: string, lineNumber?: number) => {
+    const trimmed = localQuery.trim();
+    if (trimmed) {
+      onCommitSearchHighlight({
+        query: trimmed,
+        caseSensitive,
+        wholeWord,
+        useRegex
+      });
+    }
     onOpenFile(path, lineNumber);
-  }, [onOpenFile]);
+  }, [caseSensitive, localQuery, onCommitSearchHighlight, onOpenFile, useRegex, wholeWord]);
 
   const handleClear = () => {
-    setQuery('');
+    setLocalQuery('');
+    onCommitSearchHighlight({
+      query: '',
+      caseSensitive,
+      wholeWord,
+      useRegex
+    });
     setResults([]);
     setTotalResults(0);
     setTotalFiles(0);
+    setVisibleFileCount(SEARCH_FILE_BATCH_SIZE);
+    setExpandedFiles({});
     setError(undefined);
   };
+
+  const visibleResults = useMemo(
+    () => results.slice(0, visibleFileCount),
+    [results, visibleFileCount]
+  );
 
   return (
     <div className="search-panel">
@@ -227,8 +336,8 @@ export function SearchPanel({
           <input
             type="text"
             className="search-text-input"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
+            value={localQuery}
+            onChange={(e) => setLocalQuery(e.target.value)}
             placeholder="Search files content..."
             spellCheck={false}
           />
@@ -236,7 +345,7 @@ export function SearchPanel({
             <button
               type="button"
               className={`search-option-button ${caseSensitive ? 'is-active' : ''}`}
-              onClick={() => setCaseSensitive((prev) => !prev)}
+              onClick={() => setCaseSensitive(!caseSensitive)}
               title="Match Case (Aa)"
               aria-label="Match Case"
             >
@@ -245,7 +354,7 @@ export function SearchPanel({
             <button
               type="button"
               className={`search-option-button ${wholeWord ? 'is-active' : ''}`}
-              onClick={() => setWholeWord((prev) => !prev)}
+              onClick={() => setWholeWord(!wholeWord)}
               title="Match Whole Word (ab)"
               aria-label="Match Whole Word"
             >
@@ -254,14 +363,14 @@ export function SearchPanel({
             <button
               type="button"
               className={`search-option-button ${useRegex ? 'is-active' : ''}`}
-              onClick={() => setUseRegex((prev) => !prev)}
+              onClick={() => setUseRegex(!useRegex)}
               title="Use Regular Expression (.*)"
               aria-label="Use Regular Expression"
             >
               .*
             </button>
           </div>
-          {query && (
+          {localQuery && (
             <button
               type="button"
               className="search-clear-button"
@@ -277,23 +386,36 @@ export function SearchPanel({
       <div className="search-results-container">
         {loading && results.length === 0 && <div className="search-status-message">Searching...</div>}
         {error && <div className="search-status-message is-error">{error}</div>}
-        {!loading && !error && query && results.length === 0 && (
+        {!loading && !error && localQuery && results.length === 0 && (
           <div className="search-status-message">No results found.</div>
         )}
         {!error && results.length > 0 && (
           <>
             <div className="search-results-summary" style={{ opacity: loading ? 0.6 : 1 }}>
               {totalResults} result{totalResults === 1 ? '' : 's'} in {totalFiles} file{totalFiles === 1 ? '' : 's'}
+              {visibleResults.length < results.length && ` (showing ${visibleResults.length} files)`}
               {loading && ' (Searching...)'}
             </div>
             <SearchResultsList
-              results={results}
+              results={visibleResults}
               activeFilePath={activeFilePath}
               activeLineNumber={activeLineNumber}
               expandedFiles={expandedFiles}
               toggleFileExpanded={toggleFileExpanded}
               onOpenFile={handleOpenFile}
             />
+            {visibleResults.length < results.length && (
+              <button
+                type="button"
+                className="search-match-line"
+                onClick={() => setVisibleFileCount((count) => count + SEARCH_FILE_BATCH_SIZE)}
+              >
+                <span className="search-match-line-number">+</span>
+                <span className="search-line-content">
+                  Show {Math.min(SEARCH_FILE_BATCH_SIZE, results.length - visibleResults.length)} more files
+                </span>
+              </button>
+            )}
           </>
         )}
       </div>
