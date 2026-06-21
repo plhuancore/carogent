@@ -1,4 +1,5 @@
 @import './styles/base-overlay.css';
+@import './styles/themes.css';
 @import './styles/app-shell.css';
 @import './styles/quick-access.css';
 @import './styles/terminal.css';

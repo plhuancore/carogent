@@ -55,12 +55,15 @@ import {
   ShellIcon,
   SplitDownIcon,
   SplitRightIcon,
-  WrenchIcon
+  WrenchIcon,
+  ThemeIcon
 } from './components/AppIcons';
 import { CurrentFolderTree } from './components/CurrentFolderTree';
 import { FileEditorWorkspace } from './components/FileEditorWorkspace';
 import { SearchPanel } from './components/SearchPanel';
 import { McpSettingsModal } from './components/McpSettingsModal';
+import { ThemeSelectorModal } from './components/ThemeSelectorModal';
+import { ThemeId, getSavedTheme, applyTheme, saveTheme } from './theme';
 import { PinnedFolderPanel } from './components/PinnedFolderPanel';
 import { QuickAccessManager, QuickAccessPalette } from './components/QuickAccess';
 import { NodeView } from './components/TerminalViews';
@@ -181,6 +184,8 @@ function App(): JSX.Element {
   const [fileSearchResults, setFileSearchResults] = useState<CommandPaletteItem[]>([]);
   const [settingsMenuOpen, setSettingsMenuOpen] = useState(false);
   const [mcpSettingsOpen, setMcpSettingsOpen] = useState(false);
+  const [themeSelectorOpen, setThemeSelectorOpen] = useState(false);
+  const [activeTheme, setActiveTheme] = useState<ThemeId>(getSavedTheme());
   const [shellOptions, setShellOptions] = useState<TerminalShellOption[] | null>(null);
   const [shellOptionsError, setShellOptionsError] = useState<string | null>(null);
   const [agentOverlayVisible, setAgentOverlayVisible] = useState(false);
@@ -238,6 +243,38 @@ function App(): JSX.Element {
     ? activeWorkspace.activePaneId
     : getFirstPaneId(layout);
   const paneCount = useMemo(() => countPanes(layout), [layout]);
+
+  const updateTerminalThemes = useCallback(() => {
+    try {
+      const rootStyle = getComputedStyle(document.documentElement);
+      const background = rootStyle.getPropertyValue('--color-terminal').trim() || '#15141a';
+      const foreground = rootStyle.getPropertyValue('--color-text').trim() || '#e7e3ee';
+      const cursor = rootStyle.getPropertyValue('--color-accent').trim() || '#c4b5fd';
+      const selectionBackground = rootStyle.getPropertyValue('--color-accent-muted').trim() || '#a78bfa55';
+
+      sessions.current.forEach((session) => {
+        if (session.terminal) {
+          session.terminal.options.theme = {
+            ...session.terminal.options.theme,
+            background,
+            foreground,
+            cursor,
+            selectionBackground
+          };
+        }
+      });
+    } catch (err) {
+      console.error('Failed to update terminal themes:', err);
+    }
+  }, []);
+
+  // Apply saved theme on mount
+  useEffect(() => {
+    applyTheme(activeTheme);
+    updateTerminalThemes();
+    const timer = setTimeout(updateTerminalThemes, 100);
+    return () => clearTimeout(timer);
+  }, [activeTheme, updateTerminalThemes]);
 
   useEffect(() => {
     workspacesRef.current = workspaces;
@@ -651,6 +688,25 @@ function App(): JSX.Element {
     }
 
     const terminal = createXterm();
+    // Sync newly created terminal with the active theme colors
+    try {
+      const rootStyle = getComputedStyle(document.documentElement);
+      const background = rootStyle.getPropertyValue('--color-terminal').trim();
+      const foreground = rootStyle.getPropertyValue('--color-text').trim();
+      const cursor = rootStyle.getPropertyValue('--color-accent').trim();
+      const selectionBackground = rootStyle.getPropertyValue('--color-accent-muted').trim();
+      if (background) {
+        terminal.options.theme = {
+          ...terminal.options.theme,
+          background,
+          foreground,
+          cursor,
+          selectionBackground
+        };
+      }
+    } catch (err) {
+      console.error('Failed to sync initial terminal theme:', err);
+    }
     const fitAddon = new FitAddon();
     const searchAddon = new SearchAddon();
     terminal.loadAddon(fitAddon);
@@ -1576,6 +1632,18 @@ function App(): JSX.Element {
                     <McpIcon />
                     Carogent MCP
                   </button>
+                  <button
+                    className="settings-menu-item"
+                    type="button"
+                    role="menuitem"
+                    onClick={() => {
+                      setSettingsMenuOpen(false);
+                      setThemeSelectorOpen(true);
+                    }}
+                  >
+                    <ThemeIcon />
+                    Color Theme
+                  </button>
                 </div>
               )}
             </div>
@@ -1662,6 +1730,23 @@ function App(): JSX.Element {
       {mcpSettingsOpen && (
         <McpSettingsModal
           onClose={() => setMcpSettingsOpen(false)}
+        />
+      )}
+      {themeSelectorOpen && (
+        <ThemeSelectorModal
+          activeTheme={activeTheme}
+          onSelectTheme={(themeId) => {
+            setActiveTheme(themeId);
+            saveTheme(themeId);
+            applyTheme(themeId);
+            setTimeout(updateTerminalThemes, 0);
+            setThemeSelectorOpen(false);
+          }}
+          onThemePreview={updateTerminalThemes}
+          onClose={() => {
+            updateTerminalThemes();
+            setThemeSelectorOpen(false);
+          }}
         />
       )}
     </main>

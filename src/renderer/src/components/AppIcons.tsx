@@ -207,6 +207,18 @@ export function McpIcon(): JSX.Element {
   );
 }
 
+export function ThemeIcon(): JSX.Element {
+  return (
+    <svg aria-hidden="true" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M12 22C17.5228 22 22 17.5228 22 12C22 6.47715 17.5228 2 12 2C6.47715 2 2 6.47715 2 12C2 14.7255 3.09032 17.1962 4.85857 19C5.03345 19.1749 5.0999 19.4283 5.024 19.6646L4.78 20.4246C4.6784 20.7397 4.96646 21.0354 5.28543 20.9503L6.37769 20.6591C6.57432 20.6066 6.78652 20.6518 6.94528 20.7816C8.38421 21.562 10.1412 22 12 22Z" />
+      <circle cx="7.5" cy="10.5" r="1.5" fill="currentColor" />
+      <circle cx="11.5" cy="7.5" r="1.5" fill="currentColor" />
+      <circle cx="16.5" cy="9.5" r="1.5" fill="currentColor" />
+      <circle cx="15.5" cy="14.5" r="1.5" fill="currentColor" />
+    </svg>
+  );
+}
+
 export function MaximizeIcon(): JSX.Element {
   return (
     <svg aria-hidden="true" viewBox="0 0 16 16">

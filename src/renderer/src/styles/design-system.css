@@ -237,7 +237,7 @@ textarea:focus-visible {
   border-radius: 12px;
   background:
     linear-gradient(135deg, rgba(255, 255, 255, 0.07), rgba(255, 255, 255, 0.014) 44%, transparent),
-    rgba(25, 24, 32, 0.88);
+    var(--color-panel-2);
   padding: 0 14px;
   box-shadow: var(--shadow-island);
   backdrop-filter: blur(22px);
@@ -266,7 +266,7 @@ textarea:focus-visible {
   border-color: var(--color-border);
   background:
     linear-gradient(135deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.018) 45%, transparent),
-    rgba(25, 24, 32, 0.94);
+    var(--color-panel-3);
   backdrop-filter: blur(18px);
 }
 
@@ -323,8 +323,8 @@ textarea:focus-visible {
   border: 1px solid var(--color-border);
   border-radius: 12px;
   background:
-    linear-gradient(135deg, rgba(255, 255, 255, 0.07), rgba(255, 255, 255, 0.014) 44%, transparent),
-    rgba(25, 24, 32, 0.88);
+    linear-gradient(135deg, rgba(255, 255, 255, 0.07), rgba(255, 255, 255, 0.015) 45%, transparent),
+    var(--color-panel-2);
   box-shadow: var(--shadow-island);
   backdrop-filter: blur(22px);
   grid-template-rows: auto 38px minmax(0, 1fr);
@@ -433,7 +433,7 @@ textarea:focus-visible {
   border-radius: var(--radius-lg);
   background:
     linear-gradient(135deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.018) 45%, transparent),
-    rgba(25, 24, 32, 0.96);
+    var(--color-panel-3);
   box-shadow: var(--shadow-menu);
   backdrop-filter: blur(18px);
   padding: 6px;
@@ -630,7 +630,7 @@ textarea:focus-visible {
   border-radius: var(--radius-xl);
   background:
     linear-gradient(135deg, rgba(255, 255, 255, 0.085), rgba(255, 255, 255, 0.018) 48%, transparent),
-    rgba(25, 24, 32, 0.97);
+    var(--color-panel-3);
   backdrop-filter: blur(24px);
   margin-top: 64px;
 }
@@ -843,7 +843,7 @@ textarea:focus-visible {
   border-radius: var(--radius-xl);
   background:
     linear-gradient(135deg, rgba(255, 255, 255, 0.07), rgba(255, 255, 255, 0.015) 45%, transparent),
-    rgba(25, 24, 32, 0.72);
+    var(--color-panel);
   backdrop-filter: blur(18px);
   padding: 10px;
 }
@@ -887,7 +887,7 @@ textarea:focus-visible {
   width: 26px;
   height: 26px;
   border-radius: var(--radius-md);
-  background: rgba(35, 33, 44, 0.82);
+  background: var(--color-panel-2);
 }
 
 .pinned-folder-form {
@@ -1063,7 +1063,7 @@ textarea:focus-visible {
   border-radius: 14px;
   background:
     linear-gradient(135deg, rgba(255, 255, 255, 0.03), rgba(255, 255, 255, 0.008) 44%, transparent),
-    rgba(17, 16, 22, 0.94);
+    var(--color-panel-3);
   color: var(--color-text);
   min-height: 0;
 }
@@ -1428,7 +1428,7 @@ textarea:focus-visible {
   border-bottom-color: var(--color-border);
   background:
     linear-gradient(180deg, rgba(255, 255, 255, 0.05), transparent),
-    rgba(25, 24, 32, 0.94);
+    var(--color-panel-3);
 }
 
 .git-diff-filename {
@@ -1572,7 +1572,7 @@ textarea:focus-visible {
 
 .git-history-table th {
   border-bottom-color: var(--color-border);
-  background: rgba(25, 24, 32, 0.98);
+  background: var(--color-panel-3);
   color: var(--color-muted);
 }
 
@@ -1864,7 +1864,7 @@ textarea:focus-visible {
   border-radius: var(--radius-xl);
   background:
     linear-gradient(135deg, rgba(255, 255, 255, 0.07), rgba(255, 255, 255, 0.015) 45%, transparent),
-    rgba(25, 24, 32, 0.72);
+    var(--color-panel);
   backdrop-filter: blur(18px);
   padding: 14px 10px;
   box-shadow: var(--shadow-island);
@@ -1881,7 +1881,7 @@ textarea:focus-visible {
   border-radius: var(--radius-xl);
   background:
     linear-gradient(135deg, rgba(255, 255, 255, 0.07), rgba(255, 255, 255, 0.015) 45%, transparent),
-    rgba(25, 24, 32, 0.72);
+    var(--color-panel);
   backdrop-filter: blur(18px);
   padding: 10px;
   box-shadow: var(--shadow-island);
@@ -1893,7 +1893,7 @@ textarea:focus-visible {
   border-radius: var(--radius-xl);
   background:
     linear-gradient(135deg, rgba(255, 255, 255, 0.07), rgba(255, 255, 255, 0.015) 45%, transparent),
-    rgba(25, 24, 32, 0.72);
+    var(--color-panel);
   backdrop-filter: blur(18px);
   padding: 10px 12px;
   box-shadow: var(--shadow-island);
@@ -2124,3 +2124,77 @@ textarea:focus-visible {
   margin-right: -10px !important;
   padding-right: 8px !important;
 }
+
+/* Theme adjustments for Git Panel */
+.git-tabs {
+  background: var(--color-panel-2) !important;
+  border-bottom-color: var(--color-border) !important;
+}
+
+.git-tab-content {
+  background: transparent !important;
+}
+
+.git-tab {
+  color: var(--color-muted) !important;
+}
+
+.git-tab:hover {
+  color: var(--color-text-strong) !important;
+}
+
+.git-tab.active {
+  color: var(--color-accent) !important;
+  border-bottom-color: var(--color-accent) !important;
+}
+
+.git-commit-form {
+  background: var(--color-panel) !important;
+  border-top: 1px solid var(--color-border) !important;
+}
+
+.git-commit-input {
+  background: var(--color-terminal) !important;
+  border-color: var(--color-border) !important;
+  color: var(--color-text) !important;
+}
+
+.git-commit-input::placeholder {
+  color: var(--color-muted) !important;
+}
+
+.git-commit-input:focus {
+  border-color: var(--color-accent) !important;
+  box-shadow: 0 0 0 2px var(--color-accent-surface) !important;
+}
+
+.git-commit-btn {
+  background: var(--color-accent) !important;
+  color: var(--color-text-strong) !important;
+}
+
+.git-commit-btn:hover:not(:disabled) {
+  background: var(--color-accent-strong) !important;
+}
+
+.git-commit-btn:disabled {
+  background: var(--color-panel-2) !important;
+  color: var(--color-disabled) !important;
+  border: 1px solid var(--color-border-subtle) !important;
+}
+
+.git-repo-dropdown {
+  background: var(--color-panel-3) !important;
+  border-color: var(--color-border) !important;
+  color: var(--color-text) !important;
+}
+
+.git-repo-dropdown:hover {
+  background: var(--color-panel-2) !important;
+  border-color: var(--color-border-strong) !important;
+}
+
+.git-dropdown-chevron {
+  color: var(--color-text) !important;
+}
+
