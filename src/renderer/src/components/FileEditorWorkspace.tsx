@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, memo } from 'react';
-import type { KeyboardEvent as ReactKeyboardEvent } from 'react';
+import type { KeyboardEvent as ReactKeyboardEvent, ClipboardEvent as ReactClipboardEvent } from 'react';
 import { CloseIcon, RefreshIcon } from './AppIcons';
 import { highlightCodeLine } from '../git/syntaxHighlight';
 import type { LocalMatchRange } from '../git/syntaxHighlight';
@@ -22,6 +22,7 @@ type FileEditorWorkspaceProps = {
   activeLineNumber?: number;
   rootPath: string;
   onActiveFileChange?: (path: string) => void;
+  onActiveFilePathChange?: (path: string) => void;
 };
 
 function getFileName(path: string): string {
@@ -116,12 +117,22 @@ export function FileEditorWorkspace({
   activeFilePath,
   activeLineNumber,
   rootPath,
-  onActiveFileChange
+  onActiveFileChange,
+  onActiveFilePathChange
 }: FileEditorWorkspaceProps): JSX.Element {
   const [tabs, setTabs] = useState<EditorTab[]>([]);
   const [selectedPath, setSelectedPath] = useState('');
   const tabsRef = useRef<EditorTab[]>([]);
+
+  useEffect(() => {
+    if (onActiveFilePathChange) {
+      onActiveFilePathChange(selectedPath);
+    }
+  }, [selectedPath, onActiveFilePathChange]);
+
   const surfaceRef = useRef<HTMLDivElement>(null);
+  const isCopiedLineRef = useRef(false);
+  const lastCopiedLineTextRef = useRef('');
 
   // Local Find states
   const [findActive, setFindActive] = useState(false);
@@ -388,6 +399,97 @@ export function FileEditorWorkspace({
     }
   }, [localMatches]);
 
+  const handleCopy = (e: ReactClipboardEvent<HTMLTextAreaElement>) => {
+    const textarea = e.currentTarget;
+    if (textarea.selectionStart === textarea.selectionEnd) {
+      const content = textarea.value;
+      const selectionStart = textarea.selectionStart;
+      const lineStart = content.lastIndexOf('\n', selectionStart - 1) + 1;
+      let lineEnd = content.indexOf('\n', selectionStart);
+      if (lineEnd === -1) {
+        lineEnd = content.length;
+      }
+      const lineText = content.substring(lineStart, lineEnd) + '\n';
+      
+      e.clipboardData.setData('text/plain', lineText);
+      e.clipboardData.setData('application/x-carogent-line', 'true');
+      isCopiedLineRef.current = true;
+      lastCopiedLineTextRef.current = lineText;
+      e.preventDefault();
+    } else {
+      isCopiedLineRef.current = false;
+      lastCopiedLineTextRef.current = '';
+    }
+  };
+
+  const handleCut = (e: ReactClipboardEvent<HTMLTextAreaElement>) => {
+    const textarea = e.currentTarget;
+    if (textarea.selectionStart === textarea.selectionEnd) {
+      const content = textarea.value;
+      const selectionStart = textarea.selectionStart;
+      const lineStart = content.lastIndexOf('\n', selectionStart - 1) + 1;
+      let lineEnd = content.indexOf('\n', selectionStart);
+      
+      let lineText = '';
+      let nextContent = '';
+      let nextCursorPos = lineStart;
+      
+      if (lineEnd === -1) {
+        lineEnd = content.length;
+        lineText = content.substring(lineStart, lineEnd) + '\n';
+        if (lineStart > 0) {
+          nextContent = content.substring(0, lineStart - 1);
+          nextCursorPos = lineStart - 1;
+        } else {
+          nextContent = '';
+          nextCursorPos = 0;
+        }
+      } else {
+        lineText = content.substring(lineStart, lineEnd + 1);
+        nextContent = content.substring(0, lineStart) + content.substring(lineEnd + 1);
+        nextCursorPos = lineStart;
+      }
+      
+      e.clipboardData.setData('text/plain', lineText);
+      e.clipboardData.setData('application/x-carogent-line', 'true');
+      isCopiedLineRef.current = true;
+      lastCopiedLineTextRef.current = lineText;
+      
+      updateSelectedContent(nextContent);
+      window.requestAnimationFrame(() => {
+        textarea.selectionStart = nextCursorPos;
+        textarea.selectionEnd = nextCursorPos;
+      });
+      e.preventDefault();
+    } else {
+      isCopiedLineRef.current = false;
+      lastCopiedLineTextRef.current = '';
+    }
+  };
+
+  const handlePaste = (e: ReactClipboardEvent<HTMLTextAreaElement>) => {
+    const textarea = e.currentTarget;
+    const clipboardText = e.clipboardData.getData('text/plain');
+    const isLine = e.clipboardData.types.includes('application/x-carogent-line') || 
+                   (isCopiedLineRef.current && clipboardText === lastCopiedLineTextRef.current);
+    if (isLine && textarea.selectionStart === textarea.selectionEnd) {
+      e.preventDefault();
+      const content = textarea.value;
+      const selectionStart = textarea.selectionStart;
+      
+      const lineStart = content.lastIndexOf('\n', selectionStart - 1) + 1;
+      const nextContent = content.substring(0, lineStart) + clipboardText + content.substring(lineStart);
+      
+      updateSelectedContent(nextContent);
+      
+      const nextCursorPos = selectionStart + clipboardText.length;
+      window.requestAnimationFrame(() => {
+        textarea.selectionStart = nextCursorPos;
+        textarea.selectionEnd = nextCursorPos;
+      });
+    }
+  };
+
   const handleFindInputKeyDown = (e: ReactKeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Enter') {
       e.preventDefault();
@@ -407,6 +509,87 @@ export function FileEditorWorkspace({
   };
 
   const handleEditorKeyDown = (event: ReactKeyboardEvent<HTMLTextAreaElement>): void => {
+    if (event.altKey && (event.key === 'ArrowUp' || event.key === 'ArrowDown')) {
+      event.preventDefault();
+      if (!selectedTab) return;
+      const textarea = event.currentTarget;
+      const content = textarea.value;
+      const selStart = textarea.selectionStart;
+      const selEnd = textarea.selectionEnd;
+      const direction = event.key === 'ArrowUp' ? 'up' : 'down';
+
+      const lines = content.split('\n');
+      
+      const getPosFromIndex = (text: string, index: number) => {
+        let line = 0;
+        let col = 0;
+        for (let i = 0; i < index; i++) {
+          if (text[i] === '\n') {
+            line++;
+            col = 0;
+          } else {
+            col++;
+          }
+        }
+        return { line, col };
+      };
+
+      const getIndexFromPos = (linesArr: string[], line: number, col: number) => {
+        let index = 0;
+        for (let i = 0; i < line; i++) {
+          index += linesArr[i].length + 1;
+        }
+        index += Math.min(col, linesArr[line] ? linesArr[line].length : 0);
+        return index;
+      };
+
+      const startPos = getPosFromIndex(content, selStart);
+      const endPos = getPosFromIndex(content, selEnd);
+      
+      let firstLine = startPos.line;
+      let lastLine = endPos.line;
+      if (selStart < selEnd && endPos.col === 0 && lastLine > firstLine) {
+        lastLine--;
+      }
+
+      if (direction === 'up') {
+        if (firstLine > 0) {
+          const newLines = [...lines];
+          const lineAbove = newLines[firstLine - 1];
+          newLines.splice(firstLine - 1, 1);
+          newLines.splice(lastLine, 0, lineAbove);
+          
+          const newContent = newLines.join('\n');
+          const newSelStart = getIndexFromPos(newLines, startPos.line - 1, startPos.col);
+          const newSelEnd = getIndexFromPos(newLines, endPos.line - 1, endPos.col);
+          
+          updateSelectedContent(newContent);
+          window.requestAnimationFrame(() => {
+            textarea.selectionStart = newSelStart;
+            textarea.selectionEnd = newSelEnd;
+          });
+        }
+      } else {
+        if (lastLine < lines.length - 1) {
+          const newLines = [...lines];
+          const lineBelow = newLines[lastLine + 1];
+          newLines.splice(lastLine + 1, 1);
+          newLines.splice(firstLine, 0, lineBelow);
+          
+          const newContent = newLines.join('\n');
+          const newSelStart = getIndexFromPos(newLines, startPos.line + 1, startPos.col);
+          const newSelEnd = getIndexFromPos(newLines, endPos.line + 1, endPos.col);
+          
+          updateSelectedContent(newContent);
+          window.requestAnimationFrame(() => {
+            textarea.selectionStart = newSelStart;
+            textarea.selectionEnd = newSelEnd;
+          });
+        }
+      }
+      return;
+    }
+
     if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 's') {
       event.preventDefault();
       saveFile();
@@ -636,7 +819,6 @@ export function FileEditorWorkspace({
                 {selectedTab.content.split('\n').map((line, index) => {
                   let localMatchRanges: LocalMatchRange[] | undefined = undefined;
                   if (findActive && regexForLineHighlight) {
-                    localMatchRanges = [];
                     let match;
                     regexForLineHighlight.lastIndex = 0;
                     while ((match = regexForLineHighlight.exec(line)) !== null) {
@@ -652,6 +834,9 @@ export function FileEditorWorkspace({
                         localMatches[activeFindIndex].lineIndex === index &&
                         localMatches[activeFindIndex].charIndex === matchIndex;
                         
+                      if (!localMatchRanges) {
+                        localMatchRanges = [];
+                      }
                       localMatchRanges.push({
                         start: matchIndex,
                         end: matchIndex + matchText.length,
@@ -680,6 +865,9 @@ export function FileEditorWorkspace({
                 style={{ minHeight: `${editorHeight}px` }}
                 onChange={(event) => updateSelectedContent(event.target.value)}
                 onKeyDown={handleEditorKeyDown}
+                onCopy={handleCopy}
+                onCut={handleCut}
+                onPaste={handlePaste}
               />
             </div>
           </div>

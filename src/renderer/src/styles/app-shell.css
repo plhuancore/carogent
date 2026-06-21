@@ -2036,6 +2036,9 @@
 .local-find-action svg {
   width: 12px;
   height: 12px;
+  stroke: currentColor;
+  stroke-width: 1.5;
+  fill: none;
 }
 
 .local-find-action.close-action svg {
