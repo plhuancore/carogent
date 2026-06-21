@@ -1139,15 +1139,33 @@ function App(): JSX.Element {
     ? 'command'
     : paletteMode;
 
+  const isSearchingFiles =
+    effectivePaletteMode === 'file' ||
+    (effectivePaletteMode === 'quick-access' &&
+      (quickAccessQuery.includes('/') ||
+        quickAccessQuery.includes('\\') ||
+        /:\d+$/.test(quickAccessQuery) ||
+        /^[A-Za-z]:/.test(quickAccessQuery)));
+
   useEffect(() => {
-    if (!quickAccessOpen || effectivePaletteMode !== 'file' || !activePaneCwd) {
+    if (!quickAccessOpen || !isSearchingFiles || !activePaneCwd) {
       setFileSearchResults([]);
       return;
     }
 
     let isCurrent = true;
+    let cleanQuery = quickAccessQuery.trim();
+    let targetLineNumber: number | undefined = undefined;
+
+    // Check if query matches pattern: <file_path>:<line_number>
+    const match = cleanQuery.match(/^(.*?):(\d+)$/);
+    if (match) {
+      cleanQuery = match[1].trim();
+      targetLineNumber = parseInt(match[2], 10);
+    }
+
     window.terminalApi
-      .findFiles({ rootPath: activePaneCwd, query: quickAccessQuery })
+      .findFiles({ rootPath: activePaneCwd, query: cleanQuery })
       .then((res) => {
         if (!isCurrent) return;
         if (res.results) {
@@ -1160,8 +1178,14 @@ function App(): JSX.Element {
               keywords: `${file.name} ${file.relativeFilePath}`,
               icon: 'code',
               run: () => {
+                let line = targetLineNumber;
+                const clickMatch = quickAccessQuery.trim().match(/^(.*?):(\d+)$/);
+                if (clickMatch) {
+                  line = parseInt(clickMatch[2], 10);
+                }
+
                 setActiveEditorFilePath(file.path);
-                setActiveEditorLineNumber(undefined);
+                setActiveEditorLineNumber(line);
                 setIsExplorerSidebarOpen(true);
                 closeQuickAccess();
               }
@@ -1176,10 +1200,10 @@ function App(): JSX.Element {
     return () => {
       isCurrent = false;
     };
-  }, [quickAccessOpen, effectivePaletteMode, activePaneCwd, quickAccessQuery, closeQuickAccess]);
+  }, [quickAccessOpen, isSearchingFiles, activePaneCwd, quickAccessQuery, closeQuickAccess]);
 
   const filteredPaletteItems = useMemo(() => {
-    if (effectivePaletteMode === 'file') {
+    if (isSearchingFiles) {
       return fileSearchResults;
     }
 
@@ -1385,9 +1409,9 @@ function App(): JSX.Element {
                   <CurrentFolderTree
                     rootPath={activePaneCwd}
                     onClose={() => setIsExplorerSidebarOpen(false)}
-                    onOpenFile={(path) => {
+                    onOpenFile={(path, line) => {
                       setActiveEditorFilePath(path);
-                      setActiveEditorLineNumber(undefined);
+                      setActiveEditorLineNumber(line);
                     }}
                     activeFilePath={activeEditorFilePath}
                   />

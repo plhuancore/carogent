@@ -468,10 +468,21 @@ function isSubsequence(needle: string, haystack: string): boolean {
 
 export async function findFiles(request: FindFilesRequest): Promise<FindFilesResult> {
   const rootPath = expandHomePath(request.rootPath.trim());
-  const query = request.query.trim().toLowerCase();
+  let query = request.query.trim().toLowerCase();
 
   if (!rootPath) {
     throw new Error('Enter a root path.');
+  }
+
+  const normalizedRoot = rootPath.replace(/\\/g, '/').toLowerCase();
+  const normalizedQuery = query.replace(/\\/g, '/');
+
+  // Strip absolute root path if the query is an absolute path starting with it
+  if (normalizedQuery.startsWith(normalizedRoot)) {
+    query = normalizedQuery.slice(normalizedRoot.length);
+    if (query.startsWith('/')) {
+      query = query.slice(1);
+    }
   }
 
   const rootStat = await stat(rootPath);

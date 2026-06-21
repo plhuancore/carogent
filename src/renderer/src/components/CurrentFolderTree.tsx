@@ -13,7 +13,7 @@ type TreeNodeState = {
 type CurrentFolderTreeProps = {
   rootPath: string;
   onClose: () => void;
-  onOpenFile: (path: string) => void;
+  onOpenFile: (path: string, lineNumber?: number) => void;
   activeFilePath?: string;
 };
 
@@ -74,7 +74,15 @@ export function CurrentFolderTree({
   const [filterError, setFilterError] = useState<string | undefined>(undefined);
 
   useEffect(() => {
-    const query = filterQuery.trim();
+    let query = filterQuery.trim();
+    let targetLineNumber: number | undefined = undefined;
+
+    const match = query.match(/^(.*?):(\d+)$/);
+    if (match) {
+      query = match[1].trim();
+      targetLineNumber = parseInt(match[2], 10);
+    }
+
     if (!query || !rootPath.trim()) {
       setFilterResults([]);
       setFilterError(undefined);
@@ -368,7 +376,12 @@ export function CurrentFolderTree({
                     setFilterQuery('');
                     loadDirectory(entry.path, true);
                   } else {
-                    onOpenFile(entry.path);
+                    let line: number | undefined = undefined;
+                    const match = filterQuery.trim().match(/^(.*?):(\d+)$/);
+                    if (match) {
+                      line = parseInt(match[2], 10);
+                    }
+                    onOpenFile(entry.path, line);
                   }
                 }}
               >
