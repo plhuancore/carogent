@@ -83,7 +83,7 @@ export function splitPane(
   direction: SplitDirection
 ): { layout: LayoutNode; newPaneId: string } {
   const sourcePane = findPane(node, paneId);
-  const newPane = createPane(sourcePane?.cwd, sourcePane?.shell, sourcePane?.browserUrl);
+  const newPane = createPane(sourcePane?.cwd, undefined, sourcePane?.browserUrl);
 
   function visit(current: LayoutNode): LayoutNode {
     if (current.type === 'pane' && current.paneId === paneId) {

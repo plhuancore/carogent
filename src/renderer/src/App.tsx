@@ -187,6 +187,22 @@ function App(): JSX.Element {
   const [mcpSettingsOpen, setMcpSettingsOpen] = useState(false);
   const [shellOptions, setShellOptions] = useState<TerminalShellOption[] | null>(null);
   const [shellOptionsError, setShellOptionsError] = useState<string | null>(null);
+  const [defaultShell, setDefaultShell] = useState<string>(() => {
+    return localStorage.getItem('carogent-default-shell') || '';
+  });
+
+  const handleSetDefaultShell = useCallback((shell: string) => {
+    localStorage.setItem('carogent-default-shell', shell);
+    setDefaultShell(shell);
+  }, []);
+  const activeDefaultShell = useMemo(() => {
+    if (defaultShell) return defaultShell;
+    if (shellOptions?.length) {
+      return getDefaultShellOption(shellOptions).shell;
+    }
+    return '';
+  }, [defaultShell, shellOptions]);
+
   const [agentOverlayVisible, setAgentOverlayVisible] = useState(false);
   const [browserBridgeStatus, setBrowserBridgeStatus] = useState<BrowserBridgeStatusEvent>({
     connected: false,
@@ -1617,6 +1633,29 @@ function App(): JSX.Element {
                     <McpIcon />
                     Carogent MCP
                   </button>
+                  <div className="settings-menu-divider" style={{ height: '1px', background: '#2b3038', margin: '6px 0' }} />
+                  <div className="settings-menu-header" style={{ padding: '4px 10px', fontSize: '10px', color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Default Shell</div>
+                  {shellOptions?.map((option) => {
+                    const isSelected = option.shell === activeDefaultShell;
+                    return (
+                      <button
+                        key={option.shell}
+                        className="settings-menu-item"
+                        type="button"
+                        role="menuitemradio"
+                        aria-checked={isSelected}
+                        onClick={() => {
+                          handleSetDefaultShell(option.shell);
+                        }}
+                      >
+                        <ShellIcon name={option.icon} />
+                        {option.label}
+                        <span className="settings-menu-check" aria-hidden="true">
+                          {isSelected ? '✓' : ''}
+                        </span>
+                      </button>
+                    );
+                  })}
                 </div>
               )}
             </div>

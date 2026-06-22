@@ -35,6 +35,13 @@ type TerminalWithViewportSync = Terminal & {
 };
 
 export function getDefaultShellOption(shellOptions: TerminalShellOption[]): TerminalShellOption {
+  const savedDefault = localStorage.getItem('carogent-default-shell');
+  if (savedDefault) {
+    const found = shellOptions.find((option) => option.shell === savedDefault);
+    if (found) {
+      return found;
+    }
+  }
   return shellOptions.find((option) => option.isDefault) || shellOptions[0];
 }
 

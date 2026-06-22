@@ -6,7 +6,6 @@ import type { LayoutNode, PaneNode, SplitDirection } from '../layout';
 import { findPane } from '../layout';
 import {
   AgentOverlayIcon,
-  ChevronDownIcon,
   CloseIcon,
   MenuIcon,
   SearchIcon,
@@ -320,7 +319,6 @@ function TerminalPane({
   const editorRef = useRef<HTMLDivElement | null>(null);
   const searchRef = useRef<HTMLDivElement | null>(null);
   const searchInputRef = useRef<HTMLInputElement | null>(null);
-  const shellMenuRef = useRef<HTMLDivElement | null>(null);
   const paneMoreMenuRef = useRef<HTMLDivElement | null>(null);
   const [editorOpen, setEditorOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
@@ -330,7 +328,6 @@ function TerminalPane({
   const [searchError, setSearchError] = useState<string | null>(null);
   const [searchResultCount, setSearchResultCount] = useState(0);
   const [searchResultIndex, setSearchResultIndex] = useState<number | null>(null);
-  const [shellMenuOpen, setShellMenuOpen] = useState(false);
   const [paneMoreMenuOpen, setPaneMoreMenuOpen] = useState(false);
   const [dragActive, setDragActive] = useState(false);
   const [draftTitle, setDraftTitle] = useState(pane.customTitle || '');
@@ -339,7 +336,7 @@ function TerminalPane({
   const browserUrlLabel = formatBrowserUrlLabel(pane.browserUrl);
   const isPinned = pinnedPaneIds.has(pane.paneId);
   const headerColor = getHeaderColor(pane.headerColor);
-  const selectedShell = getShellOption(shellOptions, pane.shell);
+  const paneShellOption = getShellOption(shellOptions, pane.shell);
   const paneStyle = useMemo(
     () =>
       ({
@@ -594,21 +591,7 @@ function TerminalPane({
     return () => document.removeEventListener('mousedown', handlePointerDown);
   }, [closeSearch, searchOpen]);
 
-  useEffect(() => {
-    if (!shellMenuOpen) {
-      return;
-    }
 
-    const handlePointerDown = (event: MouseEvent): void => {
-      if (!shellMenuRef.current?.contains(event.target as Node)) {
-        setShellMenuOpen(false);
-      }
-    };
-
-    document.addEventListener('mousedown', handlePointerDown);
-
-    return () => document.removeEventListener('mousedown', handlePointerDown);
-  }, [shellMenuOpen]);
 
   useEffect(() => {
     if (!paneMoreMenuOpen) {
@@ -632,14 +615,7 @@ function TerminalPane({
     setEditorOpen(false);
   };
 
-  const handleShellSelect = (shell: string): void => {
-    setShellMenuOpen(false);
 
-    if (shell !== getPaneShell(shellOptions, pane)) {
-      commitTitle();
-      onChangeShell(pane.paneId, shell);
-    }
-  };
 
   const handleDragOver = (event: ReactDragEvent<HTMLElement>): void => {
     event.preventDefault();
@@ -732,36 +708,7 @@ function TerminalPane({
               </div>
             )}
           </div>
-          <div className="shell-picker" ref={shellMenuRef} onMouseDown={(event) => event.stopPropagation()}>
-            <button
-              className="shell-picker-button"
-              type="button"
-              title="Select terminal"
-              aria-haspopup="menu"
-              aria-expanded={shellMenuOpen}
-              onClick={() => setShellMenuOpen((open) => !open)}
-            >
-              <ShellIcon name={selectedShell.icon} />
-              <ChevronDownIcon />
-            </button>
-            {shellMenuOpen && (
-              <div className="shell-menu" role="menu">
-                {shellOptions.map((option) => (
-                  <button
-                    key={option.shell}
-                    className={`shell-menu-item ${option.shell === selectedShell.shell ? 'is-selected' : ''}`}
-                    type="button"
-                    role="menuitem"
-                    onClick={() => handleShellSelect(option.shell)}
-                  >
-                    <ShellIcon name={option.icon} />
-                    <span className="shell-menu-label">{option.label}</span>
-                    {option.shortcut && <span className="shell-menu-shortcut">{option.shortcut}</span>}
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
+
           {onToggleMaximize && (
             <button
               className={`pane-maximize-button ${maximizedPaneId === pane.paneId ? 'is-maximized' : ''}`}
@@ -838,6 +785,16 @@ function TerminalPane({
                 }
               }}
             />
+            <div className="pane-editor-shell-info" style={{ marginTop: '10px', marginBottom: '4px' }}>
+              <span className="pane-editor-label" style={{ fontSize: '9px', opacity: 0.8 }}>Active Shell</span>
+              <div className="pane-editor-shell-value">
+                <ShellIcon name={paneShellOption.icon} />
+                <span>{paneShellOption.label}</span>
+                <span style={{ fontSize: '10px', color: 'var(--color-muted)', marginLeft: 'auto' }}>
+                  {paneShellOption.shell}
+                </span>
+              </div>
+            </div>
             <div className="color-swatches" aria-label="Header color">
               {HEADER_COLOR_PRESETS.map((color) => (
                 <button
