@@ -32,7 +32,14 @@ function highlightTextMatches(text: string, query: string): React.ReactNode {
     cleanQuery = cleanQuery.slice(1).trim();
   }
 
-  const terms = cleanQuery.toLowerCase().split(/\s+/).filter(Boolean);
+  // Remove line number suffix (e.g. :17)
+  cleanQuery = cleanQuery.replace(/:\d+$/, '');
+
+  // Remove symbol search suffix (e.g. @symbolName)
+  cleanQuery = cleanQuery.replace(/@.*$/, '');
+
+  // Split by whitespace, forward slashes, and backslashes
+  const terms = cleanQuery.toLowerCase().split(/[\s/\\]+/).filter(Boolean);
   if (terms.length === 0) {
     return text;
   }

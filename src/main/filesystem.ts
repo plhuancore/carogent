@@ -1,5 +1,5 @@
-import { dirname, extname, join } from 'node:path';
-import { readFile, readdir, stat, writeFile } from 'node:fs/promises';
+import { dirname, extname, isAbsolute, join, relative, resolve } from 'node:path';
+import { mkdir, readFile, readdir, rename as renamePath, rm, stat, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
@@ -15,6 +15,11 @@ import type {
   TextFileReadResult,
   TextFileWriteRequest,
   TextFileWriteResult,
+  FileSystemCreateEntryRequest,
+  FileSystemCreateEntryResult,
+  FileSystemDeleteEntryRequest,
+  FileSystemRenameEntryRequest,
+  FileSystemRenameEntryResult,
   FileSearchRequest,
   FileSearchResult,
   FileSearchResultEntry,
@@ -49,6 +54,50 @@ function expandHomePath(path: string): string {
   return path;
 }
 
+async function getIgnoredEntryPaths(directoryPath: string, entryPaths: string[]): Promise<Set<string>> {
+  if (entryPaths.length === 0) {
+    return new Set();
+  }
+
+  try {
+    const { stdout } = await execFileAsync('git', ['rev-parse', '--is-inside-work-tree'], { cwd: directoryPath });
+    if (stdout.trim() !== 'true') {
+      return new Set();
+    }
+  } catch {
+    return new Set();
+  }
+
+  const ignoredPaths = new Set<string>();
+  const chunkSize = 200;
+
+  for (let index = 0; index < entryPaths.length; index += chunkSize) {
+    const chunk = entryPaths.slice(index, index + chunkSize);
+
+    try {
+      const { stdout } = await execFileAsync('git', ['check-ignore', '--', ...chunk], {
+        cwd: directoryPath,
+        maxBuffer: 2 * 1024 * 1024
+      });
+
+      stdout
+        .split(/\r?\n/)
+        .filter(Boolean)
+        .forEach((ignoredPath) => {
+          ignoredPaths.add(isAbsolute(ignoredPath) ? resolve(ignoredPath) : resolve(directoryPath, ignoredPath));
+        });
+    } catch (error: any) {
+      if (error?.code === 1) {
+        continue;
+      }
+
+      return ignoredPaths;
+    }
+  }
+
+  return ignoredPaths;
+}
+
 export async function listDirectory(request: DirectoryListRequest): Promise<DirectoryListResult> {
   const directoryPath = expandHomePath(request.path.trim());
 
@@ -80,8 +129,13 @@ export async function listDirectory(request: DirectoryListRequest): Promise<Dire
         };
       })
   );
+  const ignoredPaths = await getIgnoredEntryPaths(directoryPath, entries.map((entry) => entry.path));
+  const entriesWithIgnoredState = entries.map((entry) => ({
+    ...entry,
+    ignored: ignoredPaths.has(resolve(entry.path))
+  }));
 
-  entries.sort((first, second) => {
+  entriesWithIgnoredState.sort((first, second) => {
     if (first.type !== second.type) {
       return first.type === 'directory' ? -1 : 1;
     }
@@ -99,7 +153,7 @@ export async function listDirectory(request: DirectoryListRequest): Promise<Dire
   return {
     path: directoryPath,
     parentPath: dirname(directoryPath) !== directoryPath ? dirname(directoryPath) : undefined,
-    entries
+    entries: entriesWithIgnoredState
   };
 }
 
@@ -184,6 +238,143 @@ export async function writeTextFile(request: TextFileWriteRequest): Promise<Text
     path: filePath,
     modifiedAt: nextStat.mtimeMs
   };
+}
+
+export async function createFileSystemEntry(request: FileSystemCreateEntryRequest): Promise<FileSystemCreateEntryResult> {
+  const parentPath = expandHomePath(request.parentPath.trim());
+  const name = request.name.trim();
+
+  if (!parentPath) {
+    throw new Error('Enter a parent folder path.');
+  }
+
+  if (!name) {
+    throw new Error('Enter a name.');
+  }
+
+  if (name === '.' || name === '..' || /[\\/]/.test(name)) {
+    throw new Error('Enter a single file or folder name.');
+  }
+
+  if (request.type !== 'file' && request.type !== 'directory') {
+    throw new Error('Entry type must be file or directory.');
+  }
+
+  const parentStat = await stat(parentPath);
+
+  if (!parentStat.isDirectory()) {
+    throw new Error('Parent path is not a folder.');
+  }
+
+  const resolvedParent = resolve(parentPath);
+  const targetPath = resolve(parentPath, name);
+  const parentToTarget = relative(resolvedParent, targetPath);
+
+  if (parentToTarget.startsWith('..') || parentToTarget === '' || resolve(targetPath) === resolvedParent) {
+    throw new Error('Entry must be created inside the parent folder.');
+  }
+
+  if (request.type === 'directory') {
+    await mkdir(targetPath);
+  } else {
+    await writeFile(targetPath, '', { flag: 'wx' });
+  }
+
+  const entryStat = await stat(targetPath);
+
+  return {
+    name,
+    path: targetPath,
+    type: request.type,
+    size: entryStat.size,
+    createdAt: entryStat.birthtimeMs,
+    modifiedAt: entryStat.mtimeMs
+  };
+}
+
+export async function renameFileSystemEntry(request: FileSystemRenameEntryRequest): Promise<FileSystemRenameEntryResult> {
+  const sourcePath = expandHomePath(request.path.trim());
+  const name = request.name.trim();
+
+  if (!sourcePath) {
+    throw new Error('Enter a file or folder path.');
+  }
+
+  if (!name) {
+    throw new Error('Enter a name.');
+  }
+
+  if (name === '.' || name === '..' || /[\\/]/.test(name)) {
+    throw new Error('Enter a single file or folder name.');
+  }
+
+  const sourceStat = await stat(sourcePath);
+
+  if (!sourceStat.isDirectory() && !sourceStat.isFile()) {
+    throw new Error('Path is not a file or folder.');
+  }
+
+  const parentPath = dirname(sourcePath);
+  const targetPath = resolve(parentPath, name);
+  const parentToTarget = relative(resolve(parentPath), targetPath);
+
+  if (parentToTarget.startsWith('..') || parentToTarget === '' || resolve(targetPath) === resolve(parentPath)) {
+    throw new Error('Entry must stay inside the parent folder.');
+  }
+
+  if (resolve(sourcePath) === targetPath) {
+    return {
+      name,
+      path: sourcePath,
+      type: sourceStat.isDirectory() ? 'directory' : 'file',
+      size: sourceStat.size,
+      createdAt: sourceStat.birthtimeMs,
+      modifiedAt: sourceStat.mtimeMs
+    };
+  }
+
+  try {
+    await stat(targetPath);
+    throw new Error('A file or folder with that name already exists.');
+  } catch (error: any) {
+    if (error?.code !== 'ENOENT') {
+      throw error;
+    }
+  }
+
+  await renamePath(sourcePath, targetPath);
+
+  const nextStat = await stat(targetPath);
+  const ignoredPaths = await getIgnoredEntryPaths(parentPath, [targetPath]);
+
+  return {
+    name,
+    path: targetPath,
+    type: nextStat.isDirectory() ? 'directory' : 'file',
+    ignored: ignoredPaths.has(resolve(targetPath)),
+    size: nextStat.size,
+    createdAt: nextStat.birthtimeMs,
+    modifiedAt: nextStat.mtimeMs
+  };
+}
+
+export async function deleteFileSystemEntry(request: FileSystemDeleteEntryRequest): Promise<void> {
+  const targetPath = expandHomePath(request.path.trim());
+
+  if (!targetPath) {
+    throw new Error('Enter a file or folder path.');
+  }
+
+  const targetStat = await stat(targetPath);
+
+  if (!targetStat.isDirectory() && !targetStat.isFile()) {
+    throw new Error('Path is not a file or folder.');
+  }
+
+  await rm(targetPath, {
+    recursive: targetStat.isDirectory(),
+    force: false
+  });
 }
 
 export async function searchFiles(request: FileSearchRequest): Promise<FileSearchResult> {

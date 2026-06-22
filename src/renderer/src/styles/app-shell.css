@@ -519,6 +519,27 @@
   color: #ffffff;
 }
 
+.folder-tree-row.is-ignored {
+  color: var(--color-subtle, #64748b);
+}
+
+.folder-tree-row.is-ignored .folder-tree-name,
+.folder-tree-row.is-ignored .folder-tree-icon,
+.folder-tree-row.is-ignored .folder-tree-disclosure {
+  color: var(--color-subtle, #64748b);
+  opacity: 0.7;
+}
+
+.folder-tree-row.is-ignored.is-active .folder-tree-name,
+.folder-tree-row.is-ignored.is-active .folder-tree-icon,
+.folder-tree-row.is-ignored.is-active .folder-tree-disclosure {
+  opacity: 0.82;
+}
+
+.folder-tree-row.is-ignored:hover {
+  color: var(--color-muted, #94a3b8);
+}
+
 .folder-tree-row.is-active {
   background: #1e293b;
   color: #38bdf8;
@@ -562,7 +583,7 @@
   width: 16px;
   height: 16px;
   place-items: center;
-  color: #67e8f9;
+  color: var(--color-muted, #94a3b8);
 }
 
 .folder-tree-icon svg {
@@ -570,7 +591,126 @@
 }
 
 .folder-tree-row:not(.is-directory) .folder-tree-icon {
-  color: #94a3b8;
+  color: var(--color-muted, #94a3b8);
+}
+
+.folder-tree-root-row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+
+.folder-tree-row.is-root {
+  grid-template-columns: 14px minmax(0, 1fr);
+  padding-right: 92px;
+}
+
+.folder-tree-row.is-root .folder-tree-name {
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.folder-tree-root-actions {
+  position: absolute;
+  top: 0;
+  right: 4px;
+  display: flex;
+  height: 24px;
+  align-items: center;
+  gap: 2px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 120ms ease;
+}
+
+.folder-tree-root-row:hover .folder-tree-root-actions,
+.folder-tree-root-row:focus-within .folder-tree-root-actions {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.folder-tree-root-actions button {
+  display: grid;
+  width: 20px;
+  height: 20px;
+  place-items: center;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--color-muted, #94a3b8);
+  padding: 0;
+  cursor: pointer;
+}
+
+.folder-tree-root-actions button:hover:not(:disabled) {
+  background: var(--color-panel-3, #1f2937);
+  color: var(--color-text-strong, #ffffff);
+}
+
+.folder-tree-root-actions button:disabled {
+  color: var(--color-subtle, #475569);
+  cursor: not-allowed;
+}
+
+.folder-tree-root-actions svg {
+  width: 13px;
+  height: 13px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.7;
+}
+
+.folder-tree-create-row {
+  display: grid;
+  width: 100%;
+  min-height: 24px;
+  grid-template-columns: 14px 16px minmax(0, 1fr);
+  align-items: center;
+  gap: 3px;
+  padding-right: 6px;
+}
+
+.folder-tree-rename-row {
+  border-radius: 4px;
+  background: var(--color-accent-surface, #1e293b);
+}
+
+.folder-tree-rename-row .folder-tree-create-input {
+  font-family: inherit;
+  font-weight: 500;
+}
+
+.folder-tree-create-row .folder-tree-icon {
+  color: var(--color-muted, #94a3b8);
+}
+
+.folder-tree-create-row.is-file .folder-tree-icon {
+  color: var(--color-muted, #94a3b8);
+}
+
+.folder-tree-create-input {
+  min-width: 0;
+  height: 20px;
+  border: 1px solid var(--color-border, #30363d);
+  border-radius: 3px;
+  outline: 0;
+  background: var(--color-panel, #0d1117);
+  color: var(--color-text, #c9d1d9);
+  font-family: "Cascadia Mono", Consolas, monospace;
+  font-size: 12px;
+  padding: 0 5px;
+}
+
+.folder-tree-create-input:focus {
+  border-color: var(--color-border-strong, #475569);
+}
+
+.folder-tree-create-input::placeholder {
+  color: var(--color-subtle, #64748b);
 }
 
 .folder-tree-name {
@@ -595,6 +735,54 @@
 .folder-tree-status.is-error {
   color: #fb7185;
   white-space: normal;
+}
+
+.folder-tree-context-menu {
+  position: fixed;
+  z-index: 2147483000;
+  min-width: 150px;
+  border: 1px solid var(--color-border-strong, #475569);
+  border-radius: 6px;
+  background:
+    linear-gradient(rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0.04)),
+    var(--color-panel, #0d1117);
+  box-shadow: var(--shadow-menu, 0 18px 42px rgba(0, 0, 0, 0.62));
+  padding: 4px;
+}
+
+.folder-tree-context-menu button {
+  display: flex;
+  width: 100%;
+  height: 26px;
+  align-items: center;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--color-text, #cbd5e1);
+  font-size: 12px;
+  padding: 0 8px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.folder-tree-context-menu button:hover {
+  background: var(--color-panel-3, #1f2937);
+  color: var(--color-text-strong, #ffffff);
+}
+
+.folder-tree-context-menu button.is-danger {
+  color: var(--color-danger, #fb7185);
+}
+
+.folder-tree-context-menu button.is-danger:hover {
+  background: var(--color-danger-surface, rgba(251, 113, 133, 0.12));
+  color: var(--color-danger-strong, #fecdd3);
+}
+
+.folder-tree-context-separator {
+  height: 1px;
+  margin: 4px 2px;
+  background: var(--color-border, #30363d);
 }
 
 .folder-tree-skeleton-row {
@@ -1054,6 +1242,12 @@
   tab-size: 2;
   white-space: pre;
   overflow: hidden;
+}
+
+.file-editor-input:focus,
+.file-editor-input:focus-visible {
+  outline: none !important;
+  box-shadow: none !important;
 }
 
 /* Surface Scrollbar */

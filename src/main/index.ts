@@ -7,7 +7,7 @@ import { createServer } from 'node:http';
 import type { IncomingMessage, ServerResponse, Server } from 'node:http';
 import os from 'node:os';
 import * as pty from 'node-pty';
-import { getImagePreview, listDirectory, readTextFile, writeTextFile, searchFiles, findFiles } from './filesystem';
+import { createFileSystemEntry, deleteFileSystemEntry, getImagePreview, listDirectory, readTextFile, renameFileSystemEntry, writeTextFile, searchFiles, findFiles } from './filesystem';
 import { createBrowserBridge, DEFAULT_BROWSER_URL } from './browserBridge';
 import { registerGitIpcHandlers } from './git/registerGitIpcHandlers';
 import type {
@@ -23,12 +23,16 @@ import type {
   DirectoryListRequest,
   ImagePreviewRequest,
   OpenBrowserRequest,
+  RevealInFinderRequest,
   OpenVSCodeRequest,
   TerminalCreateRequest,
   TerminalResizeRequest,
   TerminalShellOption,
   TextFileReadRequest,
   TextFileWriteRequest,
+  FileSystemCreateEntryRequest,
+  FileSystemDeleteEntryRequest,
+  FileSystemRenameEntryRequest,
   FileSearchRequest,
   FindFilesRequest,
   TerminalWriteRequest
@@ -725,6 +729,16 @@ function openVSCode(request: OpenVSCodeRequest): Promise<void> {
   });
 }
 
+async function revealInFinder(request: RevealInFinderRequest): Promise<void> {
+  const targetPath = request.path?.trim();
+
+  if (!targetPath) {
+    throw new Error('Enter a file or folder path.');
+  }
+
+  electronShell.showItemInFolder(targetPath);
+}
+
 function findAgentBridgePane(paneId?: string): AgentBridgePane | undefined {
   if (!paneId) {
     return undefined;
@@ -1055,9 +1069,13 @@ app.whenReady().then(() => {
   ipcMain.handle('filesystem:get-image-preview', (_event, request: ImagePreviewRequest) => getImagePreview(request));
   ipcMain.handle('filesystem:read-text-file', (_event, request: TextFileReadRequest) => readTextFile(request));
   ipcMain.handle('filesystem:write-text-file', (_event, request: TextFileWriteRequest) => writeTextFile(request));
+  ipcMain.handle('filesystem:create-entry', (_event, request: FileSystemCreateEntryRequest) => createFileSystemEntry(request));
+  ipcMain.handle('filesystem:rename-entry', (_event, request: FileSystemRenameEntryRequest) => renameFileSystemEntry(request));
+  ipcMain.handle('filesystem:delete-entry', (_event, request: FileSystemDeleteEntryRequest) => deleteFileSystemEntry(request));
   ipcMain.handle('filesystem:search-files', (_event, request: FileSearchRequest) => searchFiles(request));
   ipcMain.handle('filesystem:find-files', (_event, request: FindFilesRequest) => findFiles(request));
   ipcMain.handle('workspace:open-vscode', (_event, request: OpenVSCodeRequest = {}) => openVSCode(request));
+  ipcMain.handle('workspace:reveal-in-finder', (_event, request: RevealInFinderRequest) => revealInFinder(request));
   ipcMain.handle('browser:open-or-focus', (_event, request: OpenBrowserRequest = {}) => browserBridge.openOrFocus(request));
   ipcMain.handle('browser:get-bridge-status', () => browserBridge.getStatus());
   ipcMain.handle('agent-bridge:update-snapshot', (_event, snapshot: AgentBridgeSnapshot) => {

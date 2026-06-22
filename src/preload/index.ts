@@ -7,7 +7,13 @@ import type {
   AgentOpenPaneRequest,
   BrowserBridgeStatusEvent,
   DirectoryListResult,
+  FileSystemCreateEntryRequest,
+  FileSystemCreateEntryResult,
+  FileSystemDeleteEntryRequest,
+  FileSystemRenameEntryRequest,
+  FileSystemRenameEntryResult,
   ImagePreviewResult,
+  RevealInFinderRequest,
   TerminalApi,
   TerminalCreated,
   TerminalCreateRequest,
@@ -41,12 +47,20 @@ const terminal: TerminalApi = {
     ipcRenderer.invoke('filesystem:read-text-file', request),
   writeTextFile: (request: { path: string; content: string }): Promise<TextFileWriteResult> =>
     ipcRenderer.invoke('filesystem:write-text-file', request),
+  createFileSystemEntry: (request: FileSystemCreateEntryRequest): Promise<FileSystemCreateEntryResult> =>
+    ipcRenderer.invoke('filesystem:create-entry', request),
+  renameFileSystemEntry: (request: FileSystemRenameEntryRequest): Promise<FileSystemRenameEntryResult> =>
+    ipcRenderer.invoke('filesystem:rename-entry', request),
+  deleteFileSystemEntry: (request: FileSystemDeleteEntryRequest): Promise<void> =>
+    ipcRenderer.invoke('filesystem:delete-entry', request),
   searchFiles: (request: FileSearchRequest): Promise<FileSearchResult> =>
     ipcRenderer.invoke('filesystem:search-files', request),
   findFiles: (request: FindFilesRequest): Promise<FindFilesResult> =>
     ipcRenderer.invoke('filesystem:find-files', request),
   openInVSCode: (request: { path?: string }): Promise<void> =>
     ipcRenderer.invoke('workspace:open-vscode', request),
+  revealInFinder: (request: RevealInFinderRequest): Promise<void> =>
+    ipcRenderer.invoke('workspace:reveal-in-finder', request),
   openOrFocusBrowser: (request: { url?: string }): Promise<void> =>
     ipcRenderer.invoke('browser:open-or-focus', request),
   getBrowserBridgeStatus: (): Promise<BrowserBridgeStatusEvent> =>

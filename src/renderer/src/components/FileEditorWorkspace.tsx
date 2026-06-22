@@ -1,5 +1,9 @@
 import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState, memo } from 'react';
-import type { KeyboardEvent as ReactKeyboardEvent, ClipboardEvent as ReactClipboardEvent } from 'react';
+import type {
+  KeyboardEvent as ReactKeyboardEvent,
+  ClipboardEvent as ReactClipboardEvent,
+  MouseEvent as ReactMouseEvent
+} from 'react';
 import { CloseIcon, RefreshIcon } from './AppIcons';
 import { highlightCodeLine } from '../git/syntaxHighlight';
 import type { LocalMatchRange } from '../git/syntaxHighlight';
@@ -150,6 +154,7 @@ export function FileEditorWorkspace({
   }, [selectedPath, onActiveFilePathChange]);
 
   const surfaceRef = useRef<HTMLDivElement>(null);
+  const editorInputRef = useRef<HTMLTextAreaElement | null>(null);
   const isCopiedLineRef = useRef(false);
   const lastCopiedLineTextRef = useRef('');
 
@@ -372,6 +377,54 @@ export function FileEditorWorkspace({
 
     return Math.max(0, longestLineLength * 8 + 32);
   }, [selectedLines]);
+
+  const focusEditorAtEnd = useCallback((): void => {
+    const textarea = editorInputRef.current;
+    if (!textarea || textarea.disabled) {
+      return;
+    }
+
+    const end = textarea.value.length;
+    textarea.focus();
+    textarea.setSelectionRange(end, end);
+    lastSelectionRef.current = { start: end, end };
+  }, []);
+
+  const handleEditorMouseDown = (event: ReactMouseEvent<HTMLTextAreaElement>): void => {
+    if (!selectedTab || selectedTab.loading) {
+      return;
+    }
+
+    const textarea = event.currentTarget;
+    const clickY = event.clientY - textarea.getBoundingClientRect().top + textarea.scrollTop;
+
+    if (clickY > editorHeight) {
+      event.preventDefault();
+      focusEditorAtEnd();
+    }
+  };
+
+  const handleEditorSurfaceMouseDown = (event: ReactMouseEvent<HTMLDivElement>): void => {
+    if (!selectedTab || selectedTab.loading) {
+      return;
+    }
+
+    if (event.target instanceof HTMLTextAreaElement) {
+      return;
+    }
+
+    const surface = surfaceRef.current;
+    if (!surface) {
+      return;
+    }
+
+    const clickY = event.clientY - surface.getBoundingClientRect().top + surface.scrollTop;
+
+    if (clickY > editorHeight) {
+      event.preventDefault();
+      focusEditorAtEnd();
+    }
+  };
 
   const saveFile = useCallback((path = selectedPath): void => {
     const tab = tabs.find((item) => item.path === path);
@@ -982,7 +1035,7 @@ export function FileEditorWorkspace({
             </div>
           )}
 
-          <div ref={surfaceRef} className="file-editor-surface">
+          <div ref={surfaceRef} className="file-editor-surface" onMouseDown={handleEditorSurfaceMouseDown}>
             {selectedTab.loading && (
               <div className="file-editor-loading-overlay">
                 <div className="file-editor-loading-spinner" />
@@ -1045,6 +1098,7 @@ export function FileEditorWorkspace({
                 })}
               </pre>
               <textarea
+                ref={editorInputRef}
                 className="file-editor-input"
                 value={selectedTab.content}
                 wrap="off"
@@ -1062,6 +1116,7 @@ export function FileEditorWorkspace({
                   };
                 }}
                 onKeyDown={handleEditorKeyDown}
+                onMouseDown={handleEditorMouseDown}
                 onSelect={(event) => {
                   const textarea = event.currentTarget;
                   lastSelectionRef.current = {

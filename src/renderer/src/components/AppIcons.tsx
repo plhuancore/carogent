@@ -232,6 +232,38 @@ export function RefreshIcon({ className }: { className?: string } = {}): JSX.Ele
   );
 }
 
+export function NewFileIcon(): JSX.Element {
+  return (
+    <svg aria-hidden="true" viewBox="0 0 16 16">
+      <path d="M3.75 2.25h5.5L12.25 5.25v8.5h-8.5z" />
+      <path d="M9.25 2.25v3h3" />
+      <path d="M8 7.25v4" />
+      <path d="M6 9.25h4" />
+    </svg>
+  );
+}
+
+export function NewFolderIcon(): JSX.Element {
+  return (
+    <svg aria-hidden="true" viewBox="0 0 16 16">
+      <path d="M1.75 5.25h12.5v7.25a1.25 1.25 0 0 1-1.25 1.25H3a1.25 1.25 0 0 1-1.25-1.25z" />
+      <path d="M1.75 5.25V3.75A1.25 1.25 0 0 1 3 2.5h3l1.25 1.5H13a1.25 1.25 0 0 1 1.25 1.25" />
+      <path d="M8 7.25v4" />
+      <path d="M6 9.25h4" />
+    </svg>
+  );
+}
+
+export function CollapseAllIcon(): JSX.Element {
+  return (
+    <svg aria-hidden="true" viewBox="0 0 16 16">
+      <path d="M3.5 5.5h9" />
+      <path d="m5 9.5 3-3 3 3" />
+      <path d="M3.5 12.5h9" />
+    </svg>
+  );
+}
+
 export function WrenchIcon(): JSX.Element {
   return (
     <svg aria-hidden="true" viewBox="0 0 24 24">

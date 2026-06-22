@@ -54,6 +54,7 @@ export type DirectoryEntry = {
   name: string;
   path: string;
   type: 'file' | 'directory';
+  ignored?: boolean;
   size?: number;
   createdAt?: number;
   modifiedAt?: number;
@@ -91,6 +92,25 @@ export type TextFileWriteRequest = {
 export type TextFileWriteResult = {
   path: string;
   modifiedAt: number;
+};
+
+export type FileSystemCreateEntryRequest = {
+  parentPath: string;
+  name: string;
+  type: 'file' | 'directory';
+};
+
+export type FileSystemCreateEntryResult = DirectoryEntry;
+
+export type FileSystemRenameEntryRequest = {
+  path: string;
+  name: string;
+};
+
+export type FileSystemRenameEntryResult = DirectoryEntry;
+
+export type FileSystemDeleteEntryRequest = {
+  path: string;
 };
 
 export type FileSearchRequest = {
@@ -140,6 +160,10 @@ export type FindFilesResult = {
 
 export type OpenVSCodeRequest = {
   path?: string;
+};
+
+export type RevealInFinderRequest = {
+  path: string;
 };
 
 export type OpenBrowserRequest = {
@@ -276,9 +300,13 @@ export type TerminalApi = {
   getImagePreview: (request: ImagePreviewRequest) => Promise<ImagePreviewResult>;
   readTextFile: (request: TextFileReadRequest) => Promise<TextFileReadResult>;
   writeTextFile: (request: TextFileWriteRequest) => Promise<TextFileWriteResult>;
+  createFileSystemEntry: (request: FileSystemCreateEntryRequest) => Promise<FileSystemCreateEntryResult>;
+  renameFileSystemEntry: (request: FileSystemRenameEntryRequest) => Promise<FileSystemRenameEntryResult>;
+  deleteFileSystemEntry: (request: FileSystemDeleteEntryRequest) => Promise<void>;
   searchFiles: (request: FileSearchRequest) => Promise<FileSearchResult>;
   findFiles: (request: FindFilesRequest) => Promise<FindFilesResult>;
   openInVSCode: (request: OpenVSCodeRequest) => Promise<void>;
+  revealInFinder: (request: RevealInFinderRequest) => Promise<void>;
   openOrFocusBrowser: (request: OpenBrowserRequest) => Promise<void>;
   getBrowserBridgeStatus: () => Promise<BrowserBridgeStatusEvent>;
   getAgentDoneOverlayItems: () => Promise<AgentDoneOverlayItem[]>;
