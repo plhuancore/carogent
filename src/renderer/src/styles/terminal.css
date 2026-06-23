@@ -24,7 +24,7 @@
 .split-child {
   min-width: 0;
   min-height: 0;
-  overflow: hidden;
+  overflow: visible;
 }
 
 .split-row > .divider {
@@ -585,6 +585,7 @@ rect.icon-accent {
   min-width: 0;
   min-height: 0;
   overflow: hidden;
+  border-radius: 0 0 11px 11px;
   background: #181818;
   padding: 8px 10px 12px;
 }

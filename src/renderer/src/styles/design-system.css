@@ -307,7 +307,7 @@ textarea:focus-visible {
 }
 
 .terminal-pane {
-  overflow: hidden;
+  overflow: visible;
   border-color: var(--color-border);
   border-radius: 12px;
   background: var(--color-terminal);
@@ -360,6 +360,7 @@ textarea:focus-visible {
     linear-gradient(180deg, rgba(255, 255, 255, 0.055), transparent),
     color-mix(in srgb, var(--color-bg-elevated) 84%, var(--pane-active-color, var(--color-accent)));
   padding: 0 8px;
+  border-radius: 11px 11px 0 0;
 }
 
 .pane-title-group {
@@ -421,8 +422,8 @@ textarea:focus-visible {
 .pane-more-menu {
   position: absolute;
   top: 30px;
-  left: 0;
-  right: auto;
+  right: 0;
+  left: auto;
   z-index: 70;
   display: flex;
   flex-direction: column;
