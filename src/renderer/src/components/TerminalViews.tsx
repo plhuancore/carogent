@@ -3,7 +3,7 @@ import type { CSSProperties, DragEvent as ReactDragEvent, PointerEvent as ReactP
 import type { ISearchOptions } from '@xterm/addon-search';
 import type { TerminalShellOption } from '../../../shared/ipcTypes';
 import type { LayoutNode, PaneNode, SplitDirection } from '../layout';
-import { findPane } from '../layout';
+import { findPane, getFirstPaneId } from '../layout';
 import {
   AgentOverlayIcon,
   CloseIcon,
@@ -103,6 +103,26 @@ type NodeViewProps = {
   pinnedPaneIds: Set<string>;
   maximizedPaneId?: string | null;
   onToggleMaximize?: (paneId: string) => void;
+  onSwapPanes?: (paneId1: string, paneId2: string) => void;
+  onDockPane?: (
+    draggedId: string,
+    targetId: string,
+    position:
+      | 'top'
+      | 'bottom'
+      | 'left'
+      | 'right'
+      | 'swap'
+      | 'parent-top'
+      | 'parent-bottom'
+      | 'parent-left'
+      | 'parent-right'
+  ) => void;
+  onInsertBetween?: (draggedId: string, leftPaneId: string, rightPaneId: string) => void;
+  draggingPaneId?: string | null;
+  onDragStart?: (paneId: string) => void;
+  onDragEnd?: () => void;
+  parentDirection?: SplitDirection;
 };
 
 export function NodeView(props: NodeViewProps): JSX.Element {
@@ -128,6 +148,12 @@ export function NodeView(props: NodeViewProps): JSX.Element {
           pinnedPaneIds={props.pinnedPaneIds}
           maximizedPaneId={props.maximizedPaneId}
           onToggleMaximize={props.onToggleMaximize}
+          onSwapPanes={props.onSwapPanes}
+          onDockPane={props.onDockPane}
+          draggingPaneId={props.draggingPaneId}
+          onDragStart={props.onDragStart}
+          onDragEnd={props.onDragEnd}
+          parentDirection={props.parentDirection}
         />
       );
     }
@@ -153,6 +179,12 @@ export function NodeView(props: NodeViewProps): JSX.Element {
         pinnedPaneIds={props.pinnedPaneIds}
         maximizedPaneId={props.maximizedPaneId}
         onToggleMaximize={props.onToggleMaximize}
+        onSwapPanes={props.onSwapPanes}
+        onDockPane={props.onDockPane}
+        draggingPaneId={props.draggingPaneId}
+        onDragStart={props.onDragStart}
+        onDragEnd={props.onDragEnd}
+        parentDirection={props.parentDirection}
       />
     );
   }
@@ -187,10 +219,17 @@ function SplitView({
   onPushToOverlay,
   pinnedPaneIds,
   maximizedPaneId,
-  onToggleMaximize
+  onToggleMaximize,
+  onSwapPanes,
+  onDockPane,
+  onInsertBetween,
+  draggingPaneId,
+  onDragStart,
+  onDragEnd
 }: SplitViewProps): JSX.Element {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const directionClass = node.direction === 'row' ? 'split-row' : 'split-column';
+  const [isDragOverDivider, setIsDragOverDivider] = useState(false);
 
   const beginResize = (event: ReactPointerEvent<HTMLDivElement>): void => {
     const container = containerRef.current;
@@ -226,6 +265,33 @@ function SplitView({
     window.addEventListener('pointerup', stop);
   };
 
+  const handleDividerDragOver = (event: ReactDragEvent<HTMLDivElement>): void => {
+    if (draggingPaneId) {
+      event.preventDefault();
+      event.dataTransfer.dropEffect = 'move';
+      setIsDragOverDivider(true);
+    }
+  };
+
+  const handleDividerDragLeave = (): void => {
+    setIsDragOverDivider(false);
+  };
+
+  const handleDividerDrop = (event: ReactDragEvent<HTMLDivElement>): void => {
+    if (draggingPaneId) {
+      event.preventDefault();
+      setIsDragOverDivider(false);
+
+      const leftPaneId = getFirstPaneId(node.children[0]);
+      const rightPaneId = getFirstPaneId(node.children[1]);
+
+      if (onInsertBetween) {
+        onInsertBetween(draggingPaneId, leftPaneId, rightPaneId);
+      }
+      onDragEnd?.();
+    }
+  };
+
   return (
     <div className={`split ${directionClass}`} ref={containerRef}>
       <div className="split-child" style={{ flex: `${node.sizes[0]} 1 0` }}>
@@ -248,9 +314,25 @@ function SplitView({
           pinnedPaneIds={pinnedPaneIds}
           maximizedPaneId={maximizedPaneId}
           onToggleMaximize={onToggleMaximize}
+          onSwapPanes={onSwapPanes}
+          onDockPane={onDockPane}
+          onInsertBetween={onInsertBetween}
+          draggingPaneId={draggingPaneId}
+          onDragStart={onDragStart}
+          onDragEnd={onDragEnd}
+          parentDirection={node.direction}
         />
       </div>
-      <div className="divider" role="separator" onPointerDown={beginResize} />
+      <div
+        className={`divider ${isDragOverDivider ? 'is-drag-over' : ''}`}
+        role="separator"
+        onPointerDown={beginResize}
+        onDragOver={handleDividerDragOver}
+        onDragLeave={handleDividerDragLeave}
+        onDrop={handleDividerDrop}
+      >
+        {isDragOverDivider && <div className="divider-dock-preview" />}
+      </div>
       <div className="split-child" style={{ flex: `${node.sizes[1]} 1 0` }}>
         <NodeView
           node={node.children[1]}
@@ -271,12 +353,18 @@ function SplitView({
           pinnedPaneIds={pinnedPaneIds}
           maximizedPaneId={maximizedPaneId}
           onToggleMaximize={onToggleMaximize}
+          onSwapPanes={onSwapPanes}
+          onDockPane={onDockPane}
+          onInsertBetween={onInsertBetween}
+          draggingPaneId={draggingPaneId}
+          onDragStart={onDragStart}
+          onDragEnd={onDragEnd}
+          parentDirection={node.direction}
         />
       </div>
     </div>
   );
 }
-
 
 type TerminalPaneProps = {
   pane: PaneNode;
@@ -295,7 +383,87 @@ type TerminalPaneProps = {
   pinnedPaneIds: Set<string>;
   maximizedPaneId?: string | null;
   onToggleMaximize?: (paneId: string) => void;
+  onSwapPanes?: (paneId1: string, paneId2: string) => void;
+  onDockPane?: (
+    draggedId: string,
+    targetId: string,
+    position:
+      | 'top'
+      | 'bottom'
+      | 'left'
+      | 'right'
+      | 'swap'
+      | 'parent-top'
+      | 'parent-bottom'
+      | 'parent-left'
+      | 'parent-right'
+  ) => void;
+  draggingPaneId?: string | null;
+  onDragStart?: (paneId: string) => void;
+  onDragEnd?: () => void;
+  parentDirection?: SplitDirection;
 };
+
+function getActiveZone(
+  px: number,
+  py: number,
+  parentDirection?: 'row' | 'column'
+):
+  | 'top'
+  | 'bottom'
+  | 'left'
+  | 'right'
+  | 'swap'
+  | 'parent-top'
+  | 'parent-bottom'
+  | 'parent-left'
+  | 'parent-right' {
+  // Center region (e.g., middle 30% width and middle 40% height) is swap
+  if (px >= 0.35 && px <= 0.65 && py >= 0.3 && py <= 0.7) {
+    return 'swap';
+  }
+
+  // If parent is a row (horizontal layout of side-by-side panes)
+  if (parentDirection === 'row') {
+    // Extreme top/bottom edges split the whole row
+    if (py < 0.2) return 'parent-top';
+    if (py > 0.8) return 'parent-bottom';
+
+    // Otherwise, left/right splits the pane horizontally
+    if (px < 0.35) return 'left';
+    if (px > 0.65) return 'right';
+
+    // Fallback inner top/bottom splits the pane vertically
+    return py < 0.5 ? 'top' : 'bottom';
+  }
+
+  // If parent is a column (vertical stack of panes)
+  if (parentDirection === 'column') {
+    // Extreme left/right edges split the whole column
+    if (px < 0.2) return 'parent-left';
+    if (px > 0.8) return 'parent-right';
+
+    // Otherwise, top/bottom splits the pane vertically
+    if (py < 0.35) return 'top';
+    if (py > 0.65) return 'bottom';
+
+    // Fallback inner left/right splits the pane horizontally
+    return px < 0.5 ? 'left' : 'right';
+  }
+
+  // Default behavior (no parent layout context, e.g. single pane)
+  // Split inside the pane based on closest edge
+  const distToLeft = px;
+  const distToRight = 1 - px;
+  const distToTop = py;
+  const distToBottom = 1 - py;
+  const minDist = Math.min(distToLeft, distToRight, distToTop, distToBottom);
+
+  if (minDist === distToTop) return 'top';
+  if (minDist === distToBottom) return 'bottom';
+  if (minDist === distToLeft) return 'left';
+  return 'right';
+}
 
 function TerminalPane({
   pane,
@@ -313,7 +481,13 @@ function TerminalPane({
   onPushToOverlay,
   pinnedPaneIds,
   maximizedPaneId,
-  onToggleMaximize
+  onToggleMaximize,
+  onSwapPanes,
+  onDockPane,
+  draggingPaneId,
+  onDragStart,
+  onDragEnd,
+  parentDirection
 }: TerminalPaneProps): JSX.Element {
   const hostRef = useRef<HTMLDivElement | null>(null);
   const editorRef = useRef<HTMLDivElement | null>(null);
@@ -330,6 +504,18 @@ function TerminalPane({
   const [searchResultIndex, setSearchResultIndex] = useState<number | null>(null);
   const [paneMoreMenuOpen, setPaneMoreMenuOpen] = useState(false);
   const [dragActive, setDragActive] = useState(false);
+  const [activeDropZone, setActiveDropZone] = useState<
+    | 'top'
+    | 'bottom'
+    | 'left'
+    | 'right'
+    | 'swap'
+    | 'parent-top'
+    | 'parent-bottom'
+    | 'parent-left'
+    | 'parent-right'
+    | null
+  >(null);
   const [draftTitle, setDraftTitle] = useState(pane.customTitle || '');
   const [draftBrowserUrl, setDraftBrowserUrl] = useState(pane.browserUrl || '');
   const displayTitle = pane.customTitle || pane.title;
@@ -617,14 +803,53 @@ function TerminalPane({
 
 
 
+  const handleDragStart = (event: ReactDragEvent<HTMLDivElement>): void => {
+    event.dataTransfer.setData('application/x-carogent-pane-id', pane.paneId);
+    event.dataTransfer.effectAllowed = 'move';
+    onDragStart?.(pane.paneId);
+  };
+
+  const handleDragEnd = (): void => {
+    onDragEnd?.();
+  };
+
+  const handleDragEnter = (event: ReactDragEvent<HTMLElement>): void => {
+    event.preventDefault();
+  };
+
   const handleDragOver = (event: ReactDragEvent<HTMLElement>): void => {
     event.preventDefault();
-    event.dataTransfer.dropEffect = 'copy';
+    if (draggingPaneId) {
+      if (draggingPaneId === pane.paneId) {
+        event.dataTransfer.dropEffect = 'none';
+        setActiveDropZone(null);
+        return;
+      }
+
+      event.dataTransfer.dropEffect = 'move';
+
+      const rect = event.currentTarget.getBoundingClientRect();
+      const x = event.clientX - rect.left;
+      const y = event.clientY - rect.top;
+      const px = x / rect.width;
+      const py = y / rect.height;
+
+      const zone = getActiveZone(px, py, parentDirection);
+      setActiveDropZone(zone);
+      return;
+    }
+    const isPaneDrag = event.dataTransfer.types.includes('application/x-carogent-pane-id');
+    event.dataTransfer.dropEffect = isPaneDrag ? 'move' : 'copy';
     setDragActive(true);
   };
 
   const handleDragLeave = (event: ReactDragEvent<HTMLElement>): void => {
-    if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+    if (event.currentTarget.contains(event.relatedTarget as Node | null)) {
+      return;
+    }
+    if (draggingPaneId) {
+      setActiveDropZone(null);
+    } else {
       setDragActive(false);
     }
   };
@@ -632,7 +857,24 @@ function TerminalPane({
   const handleDrop = (event: ReactDragEvent<HTMLElement>): void => {
     event.preventDefault();
     setDragActive(false);
+    setActiveDropZone(null);
     onActivate(pane.paneId);
+
+    if (draggingPaneId) {
+      if (draggingPaneId !== pane.paneId && onDockPane && activeDropZone) {
+        onDockPane(draggingPaneId, pane.paneId, activeDropZone);
+      }
+      onDragEnd?.();
+      return;
+    }
+
+    const sourcePaneId = event.dataTransfer.getData('application/x-carogent-pane-id');
+    if (sourcePaneId) {
+      if (sourcePaneId !== pane.paneId && onSwapPanes) {
+        onSwapPanes(sourcePaneId, pane.paneId);
+      }
+      return;
+    }
 
     const filePaths = Array.from(event.dataTransfer.files)
       .map((file) => window.terminalApi.getPathForFile(file))
@@ -660,14 +902,25 @@ function TerminalPane({
 
   return (
     <article
-      className={`terminal-pane ${active ? 'is-active' : ''} ${dragActive ? 'is-drag-over' : ''}`}
+      className={`terminal-pane ${active ? 'is-active' : ''} ${dragActive ? 'is-drag-over' : ''} ${pane.paneId === draggingPaneId ? 'is-dragging' : ''}`}
       style={paneStyle}
       onMouseDown={() => onActivate(pane.paneId)}
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
+      onDragEnter={handleDragEnter}
+      onDragEnd={handleDragEnd}
       onDrop={handleDrop}
     >
-      <div className="pane-toolbar" style={{ backgroundColor: headerColor }}>
+      {activeDropZone && (
+        <div className={`pane-dock-preview is-${activeDropZone}`} />
+      )}
+      <div
+        className="pane-toolbar"
+        draggable={!editorOpen}
+        onDragStart={handleDragStart}
+        onDragEnd={handleDragEnd}
+        style={{ backgroundColor: headerColor, cursor: editorOpen ? 'default' : 'grab' }}
+      >
         <div className="pane-left-tools">
           <div className="pane-more-menu-wrap" ref={paneMoreMenuRef} onMouseDown={(event) => event.stopPropagation()}>
             <button

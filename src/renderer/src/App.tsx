@@ -22,14 +22,17 @@ import '@xterm/xterm/css/xterm.css';
 import {
   closePane,
   countPanes,
+  dockPane,
   findPane,
   getFirstPaneId,
+  insertBetweenPanes,
   LayoutNode,
   listPaneIds,
   PaneNode,
   resizeSplit,
   SplitDirection,
   splitPane,
+  swapPanes,
   updatePane
 } from './layout';
 import {
@@ -281,7 +284,9 @@ function App(): JSX.Element {
   const [activeEditorLineNumber, setActiveEditorLineNumber] = useState<number | undefined>(undefined);
   const [gitRefreshTrigger, setGitRefreshTrigger] = useState(0);
   const [gitChangesCount, setGitChangesCount] = useState(0);
+  const [draggingPaneId, setDraggingPaneId] = useState<string | null>(null);
   const [gitSidebarWidth, setGitSidebarWidth] = useState(380);
+  const modifier = isMacPlatform() ? '⌘⇧' : 'Ctrl+Shift+';
   const [leftSidebarWidth, setLeftSidebarWidth] = useState(() => {
     const saved = localStorage.getItem('carogent-left-sidebar-width');
     const parsed = saved ? parseInt(saved, 10) : 244;
@@ -905,6 +910,46 @@ function App(): JSX.Element {
     }));
   }, [updateActiveWorkspace]);
 
+  const handleSwapPanes = useCallback((paneId1: string, paneId2: string) => {
+    updateActiveWorkspace((workspace) => ({
+      ...workspace,
+      layout: swapPanes(workspace.layout, paneId1, paneId2)
+    }));
+  }, [updateActiveWorkspace]);
+
+  const handleDockPane = useCallback(
+    (
+      draggedId: string,
+      targetId: string,
+      position:
+        | 'top'
+        | 'bottom'
+        | 'left'
+        | 'right'
+        | 'swap'
+        | 'parent-top'
+        | 'parent-bottom'
+        | 'parent-left'
+        | 'parent-right'
+    ) => {
+      updateActiveWorkspace((workspace) => ({
+        ...workspace,
+        layout: dockPane(workspace.layout, draggedId, targetId, position)
+      }));
+    },
+    [updateActiveWorkspace]
+  );
+
+  const handleInsertBetween = useCallback(
+    (draggedId: string, leftPaneId: string, rightPaneId: string) => {
+      updateActiveWorkspace((workspace) => ({
+        ...workspace,
+        layout: insertBetweenPanes(workspace.layout, draggedId, leftPaneId, rightPaneId)
+      }));
+    },
+    [updateActiveWorkspace]
+  );
+
   const handleUpdatePane = useCallback((paneId: string, changes: Partial<PaneNode>) => {
     updateActiveWorkspace((workspace) => ({
       ...workspace,
@@ -1408,12 +1453,41 @@ function App(): JSX.Element {
           openQuickAccess(event.shiftKey ? 'command' : 'quick-access');
         }
       }
+
+      // Sidebar Tab Shortcuts: Cmd/Ctrl + Shift + E/F/G/W
+      if ((event.metaKey || event.ctrlKey) && event.shiftKey) {
+        const key = event.key.toLowerCase();
+        if (key === 'e') {
+          event.preventDefault();
+          event.stopPropagation();
+          setLeftSidebarTab(curr => curr === 'explorer' ? null : 'explorer');
+        } else if (key === 'f') {
+          event.preventDefault();
+          event.stopPropagation();
+          setLeftSidebarTab(curr => curr === 'search' ? null : 'search');
+        } else if (key === 'g') {
+          event.preventDefault();
+          event.stopPropagation();
+          setLeftSidebarTab(curr => curr === 'git' ? null : 'git');
+        } else if (key === 'w') {
+          event.preventDefault();
+          event.stopPropagation();
+          setLeftSidebarTab(curr => {
+            if (curr === 'workspace') {
+              return null;
+            } else {
+              setIsExplorerSidebarOpenState(false);
+              return 'workspace';
+            }
+          });
+        }
+      }
     };
 
     window.addEventListener('keydown', handleKeyDown, true);
 
     return () => window.removeEventListener('keydown', handleKeyDown, true);
-  }, [openQuickAccess, isExplorerSidebarOpen, activePaneCwd]);
+  }, [openQuickAccess, isExplorerSidebarOpen, activePaneCwd, setLeftSidebarTab, setIsExplorerSidebarOpenState]);
 
   useEffect(() => {
     if (!quickAccessOpen) {
@@ -1582,7 +1656,7 @@ function App(): JSX.Element {
                 setIsExplorerSidebarOpenState(false);
               }
             }}
-            title="Terminal Workspace"
+            title={`Terminal Workspace (${modifier}W)`}
             type="button"
           >
             <WorkspaceTabIcon />
@@ -1596,7 +1670,7 @@ function App(): JSX.Element {
                 setLeftSidebarTab('explorer');
               }
             }}
-            title="File Explorer"
+            title={`File Explorer (${modifier}E)`}
             type="button"
           >
             <FolderTabIcon />
@@ -1610,7 +1684,7 @@ function App(): JSX.Element {
                 setLeftSidebarTab('search');
               }
             }}
-            title="Search"
+            title={`Search (${modifier}F)`}
             type="button"
           >
             <SearchTabIcon />
@@ -1624,7 +1698,7 @@ function App(): JSX.Element {
                 setLeftSidebarTab('git');
               }
             }}
-            title="Git Control"
+            title={`Git Control (${modifier}G)`}
             type="button"
           >
             <GitCustomIcon />
@@ -1839,6 +1913,12 @@ function App(): JSX.Element {
               pinnedPaneIds={pinnedPaneIds}
               maximizedPaneId={activeWorkspace.maximizedPaneId}
               onToggleMaximize={handleToggleMaximize}
+              onSwapPanes={handleSwapPanes}
+              onDockPane={handleDockPane}
+              onInsertBetween={handleInsertBetween}
+              draggingPaneId={draggingPaneId}
+              onDragStart={setDraggingPaneId}
+              onDragEnd={() => setDraggingPaneId(null)}
             />
           </div>
         )}

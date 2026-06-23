@@ -2173,16 +2173,10 @@ export const GitPanel: React.FC<GitPanelProps> = ({
                 <span>Committing...</span>
               ) : (
                 <>
-                  <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', paddingLeft: '20px' }}>
-                    <svg className="git-commit-btn-check" viewBox="0 0 16 16" width="14" height="14" fill="currentColor">
-                      <path d="M13.78 4.22a.75.75 0 0 1 0 1.06l-7.25 7.25a.75.75 0 0 1-1.06 0L2.22 9.28a.75.75 0 0 1 1.06-1.06L6 10.94l6.72-6.72a.75.75 0 0 1 1.06 0z"/>
-                    </svg>
-                    <span>Commit</span>
-                  </div>
-                  <div className="git-commit-btn-divider" style={{ width: '1px', height: '100%', background: 'rgba(255, 255, 255, 0.2)', margin: '0 8px' }} />
-                  <svg className="git-commit-btn-chevron" viewBox="0 0 16 16" width="12" height="12" fill="currentColor" style={{ marginRight: '4px' }}>
-                    <path d="M4.47 5.47a.75.75 0 0 1 1.06 0L8 7.94l2.47-2.47a.75.75 0 1 1 1.06 1.06l-3 3a.75.75 0 0 1-1.06 0l-3-3a.75.75 0 0 1 0-1.06z"/>
+                  <svg className="git-commit-btn-check" viewBox="0 0 16 16" width="14" height="14" fill="currentColor">
+                    <path d="M13.78 4.22a.75.75 0 0 1 0 1.06l-7.25 7.25a.75.75 0 0 1-1.06 0L2.22 9.28a.75.75 0 0 1 1.06-1.06L6 10.94l6.72-6.72a.75.75 0 0 1 1.06 0z"/>
                   </svg>
+                  <span>Commit</span>
                 </>
               )}
             </button>

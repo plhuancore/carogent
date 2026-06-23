@@ -1006,7 +1006,7 @@ export function FileEditorWorkspace({
           </div>
           {selectedTab.error && <div className="file-editor-error">{selectedTab.error}</div>}
 
-          <div className="file-editor-surface" style={{ position: 'relative', height: 'calc(100% - 75px)', overflow: 'hidden' }}>
+          <div className="file-editor-surface" style={{ position: 'relative', height: 'calc(100% - 20px)', overflow: 'hidden' }}>
             {selectedTab.isImage ? (
               <div
                 className="file-editor-image-preview"
