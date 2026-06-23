@@ -277,7 +277,7 @@ button {
   border: none;
   border-radius: 999px;
   background: transparent;
-  color: #94a3b8;
+  color: var(--color-muted);
   cursor: pointer;
   font-size: 13px;
   line-height: 1;
@@ -301,8 +301,8 @@ button {
 
 .agent-overlay-menu-button:hover:not(:disabled),
 .agent-overlay-close:hover {
-  background: rgba(148, 163, 184, 0.15);
-  color: #f1f5f9;
+  background: var(--color-accent-surface);
+  color: var(--color-accent-strong);
   transform: scale(1.08);
 }
 
@@ -312,7 +312,7 @@ button {
 }
 
 .agent-overlay-menu-button:disabled {
-  color: #334155;
+  color: var(--color-disabled);
   background: transparent;
   cursor: not-allowed;
 }
@@ -350,9 +350,9 @@ button {
   height: 76px;
   min-width: 0;
   border: 1px solid transparent;
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
   background: rgba(255, 255, 255, 0.025);
-  color: #cbd5e1;
+  color: var(--color-text);
   padding: 4px 6px;
   text-align: left;
   cursor: pointer;
@@ -363,13 +363,13 @@ button {
 }
 
 .agent-overlay-menu-item:hover {
-  background: rgba(148, 163, 184, 0.15);
+  background: var(--color-accent-surface);
   border-color: transparent;
-  color: #ffffff;
+  color: var(--color-text-strong);
 }
 
 .agent-overlay-menu-item:active {
-  background: rgba(148, 163, 184, 0.25);
+  background: var(--color-accent-muted);
 }
 
 .agent-overlay-item-header {
@@ -388,14 +388,14 @@ button {
   font-weight: 600;
   text-overflow: ellipsis;
   white-space: nowrap;
-  color: #f1f5f9;
+  color: var(--color-text-strong);
 }
 
 .agent-overlay-chip-workspace {
   max-width: 60px;
-  color: #c4b5fd;
-  background: rgba(167, 139, 250, 0.1);
-  border: 1px solid rgba(167, 139, 250, 0.2);
+  color: var(--color-accent-strong);
+  background: var(--color-accent-surface);
+  border: 1px solid var(--color-accent-muted);
   font-size: 8px;
   font-weight: 600;
   padding: 0.5px 4px;
@@ -441,12 +441,12 @@ button {
   opacity: 0;
   transform: translateY(-2px) scale(0.95);
   transition: opacity 0.15s cubic-bezier(0.16, 1, 0.3, 1), transform 0.15s cubic-bezier(0.16, 1, 0.3, 1);
-  background: rgba(15, 23, 42, 0.85);
+  background: var(--color-panel-3);
   backdrop-filter: blur(4px);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 6px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
   padding: 2px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+  box-shadow: var(--shadow-island);
   z-index: 5;
 }
 
@@ -464,20 +464,20 @@ button {
   border: none;
   border-radius: 4px;
   background: transparent;
-  color: #94a3b8;
+  color: var(--color-muted);
   cursor: pointer;
   transition: all 0.12s ease;
   padding: 0;
 }
 
 .agent-overlay-action-button:hover {
-  background: rgba(255, 255, 255, 0.15);
-  color: #f8fafc;
+  background: var(--color-accent-surface);
+  color: var(--color-accent-strong);
 }
 
 .agent-overlay-action-button.remove:hover {
-  background: rgba(239, 68, 68, 0.2);
-  color: #f87171;
+  background: rgba(243, 139, 168, 0.18);
+  color: var(--color-danger);
 }
 
 .agent-overlay-action-button svg {

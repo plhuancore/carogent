@@ -15,6 +15,26 @@ const HISTORY_PAGE_SIZE = 100;
 const MAX_HISTORY_ITEMS = 5000;
 const IS_MAC = navigator.platform.toUpperCase().indexOf('MAC') >= 0;
 
+function parseGitDiffUrl(urlStr: string): { filePath: string; searchParams: URLSearchParams } {
+  const prefix = 'gitdiff://';
+  if (!urlStr.startsWith(prefix)) {
+    return { filePath: '', searchParams: new URLSearchParams() };
+  }
+  const mainPart = urlStr.slice(prefix.length);
+  const qIdx = mainPart.indexOf('?');
+  const filePathPart = qIdx >= 0 ? mainPart.slice(0, qIdx) : mainPart;
+  const searchPart = qIdx >= 0 ? mainPart.slice(qIdx) : '';
+  
+  const decodedPath = decodeURIComponent(filePathPart);
+  let filePath = decodedPath.replace(/^\/([a-zA-Z]:)/, '$1');
+  if (/^[a-zA-Z]\//.test(filePath)) {
+    filePath = filePath.slice(0, 1) + ':' + filePath.slice(1);
+  }
+  const searchParams = new URLSearchParams(searchPart);
+  
+  return { filePath, searchParams };
+}
+
 type MaximizedDiffRect = {
   top: number;
   left: number;
@@ -57,6 +77,7 @@ interface GitPanelProps {
   refreshTrigger?: number;
   onOpenFile?: (filePath: string) => void;
   onLeft?: boolean;
+  activeEditorFilePath?: string;
 }
 
 function groupFilesByDirectory(files: { additions: number; deletions: number; path: string }[]) {
@@ -408,7 +429,8 @@ export const GitPanel: React.FC<GitPanelProps> = ({
   terminalId,
   refreshTrigger = 0,
   onOpenFile,
-  onLeft = false
+  onLeft = false,
+  activeEditorFilePath
 }) => {
   const handleOpenFileClick = (e: React.MouseEvent, relPath: string) => {
     e.stopPropagation();
@@ -428,12 +450,7 @@ export const GitPanel: React.FC<GitPanelProps> = ({
   const [commitFiles, setCommitFiles] = useState<{ additions: number; deletions: number; path: string }[]>([]);
   const [commitFilesHasMore, setCommitFilesHasMore] = useState(false);
   const [commitFilesLoading, setCommitFilesLoading] = useState(false);
-  const [selectedCommitFile, setSelectedCommitFile] = useState<{ path: string } | null>(null);
   const [activeTab, setActiveTab] = useState<'changes' | 'history'>('changes');
-  const [selectedFile, setSelectedFile] = useState<{ path: string; isStaged: boolean } | null>(null);
-  const [diff, setDiff] = useState<string | null>(null);
-  const [diffError, setDiffError] = useState<string | null>(null);
-  const [imageDiff, setImageDiff] = useState<GitImageDiffResult | null>(null);
   const [commitMessage, setCommitMessage] = useState('');
   const [commitLoading, setCommitLoading] = useState(false);
   const [history, setHistory] = useState<CommitHistoryItem[]>([]);
@@ -443,10 +460,58 @@ export const GitPanel: React.FC<GitPanelProps> = ({
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [worktrees, setWorktrees] = useState<GitWorktree[]>([]);
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
-  const [isDiffMaximized, setIsDiffMaximized] = useState(false);
-  const [maximizedDiffRect, setMaximizedDiffRect] = useState<MaximizedDiffRect | null>(null);
-  const [hiddenDiffSnippets, setHiddenDiffSnippets] = useState<Record<string, HiddenDiffSnippetState>>({});
-  const [diffScrollMarkers, setDiffScrollMarkers] = useState<DiffScrollMarker[]>([]);
+
+  const handleFileDiffClick = (filePath: string, isStaged: boolean) => {
+    if (!cwd) return;
+    if (onOpenFile) {
+      const cleanBase = cwd.replace(/[\\/]+$/, '');
+      const cleanRel = filePath.replace(/^[\\/]+/, '');
+      const isWindows = cwd.includes('\\') || navigator.platform.toUpperCase().indexOf('WIN') >= 0;
+      const absolutePath = isWindows
+        ? `${cleanBase}\\${cleanRel.replace(/\//g, '\\')}`
+        : `${cleanBase}/${cleanRel}`;
+      const gitDiffUrl = `gitdiff://${absolutePath.replace(/\\/g, '/')}?source=${isStaged ? 'index' : 'workingTree'}`;
+      onOpenFile(gitDiffUrl);
+    }
+  };
+
+  const isFileActive = (filePath: string, isStaged: boolean) => {
+    if (!activeEditorFilePath || !activeEditorFilePath.startsWith('gitdiff://')) return false;
+    try {
+      const { filePath: urlPath, searchParams } = parseGitDiffUrl(activeEditorFilePath);
+      const urlSource = searchParams.get('source');
+
+      const cleanUrlPath = urlPath.replace(/\\/g, '/').toLowerCase();
+      
+      const cleanBase = cwd.replace(/[\\/]+$/, '').replace(/\\/g, '/');
+      const cleanRel = filePath.replace(/^[\\/]+/, '').replace(/\\/g, '/');
+      const absolutePath = `${cleanBase}/${cleanRel}`.toLowerCase();
+
+      const sourceMatches = isStaged ? urlSource === 'index' : urlSource === 'workingTree';
+      return cleanUrlPath === absolutePath && sourceMatches;
+    } catch {
+      return false;
+    }
+  };
+
+  const isCommitFileActive = (filePath: string) => {
+    if (!activeEditorFilePath || !activeEditorFilePath.startsWith('gitdiff://')) return false;
+    try {
+      const { filePath: urlPath, searchParams } = parseGitDiffUrl(activeEditorFilePath);
+      const urlSource = searchParams.get('source');
+      const urlRef = searchParams.get('ref');
+
+      const cleanUrlPath = urlPath.replace(/\\/g, '/').toLowerCase();
+      
+      const cleanBase = cwd.replace(/[\\/]+$/, '').replace(/\\/g, '/');
+      const cleanRel = filePath.replace(/^[\\/]+/, '').replace(/\\/g, '/');
+      const absolutePath = `${cleanBase}/${cleanRel}`.toLowerCase();
+
+      return cleanUrlPath === absolutePath && urlSource === 'commit' && urlRef === selectedCommit?.hash;
+    } catch {
+      return false;
+    }
+  };
   const [hasMoreHistory, setHasMoreHistory] = useState(true);
   const [stagedLimit, setStagedLimit] = useState(MAX_DISPLAYED_CHANGES);
   const [unstagedLimit, setUnstagedLimit] = useState(MAX_DISPLAYED_CHANGES);
@@ -467,10 +532,6 @@ export const GitPanel: React.FC<GitPanelProps> = ({
     setSelectedCommit(null);
     setCommitFiles([]);
     setCommitFilesHasMore(false);
-    setSelectedCommitFile(null);
-    setDiff(null);
-    setDiffError(null);
-    setHiddenDiffSnippets({});
     setHistorySearchQuery('');
     setActiveHistoryMatchIndex(-1);
     setStagedLimit(MAX_DISPLAYED_CHANGES);
@@ -532,102 +593,7 @@ export const GitPanel: React.FC<GitPanelProps> = ({
     };
   }, [history, status?.staged, status?.unstaged]);
 
-  const { parsedLines, hiddenDiffLineCount, foldedDiffLineCount } = useMemo(() => {
-    if (!diff) return { parsedLines: [], hiddenDiffLineCount: 0, foldedDiffLineCount: 0 };
-    const lines = diff.split('\n');
-    const renderLimit = isDiffMaximized
-      ? Math.min(lines.length, MAX_MAXIMIZED_RENDERED_DIFF_LINES)
-      : MAX_RENDERED_DIFF_LINES;
-    const visibleLines = lines.slice(0, renderLimit);
-    const hiddenCount = Math.max(0, lines.length - renderLimit);
-    const parsed = parseDiffLines(visibleLines);
 
-    const activePath = selectedFile?.path || selectedCommitFile?.path || '';
-    const ext = activePath.split('.').pop()?.toLowerCase() || '';
-    let dataLang = 'text';
-    if (['ts', 'tsx', 'js', 'jsx'].includes(ext)) {
-      dataLang = ext.includes('ts') ? 'typescript' : 'javascript';
-    } else if (ext === 'css') {
-      dataLang = 'css';
-    } else if (ext === 'json') {
-      dataLang = 'json';
-    } else if (['html', 'htm', 'xml'].includes(ext)) {
-      dataLang = 'html';
-    }
-
-    let highlightedCodeCount = 0;
-    const highlighted: HighlightedDiffLine[] = parsed.map((lineInfo) => {
-      const { className, prefix, content, oldLineNumber, newLineNumber, raw } = lineInfo;
-      const isCodeLine = className === 'diff-line-addition' || className === 'diff-line-deletion' || className === 'diff-line-normal';
-
-      let highlightedCode: React.ReactNode = null;
-      if (isCodeLine) {
-        if (highlightedCodeCount < 3000) {
-          highlightedCode = highlightCodeLine(content, activePath);
-          highlightedCodeCount += 1;
-        } else {
-          highlightedCode = content;
-        }
-      } else {
-        highlightedCode = raw;
-      }
-
-      return {
-        oldLineNumber,
-        newLineNumber,
-        prefix,
-        className,
-        isCodeLine,
-        raw,
-        dataLang,
-        highlightedCode
-      };
-    });
-
-    const renderLines: RenderableDiffLine[] = [];
-    let foldedCount = 0;
-    let hasSeenHunk = false;
-    let previousOldEnd = 0;
-    let previousNewEnd = 0;
-
-    for (let index = 0; index < highlighted.length; index += 1) {
-      const lineInfo = highlighted[index];
-      if (isDiffMaximized && lineInfo.className === 'diff-line-hunk') {
-        const match = lineInfo.raw.match(/^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/);
-        if (match) {
-          const oldStart = parseInt(match[1], 10);
-          const oldCount = match[2] === undefined ? 1 : parseInt(match[2], 10);
-          const newStart = parseInt(match[3], 10);
-          const newCount = match[4] === undefined ? 1 : parseInt(match[4], 10);
-          const hiddenLines = hasSeenHunk
-            ? Math.max(0, oldStart - previousOldEnd, newStart - previousNewEnd)
-            : Math.max(0, oldStart - 1, newStart - 1);
-
-          if (hiddenLines > 0) {
-            renderLines.push({
-              type: 'hidden-lines',
-              key: `hidden-${index}-${oldStart}-${newStart}`,
-              count: hiddenLines,
-              oldStartLine: hasSeenHunk ? previousOldEnd : 1,
-              newStartLine: hasSeenHunk ? previousNewEnd : 1
-            });
-            foldedCount += hiddenLines;
-          }
-
-          previousOldEnd = oldStart + oldCount;
-          previousNewEnd = newStart + newCount;
-          hasSeenHunk = true;
-        }
-      }
-      renderLines.push(lineInfo);
-    }
-
-    return {
-      parsedLines: renderLines,
-      hiddenDiffLineCount: hiddenCount,
-      foldedDiffLineCount: foldedCount
-    };
-  }, [diff, isDiffMaximized, selectedFile?.path, selectedCommitFile?.path]);
 
   const { visibleCommitFiles, hiddenCommitFilesCount } = useMemo(() => {
     const limit = 400;
@@ -717,9 +683,7 @@ export const GitPanel: React.FC<GitPanelProps> = ({
     return parts.length > 0 ? parts : text;
   }, [normalizeHistorySearchText, normalizedHistoryFindQuery]);
 
-  useEffect(() => {
-    selectedFileRef.current = selectedFile;
-  }, [selectedFile]);
+
 
   useEffect(() => {
     return () => {
@@ -831,34 +795,6 @@ export const GitPanel: React.FC<GitPanelProps> = ({
     window.addEventListener('pointerup', handlePointerUp);
   };
 
-  const [fileListHeight, setFileListHeight] = useState<number | string>('50%');
-
-  const handleVerticalResizeStart = (e: React.PointerEvent<HTMLDivElement>) => {
-    e.preventDefault();
-    e.stopPropagation();
-    e.currentTarget.setPointerCapture(e.pointerId);
-
-    const resizer = e.currentTarget;
-    const scrollArea = resizer.previousElementSibling as HTMLElement;
-    const startHeight = scrollArea ? scrollArea.offsetHeight : 250;
-
-    const startY = e.clientY;
-
-    const handlePointerMove = (moveEvent: PointerEvent) => {
-      const deltaY = moveEvent.clientY - startY;
-      const newHeight = Math.max(80, startHeight + deltaY);
-      setFileListHeight(newHeight);
-    };
-
-    const handlePointerUp = () => {
-      window.removeEventListener('pointermove', handlePointerMove);
-      window.removeEventListener('pointerup', handlePointerUp);
-    };
-
-    window.addEventListener('pointermove', handlePointerMove);
-    window.addEventListener('pointerup', handlePointerUp);
-  };
-
   // Load Status
   const loadStatus = useCallback((showLoading = false): Promise<void> => {
     if (!cwd) return Promise.resolve();
@@ -883,19 +819,6 @@ export const GitPanel: React.FC<GitPanelProps> = ({
 
           setStagedLimit(prev => Math.max(MAX_DISPLAYED_CHANGES, Math.min(prev, gitStatus.staged?.length || 0)));
           setUnstagedLimit(prev => Math.max(MAX_DISPLAYED_CHANGES, Math.min(prev, gitStatus.unstaged?.length || 0)));
-
-          const currentSelection = selectedFileRef.current;
-          if (currentSelection) {
-            const fileExists =
-              (gitStatus.staged?.some(f => f.path === currentSelection.path) || false) ||
-              (gitStatus.unstaged?.some(f => f.path === currentSelection.path) || false);
-            if (!fileExists) {
-              selectedFileRef.current = null;
-              setSelectedFile(null);
-              setDiff(null);
-              setHiddenDiffSnippets({});
-            }
-          }
         } while (pendingStatusRef.current);
       } catch (err) {
         console.error('Failed to load git status:', err);
@@ -910,54 +833,6 @@ export const GitPanel: React.FC<GitPanelProps> = ({
 
     statusPromiseRef.current = statusPromise;
     return statusPromise;
-  }, [cwd]);
-
-  // Load Diff
-  const loadDiff = useCallback(async (file: { path: string; isStaged: boolean }) => {
-    if (!cwd) return;
-    const requestId = diffRequestIdRef.current + 1;
-    diffRequestIdRef.current = requestId;
-    setDiff(null);
-    setImageDiff(null);
-    setDiffError(null);
-    setHiddenDiffSnippets({});
-
-    if (isImageFile(file.path)) {
-      try {
-        const result = await window.terminalApi.gitImageDiff({
-          cwd,
-          filePath: file.path,
-          isStaged: file.isStaged
-        });
-        if (diffRequestIdRef.current !== requestId) return;
-        if (result.error) {
-          setDiffError(result.error);
-        } else {
-          setImageDiff(result);
-        }
-      } catch (err: any) {
-        if (diffRequestIdRef.current !== requestId) return;
-        setDiffError(err.message || 'Failed to load image diff');
-      }
-      return;
-    }
-
-    try {
-      const result = await window.terminalApi.gitDiff({
-        cwd,
-        filePath: file.path,
-        isStaged: file.isStaged
-      });
-      if (diffRequestIdRef.current !== requestId) return;
-      if (result.error) {
-        setDiffError(result.error);
-      } else {
-        setDiff(result.diff || 'No differences found.');
-      }
-    } catch (err: any) {
-      if (diffRequestIdRef.current !== requestId) return;
-      setDiffError(err.message || 'Failed to load diff');
-    }
   }, [cwd]);
 
   const loadHistory = useCallback(async (reset = false) => {
@@ -1127,10 +1002,6 @@ export const GitPanel: React.FC<GitPanelProps> = ({
       setSelectedCommit(null);
       setCommitFiles([]);
       setCommitFilesHasMore(false);
-      setSelectedCommitFile(null);
-      setDiff(null);
-      setDiffError(null);
-      setHiddenDiffSnippets({});
       return;
     }
 
@@ -1141,10 +1012,6 @@ export const GitPanel: React.FC<GitPanelProps> = ({
     setSelectedCommit(commit);
     setCommitFiles([]);
     setCommitFilesHasMore(false);
-    setSelectedCommitFile(null);
-    setDiff(null);
-    setDiffError(null);
-    setHiddenDiffSnippets({});
     setCommitFilesLoading(true);
 
     try {
@@ -1165,56 +1032,19 @@ export const GitPanel: React.FC<GitPanelProps> = ({
     }
   }, [cwd, selectedCommit]);
 
-  const handleCommitFileClick = useCallback(async (filePath: string) => {
+  const handleCommitFileClick = useCallback((filePath: string) => {
     if (!cwd || !selectedCommit) return;
-
-    const requestId = commitDiffRequestIdRef.current + 1;
-    commitDiffRequestIdRef.current = requestId;
-
-    setSelectedCommitFile({ path: filePath });
-    setDiff(null);
-    setImageDiff(null);
-    setDiffError(null);
-    setHiddenDiffSnippets({});
-
-    if (isImageFile(filePath)) {
-      try {
-        const result = await window.terminalApi.gitImageDiff({
-          cwd,
-          filePath,
-          isStaged: false,
-          hash: selectedCommit.hash
-        });
-        if (commitDiffRequestIdRef.current !== requestId) return;
-        if (result.error) {
-          setDiffError(result.error);
-        } else {
-          setImageDiff(result);
-        }
-      } catch (err: any) {
-        if (commitDiffRequestIdRef.current !== requestId) return;
-        setDiffError(err.message || 'Failed to load image diff');
-      }
-      return;
+    if (onOpenFile) {
+      const cleanBase = cwd.replace(/[\\/]+$/, '');
+      const cleanRel = filePath.replace(/^[\\/]+/, '');
+      const isWindows = cwd.includes('\\') || navigator.platform.toUpperCase().indexOf('WIN') >= 0;
+      const absolutePath = isWindows
+        ? `${cleanBase}\\${cleanRel.replace(/\//g, '\\')}`
+        : `${cleanBase}/${cleanRel}`;
+      const gitDiffUrl = `gitdiff://${absolutePath.replace(/\\/g, '/')}?source=commit&ref=${selectedCommit.hash}`;
+      onOpenFile(gitDiffUrl);
     }
-
-    try {
-      const result = await window.terminalApi.gitCommitFileDiff({
-        cwd,
-        hash: selectedCommit.hash,
-        filePath
-      });
-      if (commitDiffRequestIdRef.current !== requestId) return;
-      if (result.error) {
-        setDiffError(result.error);
-      } else {
-        setDiff(result.diff || 'No differences found.');
-      }
-    } catch (err: any) {
-      if (commitDiffRequestIdRef.current !== requestId) return;
-      setDiffError(err.message || 'Failed to load diff');
-    }
-  }, [cwd, selectedCommit]);
+  }, [cwd, selectedCommit, onOpenFile]);
 
   // Handle Watcher / Initial Load (only when app is focused)
   useEffect(() => {
@@ -1286,10 +1116,6 @@ export const GitPanel: React.FC<GitPanelProps> = ({
     setSelectedCommit(null);
     setCommitFiles([]);
     setCommitFilesHasMore(false);
-    setSelectedCommitFile(null);
-    setDiff(null);
-    setDiffError(null);
-    setHiddenDiffSnippets({});
     loadHistory(true);
 
     const handleFocus = () => {
@@ -1303,71 +1129,6 @@ export const GitPanel: React.FC<GitPanelProps> = ({
     };
   }, [cwd, activeTab, loadHistory]);
 
-  // Load diff when selection changes
-  useEffect(() => {
-    if (selectedFile) {
-      loadDiff(selectedFile);
-    }
-  }, [selectedFile, loadDiff]);
-
-  useLayoutEffect(() => {
-    const body = diffBodyRef.current;
-    if (!body || diffError || diff === null) {
-      setDiffScrollMarkers([]);
-      return;
-    }
-
-    const measureMarkers = () => {
-      const scrollableHeight = Math.max(1, body.scrollHeight);
-      const markerNodes = Array.from(body.querySelectorAll<HTMLElement>('[data-diff-marker-type]'));
-      const measuredMarkers = markerNodes.map((node, index) => {
-        const type = node.dataset.diffMarkerType as DiffScrollMarker['type'];
-        return {
-          key: `${type}-${node.offsetTop}-${index}`,
-          type,
-          targetTop: node.offsetTop,
-          bottomTop: node.offsetTop + node.offsetHeight
-        };
-      });
-      const groupedMarkers: { type: DiffScrollMarker['type']; targetTop: number; bottomTop: number }[] = [];
-      const markerGapThreshold = 3;
-
-      for (const marker of measuredMarkers) {
-        const current = groupedMarkers[groupedMarkers.length - 1];
-        if (current && current.type === marker.type && marker.targetTop - current.bottomTop <= markerGapThreshold) {
-          current.bottomTop = Math.max(current.bottomTop, marker.bottomTop);
-        } else {
-          groupedMarkers.push({
-            type: marker.type,
-            targetTop: marker.targetTop,
-            bottomTop: marker.bottomTop
-          });
-        }
-      }
-
-      const nextMarkers = groupedMarkers.map((marker, index) => ({
-        key: `${marker.type}-${marker.targetTop}-${index}`,
-        type: marker.type,
-        targetTop: marker.targetTop,
-        topPercent: (marker.targetTop / scrollableHeight) * 100,
-        heightPercent: Math.max(0.7, ((marker.bottomTop - marker.targetTop) / scrollableHeight) * 100)
-      }));
-      setDiffScrollMarkers(nextMarkers);
-    };
-
-    const frameId = requestAnimationFrame(measureMarkers);
-    const resizeObserver = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(measureMarkers);
-    resizeObserver?.observe(body);
-    const content = body.querySelector<HTMLElement>('.git-diff-pre');
-    if (content) {
-      resizeObserver?.observe(content);
-    }
-    return () => {
-      cancelAnimationFrame(frameId);
-      resizeObserver?.disconnect();
-    };
-  }, [diff, diffError, hiddenDiffLineCount, hiddenDiffSnippets, parsedLines]);
-
   // Trigger refresh from prop
   useEffect(() => {
     if (refreshTrigger > 0) {
@@ -1377,73 +1138,6 @@ export const GitPanel: React.FC<GitPanelProps> = ({
       }
     }
   }, [refreshTrigger, loadStatus, loadHistory, activeTab]);
-
-  // Keyboard shortcuts (Escape to restore, Cmd+Shift+D to toggle maximized diff view)
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      // 1. Escape to restore (only when maximized)
-      if (isDiffMaximized && e.key === 'Escape') {
-        setIsDiffMaximized(false);
-        return;
-      }
-
-      // 2. Cmd+Shift+D (Mac) or Ctrl+Shift+D (Windows/Linux) to toggle
-      const modifier = IS_MAC ? e.metaKey : e.ctrlKey;
-      if (modifier && e.shiftKey && e.key.toLowerCase() === 'd') {
-        e.preventDefault();
-        setIsDiffMaximized((prev) => !prev);
-      }
-    };
-    document.addEventListener('keydown', handleKeyDown);
-    return () => {
-      document.removeEventListener('keydown', handleKeyDown);
-    };
-  }, [isDiffMaximized]);
-
-  useLayoutEffect(() => {
-    if (!isDiffMaximized) {
-      setMaximizedDiffRect(null);
-      return;
-    }
-
-    const terminalCanvas = document.querySelector<HTMLElement>('.terminal-canvas');
-    if (!terminalCanvas) {
-      setMaximizedDiffRect(null);
-      return;
-    }
-
-    const updateRect = () => {
-      const rect = terminalCanvas.getBoundingClientRect();
-      setMaximizedDiffRect((prev) => {
-        const next = {
-          top: rect.top,
-          left: rect.left,
-          width: rect.width,
-          height: rect.height
-        };
-        if (
-          prev &&
-          prev.top === next.top &&
-          prev.left === next.left &&
-          prev.width === next.width &&
-          prev.height === next.height
-        ) {
-          return prev;
-        }
-        return next;
-      });
-    };
-
-    updateRect();
-    window.addEventListener('resize', updateRect);
-    const resizeObserver = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(updateRect);
-    resizeObserver?.observe(terminalCanvas);
-
-    return () => {
-      window.removeEventListener('resize', updateRect);
-      resizeObserver?.disconnect();
-    };
-  }, [isDiffMaximized]);
 
   // Infinite scroll intersection observer
   useEffect(() => {
@@ -1480,9 +1174,6 @@ export const GitPanel: React.FC<GitPanelProps> = ({
     try {
       await window.terminalApi.gitStage({ cwd, filePath });
       await loadStatus();
-      if (selectedFile?.path === filePath) {
-        setSelectedFile({ path: filePath, isStaged: true });
-      }
     } catch (err) {
       alert('Failed to stage file: ' + err);
     }
@@ -1493,9 +1184,6 @@ export const GitPanel: React.FC<GitPanelProps> = ({
     try {
       await window.terminalApi.gitUnstage({ cwd, filePath });
       await loadStatus();
-      if (selectedFile?.path === filePath) {
-        setSelectedFile({ path: filePath, isStaged: false });
-      }
     } catch (err) {
       alert('Failed to unstage file: ' + err);
     }
@@ -1585,166 +1273,6 @@ export const GitPanel: React.FC<GitPanelProps> = ({
     }
   };
 
-  const handleHiddenLinesToggle = async (line: HiddenDiffLinesBlock) => {
-    const current = hiddenDiffSnippets[line.key];
-    if (current?.lines || current?.error) {
-      setHiddenDiffSnippets((snippets) => {
-        const next = { ...snippets };
-        delete next[line.key];
-        return next;
-      });
-      return;
-    }
-
-    const activeFile = activeTab === 'changes' ? selectedFile : selectedCommitFile;
-    if (!activeFile) return;
-
-    setHiddenDiffSnippets((snippets) => ({
-      ...snippets,
-      [line.key]: { loading: true }
-    }));
-
-    try {
-      const result = await window.terminalApi.gitFileSnippet({
-        cwd,
-        filePath: activeFile.path,
-        source: activeTab === 'history' ? 'commit' : (selectedFile?.isStaged ? 'index' : 'workingTree'),
-        ref: activeTab === 'history' ? selectedCommit?.hash : undefined,
-        startLine: line.newStartLine,
-        lineCount: line.count
-      });
-
-      setHiddenDiffSnippets((snippets) => ({
-        ...snippets,
-        [line.key]: result.error ? { error: result.error } : { lines: result.lines || [] }
-      }));
-    } catch (err: any) {
-      setHiddenDiffSnippets((snippets) => ({
-        ...snippets,
-        [line.key]: { error: err.message || 'Failed to load hidden lines' }
-      }));
-    }
-  };
-
-  const renderDiffLine = (line: RenderableDiffLine, index: number) => {
-    if ('type' in line && line.type === 'hidden-lines') {
-      const snippet = hiddenDiffSnippets[line.key];
-      return (
-        <React.Fragment key={line.key}>
-          <button
-            type="button"
-            className={`git-diff-hidden-lines-row ${snippet?.lines || snippet?.error ? 'is-expanded' : ''}`}
-            data-diff-marker-type="hidden"
-            onClick={() => handleHiddenLinesToggle(line)}
-            title={snippet?.lines || snippet?.error ? 'Collapse hidden lines' : 'Show hidden lines'}
-          >
-            <div className="git-diff-hidden-gutter">
-              {snippet?.loading ? null : (snippet?.lines || snippet?.error ? <FoldIcon /> : <UnfoldIcon />)}
-            </div>
-            <div className="git-diff-hidden-text">
-              {snippet?.loading
-                ? 'Loading hidden lines...'
-                : snippet?.lines || snippet?.error
-                  ? `Hide ${line.count} hidden lines`
-                  : `${line.count} hidden lines`}
-            </div>
-          </button>
-          {snippet?.error && renderDiffLine({
-            raw: snippet.error,
-            className: 'diff-line-meta',
-            prefix: '',
-            oldLineNumber: '',
-            newLineNumber: '',
-            isCodeLine: false,
-            dataLang: 'text',
-            highlightedCode: snippet.error
-          }, index)}
-          {snippet?.lines && (() => {
-            const hasManyLines = snippet.lines.length > 100;
-            const showSplit = hasManyLines && !snippet.fullyExpanded;
-
-            const renderLineHelper = (content: string, snippetIndex: number) => renderDiffLine({
-              raw: ` ${content}`,
-              className: 'diff-line-normal',
-              prefix: ' ',
-              oldLineNumber: line.oldStartLine + snippetIndex,
-              newLineNumber: line.newStartLine + snippetIndex,
-              isCodeLine: true,
-              dataLang: 'text',
-              highlightedCode: highlightCodeLine(content, activeTab === 'changes' ? selectedFile?.path || '' : selectedCommitFile?.path || '')
-            }, index + snippetIndex + 1);
-
-            if (showSplit) {
-              const firstPart = snippet.lines.slice(0, 50);
-              const lastPart = snippet.lines.slice(-50);
-              const middleCount = snippet.lines.length - 100;
-
-              return (
-                <>
-                  {firstPart.map((content, idx) => renderLineHelper(content, idx))}
-                  <button
-                    type="button"
-                    className="git-diff-hidden-lines-row git-diff-hidden-lines-middle"
-                    onClick={() => {
-                      setHiddenDiffSnippets((snippets) => ({
-                        ...snippets,
-                        [line.key]: {
-                          ...snippets[line.key],
-                          fullyExpanded: true
-                        }
-                      }));
-                    }}
-                  >
-                    {middleCount > 500
-                      ? `Show remaining ${middleCount} lines (expensive action)`
-                      : `Show remaining ${middleCount} lines`}
-                  </button>
-                  {lastPart.map((content, idx) => {
-                    const actualIdx = snippet.lines!.length - 50 + idx;
-                    return renderLineHelper(content, actualIdx);
-                  })}
-                </>
-              );
-            }
-
-            return snippet.lines.map((content, idx) => renderLineHelper(content, idx));
-          })()}
-        </React.Fragment>
-      );
-    }
-
-    const diffLine = line as HighlightedDiffLine;
-    const { className, prefix, oldLineNumber, newLineNumber, isCodeLine, dataLang, highlightedCode } = diffLine;
-    const markerType =
-      className === 'diff-line-addition'
-        ? 'addition'
-        : className === 'diff-line-deletion'
-          ? 'deletion'
-          : className === 'diff-line-hunk'
-            ? 'hunk'
-            : undefined;
-
-    return (
-      <div key={index} className={`git-diff-line ${className}`} data-lang={dataLang} data-diff-marker-type={markerType}>
-        {isCodeLine ? (
-          <>
-            <span className="diff-line-number-old">{oldLineNumber}</span>
-            <span className="diff-line-number-new">{newLineNumber}</span>
-            <span className="diff-prefix">{prefix}</span>
-            <span className="diff-code">{highlightedCode}</span>
-          </>
-        ) : (
-          <>
-            <span className="diff-line-number-old"></span>
-            <span className="diff-line-number-new"></span>
-            <span className="diff-prefix"></span>
-            <span className="diff-code">{highlightedCode}</span>
-          </>
-        )}
-      </div>
-    );
-  };
-
   const getStatusBadge = (statusChar: string) => {
     switch (statusChar.toUpperCase()) {
       case 'M':
@@ -1760,13 +1288,6 @@ export const GitPanel: React.FC<GitPanelProps> = ({
       default:
         return <span className="git-badge badge-modified" title="Modified">{statusChar}</span>;
     }
-  };
-
-  const handleDiffMarkerClick = (targetTop: number) => {
-    const body = diffBodyRef.current;
-    if (!body) return;
-
-    body.scrollTop = Math.max(0, targetTop - body.clientHeight * 0.2);
   };
 
   // Helper icons
@@ -1905,153 +1426,10 @@ export const GitPanel: React.FC<GitPanelProps> = ({
   const unstagedCount = status.unstaged?.length || 0;
   const totalChanges = stagedCount + unstagedCount;
 
-  const maximizedPlaceholder = (
-    <div className="git-diff-container git-diff-maximized-placeholder">
-      <div className="git-diff-placeholder" style={{ display: 'flex', flexDirection: 'column', gap: '8px', justifyContent: 'center', alignItems: 'center', height: '100%' }}>
-        <span style={{ fontSize: '12px', color: '#8b949e', textAlign: 'center' }}>Diff is maximized over terminals</span>
-        <button
-          type="button"
-          onClick={() => setIsDiffMaximized(false)}
-          style={{
-            background: '#21262d',
-            border: '1px solid #30363d',
-            borderRadius: '6px',
-            color: '#c9d1d9',
-            padding: '4px 10px',
-            fontSize: '11px',
-            cursor: 'pointer'
-          }}
-        >
-          Restore View
-        </button>
-      </div>
-    </div>
-  );
 
-  const activeFile = activeTab === 'changes' ? selectedFile : selectedCommitFile;
-
-  const inlineStyles: React.CSSProperties = isDiffMaximized && maximizedDiffRect ? {
-    position: 'fixed',
-    top: maximizedDiffRect.top,
-    left: maximizedDiffRect.left,
-    width: maximizedDiffRect.width,
-    height: maximizedDiffRect.height
-  } : {};
-
-  const diffElement = (
-    <div className={`git-diff-container ${isDiffMaximized ? 'maximized' : ''}`} style={{ flex: 1, ...inlineStyles }}>
-      {activeFile ? (
-        <>
-          <div className="git-diff-header">
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
-              <button
-                type="button"
-                className="git-icon-btn git-diff-maximize-btn"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setIsDiffMaximized((v) => !v);
-                }}
-                title={isDiffMaximized ? "Restore to sidebar (Cmd+Shift+D / Esc)" : "Show on top of terminal (Cmd+Shift+D)"}
-              >
-                {isDiffMaximized ? <MinimizeIcon /> : <MaximizeIcon />}
-              </button>
-              <span className="git-diff-filename" title={activeFile.path}>{activeFile.path}</span>
-            </div>
-            <div className="git-diff-header-actions">
-              {isDiffMaximized && foldedDiffLineCount > 0 && (
-                <span className="git-diff-hidden-summary" title="Unchanged lines hidden between diff hunks">
-                  {foldedDiffLineCount} hidden
-                </span>
-              )}
-              <span className="git-diff-status">
-                {activeTab === 'changes'
-                  ? (selectedFile?.isStaged ? 'staged' : 'working tree')
-                  : `commit ${selectedCommit?.hash.substring(0, 8)}`}
-              </span>
-            </div>
-          </div>
-          <div className="git-diff-body-shell">
-            <div className="git-diff-body" ref={diffBodyRef}>
-              {diffError ? (
-                <div className="git-diff-error">{diffError}</div>
-              ) : isImageFile(activeFile.path) ? (
-                imageDiff === null ? (
-                  <div className="git-diff-loading">Loading image diff...</div>
-                ) : (
-                  <ImageDiffViewer diff={imageDiff} />
-                )
-              ) : diff === null ? (
-                <div className="git-diff-loading">Loading diff...</div>
-              ) : (
-                <pre className="git-diff-pre">
-                  <code>
-                    {parsedLines.map((lineInfo, i) => renderDiffLine(lineInfo, i))}
-                    {hiddenDiffLineCount > 0 && renderDiffLine({
-                      raw: `... Preview truncated: ${hiddenDiffLineCount} more lines not shown.`,
-                      className: 'diff-line-meta',
-                      prefix: '',
-                      oldLineNumber: '',
-                      newLineNumber: '',
-                      isCodeLine: false,
-                      dataLang: 'text',
-                      highlightedCode: `... Preview truncated: ${hiddenDiffLineCount} more lines not shown.`
-                    }, parsedLines.length)}
-                  </code>
-                </pre>
-              )}
-            </div>
-            {diffScrollMarkers.length > 0 && (
-              <div className="git-diff-scroll-markers">
-                {diffScrollMarkers.map((marker) => (
-                  <button
-                    key={marker.key}
-                    type="button"
-                    className={`git-diff-scroll-marker marker-${marker.type}`}
-                    style={{
-                      top: `${marker.topPercent}%`,
-                      height: `${marker.heightPercent}%`
-                    }}
-                    onClick={() => handleDiffMarkerClick(marker.targetTop)}
-                    tabIndex={-1}
-                    title="Jump to diff marker"
-                  />
-                ))}
-              </div>
-            )}
-          </div>
-        </>
-      ) : (
-        <>
-          {isDiffMaximized && (
-            <div className="git-diff-header">
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <button
-                  type="button"
-                  className="git-icon-btn git-diff-maximize-btn"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setIsDiffMaximized(false);
-                  }}
-                  title="Restore to sidebar (Cmd+Shift+D / Esc)"
-                >
-                  <MinimizeIcon />
-                </button>
-                <span className="git-diff-filename">No file selected</span>
-              </div>
-            </div>
-          )}
-          <div className="git-diff-placeholder">
-            {activeTab === 'changes'
-              ? 'Select a file to view differences'
-              : 'Select a file in the expanded commit to view differences'}
-          </div>
-        </>
-      )}
-    </div>
-  );
 
   return (
-    <aside className={`git-panel ${isDiffMaximized ? 'is-maximized' : ''} ${onLeft ? 'on-left' : ''}`} style={{ width, zIndex: isDiffMaximized ? 30 : undefined }}>
+    <aside className={`git-panel ${onLeft ? 'on-left' : ''}`} style={{ width }}>
       <div className="git-sidebar-resize-handle" onPointerDown={handleResizeStart} />
       {/* 1. Header with Branch Name and Repo info */}
       <div className="git-panel-header">
@@ -2114,14 +1492,9 @@ export const GitPanel: React.FC<GitPanelProps> = ({
             commitFilesRequestIdRef.current += 1;
             commitDiffRequestIdRef.current += 1;
             setActiveTab('changes');
-            setSelectedFile(null);
             setSelectedCommit(null);
             setCommitFiles([]);
             setCommitFilesHasMore(false);
-            setSelectedCommitFile(null);
-            setDiff(null);
-            setDiffError(null);
-            setHiddenDiffSnippets({});
           }}
         >
           Changes
@@ -2134,14 +1507,9 @@ export const GitPanel: React.FC<GitPanelProps> = ({
             commitFilesRequestIdRef.current += 1;
             commitDiffRequestIdRef.current += 1;
             setActiveTab('history');
-            setSelectedFile(null);
             setSelectedCommit(null);
             setCommitFiles([]);
             setCommitFilesHasMore(false);
-            setSelectedCommitFile(null);
-            setDiff(null);
-            setDiffError(null);
-            setHiddenDiffSnippets({});
           }}
         >
           History
@@ -2182,7 +1550,7 @@ export const GitPanel: React.FC<GitPanelProps> = ({
             </button>
           </form>
           {/* Changes content wrapper */}
-          <div className="git-changes-scroll-area" style={{ height: fileListHeight, flex: 'none' }}>
+          <div className="git-changes-scroll-area">
             {/* STAGED SECTION */}
             <div className="git-section-header" onClick={() => setIsStagedCollapsed(!isStagedCollapsed)}>
               <div className="git-section-header-left">
@@ -2211,12 +1579,12 @@ export const GitPanel: React.FC<GitPanelProps> = ({
                 ) : (
                   <>
                     {status.staged?.slice(0, stagedLimit).map((file) => {
-                      const isSelected = selectedFile?.path === file.path && selectedFile.isStaged;
+                      const isSelected = isFileActive(file.path, true);
                       return (
                         <div
                           key={file.path}
                           className={`git-file-row ${isSelected ? 'selected' : ''}`}
-                          onClick={() => setSelectedFile({ path: file.path, isStaged: true })}
+                          onClick={() => handleFileDiffClick(file.path, true)}
                         >
                           <div className="git-file-row-left">
                             <FileIcon filename={file.name} isDirectory={file.kind === 'directory'} />
@@ -2337,12 +1705,12 @@ export const GitPanel: React.FC<GitPanelProps> = ({
                 ) : (
                   <>
                     {status.unstaged?.slice(0, unstagedLimit).map((file) => {
-                      const isSelected = selectedFile?.path === file.path && !selectedFile.isStaged;
+                      const isSelected = isFileActive(file.path, false);
                       return (
                         <div
                           key={file.path}
                           className={`git-file-row ${isSelected ? 'selected' : ''}`}
-                          onClick={() => setSelectedFile({ path: file.path, isStaged: false })}
+                          onClick={() => handleFileDiffClick(file.path, false)}
                         >
                           <div className="git-file-row-left">
                             <FileIcon filename={file.name} isDirectory={file.kind === 'directory'} />
@@ -2431,12 +1799,7 @@ export const GitPanel: React.FC<GitPanelProps> = ({
             )}
           </div>
 
-          {/* Vertical Resize Handle */}
-          <div className="git-vertical-resizer" onPointerDown={handleVerticalResizeStart} />
 
-          {/* 3. Diff View */}
-          {isDiffMaximized && maximizedPlaceholder}
-          {diffElement}
         </div>
       ) : (
         /* HISTORY TAB CONTENT */
@@ -2517,7 +1880,7 @@ export const GitPanel: React.FC<GitPanelProps> = ({
             <div className="git-tab-content history-tab">
               {historySearchToolbar}
               {/* 1. History Graph Table */}
-              <div ref={historyContainerRef} className="git-history-container" style={{ height: fileListHeight, flex: 'none' }}>
+              <div ref={historyContainerRef} className="git-history-container">
                 <div className="git-history-table-wrapper">
                   <table className="git-history-table">
                     <thead>
@@ -2667,7 +2030,7 @@ export const GitPanel: React.FC<GitPanelProps> = ({
                                               </div>
                                               <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', paddingLeft: '16px' }}>
                                                 {files.map((file) => {
-                                                  const isFileSelected = selectedCommitFile?.path === file.path;
+                                                  const isFileSelected = isCommitFileActive(file.path);
                                                   return (
                                                     <div
                                                       key={file.path}
@@ -2738,12 +2101,7 @@ export const GitPanel: React.FC<GitPanelProps> = ({
                 </div>
               </div>
 
-              {/* 2. Vertical Resize Handle */}
-              <div className="git-vertical-resizer" onPointerDown={handleVerticalResizeStart} />
 
-              {/* 3. Diff View */}
-              {isDiffMaximized && maximizedPlaceholder}
-              {diffElement}
             </div>
           );
         })()

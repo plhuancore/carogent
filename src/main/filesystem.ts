@@ -72,10 +72,10 @@ async function getIgnoredEntryPaths(directoryPath: string, entryPaths: string[])
   const chunkSize = 200;
 
   for (let index = 0; index < entryPaths.length; index += chunkSize) {
-    const chunk = entryPaths.slice(index, index + chunkSize);
+    const chunk = entryPaths.slice(index, index + chunkSize).map((p) => p.replace(/\\/g, '/'));
 
     try {
-      const { stdout } = await execFileAsync('git', ['check-ignore', '--', ...chunk], {
+      const { stdout } = await execFileAsync('git', ['-c', 'core.quotePath=false', 'check-ignore', '--', ...chunk], {
         cwd: directoryPath,
         maxBuffer: 2 * 1024 * 1024
       });

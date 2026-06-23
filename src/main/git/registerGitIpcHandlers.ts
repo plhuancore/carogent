@@ -3,7 +3,7 @@ import { spawn } from 'node:child_process';
 import { existsSync, watch } from 'node:fs';
 import type { FSWatcher } from 'node:fs';
 import { readFile, readdir, rm, stat, unlink } from 'node:fs/promises';
-import { dirname, join, relative, resolve } from 'node:path';
+import { dirname, join, relative, resolve, isAbsolute } from 'node:path';
 
 export function registerGitIpcHandlers(): void {
   // Git Helper Functions and IPC Handlers
@@ -436,6 +436,59 @@ export function registerGitIpcHandlers(): void {
         }
       );
       return { diff };
+    } catch (err: any) {
+      return { error: err.message || String(err) };
+    }
+  }
+
+  async function getGitFileContents(
+    cwd: string,
+    request: { filePath: string; source: 'workingTree' | 'index' | 'head' | 'commit'; ref?: string }
+  ): Promise<{ content?: string; error?: string }> {
+    try {
+      let normalizedPath = request.filePath;
+      if (/^[a-zA-Z]\//.test(normalizedPath)) {
+        normalizedPath = normalizedPath.slice(0, 1) + ':' + normalizedPath.slice(1);
+      }
+
+      let relPath = normalizedPath;
+      if (isAbsolute(normalizedPath)) {
+        relPath = relative(cwd, normalizedPath);
+      }
+      const gitPath = relPath.replace(/\\/g, '/');
+
+      if (request.source === 'workingTree') {
+        const fullPath = isAbsolute(normalizedPath) ? normalizedPath : join(cwd, normalizedPath);
+        try {
+          const buffer = await readFile(fullPath);
+          return { content: buffer.toString('utf8') };
+        } catch (err: any) {
+          if (err.code === 'ENOENT') {
+            return { content: '' };
+          }
+          throw err;
+        }
+      }
+
+      let gitRef = '';
+      if (request.source === 'index') {
+        gitRef = `:${gitPath}`;
+      } else if (request.source === 'head') {
+        gitRef = `HEAD:${gitPath}`;
+      } else if (request.source === 'commit' && request.ref) {
+        gitRef = `${request.ref}:${gitPath}`;
+      }
+
+      if (gitRef) {
+        try {
+          const content = await runGitCommand(['show', gitRef], cwd);
+          return { content };
+        } catch (err: any) {
+          return { content: '' };
+        }
+      }
+
+      return { error: 'Invalid source/ref' };
     } catch (err: any) {
       return { error: err.message || String(err) };
     }
@@ -1048,6 +1101,7 @@ export function registerGitIpcHandlers(): void {
   ipcMain.handle('git:diff', (_event, { cwd, filePath, isStaged }) => getGitDiff(cwd, filePath, isStaged));
   ipcMain.handle('git:image-diff', (_event, { cwd, filePath, isStaged, hash }) => getGitImageDiff(cwd, filePath, isStaged, hash));
   ipcMain.handle('git:file-snippet', (_event, { cwd, ...request }) => getGitFileSnippet(cwd, request));
+  ipcMain.handle('git:file-contents', (_event, { cwd, ...request }) => getGitFileContents(cwd, request));
   ipcMain.handle('git:commit-files', (_event, { cwd, hash }) => getGitCommitFiles(cwd, hash));
   ipcMain.handle('git:commit-file-diff', (_event, { cwd, hash, filePath }) => getGitCommitFileDiff(cwd, hash, filePath));
   ipcMain.handle('git:stage', (_event, { cwd, filePath }) => {

@@ -184,6 +184,8 @@ const terminal: TerminalApi = {
     ipcRenderer.invoke('git:status', request),
   gitDiff: (request: { cwd: string; filePath: string; isStaged: boolean }): Promise<{ diff?: string; error?: string }> =>
     ipcRenderer.invoke('git:diff', request),
+  gitFileContents: (request: { cwd: string; filePath: string; source: 'workingTree' | 'index' | 'head' | 'commit'; ref?: string }): Promise<{ content?: string; error?: string }> =>
+    ipcRenderer.invoke('git:file-contents', request),
   gitImageDiff: (request: { cwd: string; filePath: string; isStaged: boolean; hash?: string }): Promise<GitImageDiffResult> =>
     ipcRenderer.invoke('git:image-diff', request),
   gitFileSnippet: (request: { cwd: string; filePath: string; source: 'workingTree' | 'index' | 'commit'; ref?: string; startLine: number; lineCount: number }): Promise<{ lines?: string[]; error?: string }> =>

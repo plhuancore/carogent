@@ -523,25 +523,16 @@
   color: #ffffff;
 }
 
-.folder-tree-row.is-ignored {
-  color: var(--color-subtle, #64748b);
+.folder-tree-row.is-ignored .folder-tree-name {
+  opacity: 0.5;
 }
 
-.folder-tree-row.is-ignored .folder-tree-name,
-.folder-tree-row.is-ignored .folder-tree-icon,
-.folder-tree-row.is-ignored .folder-tree-disclosure {
-  color: var(--color-subtle, #64748b);
-  opacity: 0.7;
+.folder-tree-row.is-ignored.is-active .folder-tree-name {
+  opacity: 0.65;
 }
 
-.folder-tree-row.is-ignored.is-active .folder-tree-name,
-.folder-tree-row.is-ignored.is-active .folder-tree-icon,
-.folder-tree-row.is-ignored.is-active .folder-tree-disclosure {
-  opacity: 0.82;
-}
-
-.folder-tree-row.is-ignored:hover {
-  color: var(--color-muted, #94a3b8);
+.folder-tree-row.is-ignored:hover .folder-tree-name {
+  opacity: 0.8;
 }
 
 .folder-tree-row.is-active {
@@ -1004,6 +995,10 @@
   background: #181818;
 }
 
+.file-editor-workspace.is-diff-view {
+  grid-template-rows: 38px minmax(0, 1fr);
+}
+
 .file-editor-tabs {
   display: flex;
   min-width: 0;
@@ -1171,6 +1166,32 @@
   min-width: 54px;
   padding: 0 12px;
   font-size: 12px;
+}
+
+.file-editor-diff-btn {
+  display: flex;
+  align-items: center;
+  height: 26px;
+  padding: 0 10px;
+  border: 1px solid #2a2f36;
+  border-radius: 5px;
+  font-size: 11px;
+  cursor: pointer;
+  background: #101214;
+  color: #8b949e;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+}
+
+.file-editor-diff-btn:hover {
+  border-color: #8b949e;
+  color: #c9d1d9;
+}
+
+.file-editor-diff-btn.is-active {
+  background: rgba(56, 139, 253, 0.15);
+  border-color: #388bfd;
+  color: #58a6ff;
 }
 
 .file-editor-action:hover:not(:disabled),

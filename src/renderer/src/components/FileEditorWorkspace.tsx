@@ -1,6 +1,26 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import Editor, { Monaco } from '@monaco-editor/react';
+import Editor, { DiffEditor, Monaco } from '@monaco-editor/react';
 import { CloseIcon, RefreshIcon } from './AppIcons';
+
+function parseGitDiffUrl(urlStr: string): { filePath: string; searchParams: URLSearchParams } {
+  const prefix = 'gitdiff://';
+  if (!urlStr.startsWith(prefix)) {
+    return { filePath: '', searchParams: new URLSearchParams() };
+  }
+  const mainPart = urlStr.slice(prefix.length);
+  const qIdx = mainPart.indexOf('?');
+  const filePathPart = qIdx >= 0 ? mainPart.slice(0, qIdx) : mainPart;
+  const searchPart = qIdx >= 0 ? mainPart.slice(qIdx) : '';
+  
+  const decodedPath = decodeURIComponent(filePathPart);
+  let filePath = decodedPath.replace(/^\/([a-zA-Z]:)/, '$1');
+  if (/^[a-zA-Z]\//.test(filePath)) {
+    filePath = filePath.slice(0, 1) + ':' + filePath.slice(1);
+  }
+  const searchParams = new URLSearchParams(searchPart);
+  
+  return { filePath, searchParams };
+}
 
 type EditorTab = {
   path: string;
@@ -12,6 +32,9 @@ type EditorTab = {
   saving: boolean;
   error?: string;
   isImage?: boolean;
+  isDiff?: boolean;
+  originalContent?: string;
+  modifiedContent?: string;
 };
 
 type FileEditorWorkspaceProps = {
@@ -32,15 +55,11 @@ function getFileName(path: string): string {
 }
 
 function getRelativePath(path: string, rootPath: string): string {
-  const normalizedRoot = rootPath.replace(/[\\/]+$/, '').toLowerCase();
-  const normalizedPath = path.toLowerCase();
-
-  if (normalizedRoot && normalizedPath.startsWith(`${normalizedRoot}\\`)) {
-    return path.slice(rootPath.replace(/[\\/]+$/, '').length + 1);
-  }
+  const normalizedRoot = rootPath.replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase();
+  const normalizedPath = path.replace(/\\/g, '/').toLowerCase();
 
   if (normalizedRoot && normalizedPath.startsWith(`${normalizedRoot}/`)) {
-    return path.slice(rootPath.replace(/[\\/]+$/, '').length + 1);
+    return path.slice(normalizedRoot.length + 1);
   }
 
   return path;
@@ -55,7 +74,8 @@ function formatModifiedAt(value?: number): string {
 }
 
 function getEditorLanguage(filePath: string): string {
-  const ext = filePath.split('.').pop()?.toLowerCase() || '';
+  const pathWithoutQuery = filePath.split('?')[0];
+  const ext = pathWithoutQuery.split('.').pop()?.toLowerCase() || '';
   switch (ext) {
     case 'ts':
     case 'tsx':
@@ -408,6 +428,8 @@ export function FileEditorWorkspace({
   const [selectedPath, setSelectedPath] = useState('');
   const tabsRef = useRef<EditorTab[]>([]);
   const selectedPathRef = useRef('');
+  const [diffMode, setDiffMode] = useState<'side-by-side' | 'inline'>('side-by-side');
+  const [activeDiff, setActiveDiff] = useState<EditorTab | null>(null);
 
   const editorRef = useRef<any>(null);
   const monacoRef = useRef<Monaco | null>(null);
@@ -488,6 +510,115 @@ export function FileEditorWorkspace({
       return;
     }
 
+    const isDiff = nextPath.startsWith('gitdiff://');
+
+    if (isDiff) {
+      let displayName = 'Diff View';
+      try {
+        const { filePath } = parseGitDiffUrl(nextPath);
+        displayName = getFileName(filePath);
+      } catch {}
+
+      setActiveDiff({
+        path: nextPath,
+        name: displayName,
+        content: '',
+        savedContent: '',
+        loading: true,
+        saving: false,
+        isDiff: true,
+        originalContent: '',
+        modifiedContent: ''
+      });
+
+      const fetchDiffData = async () => {
+        const { filePath, searchParams } = parseGitDiffUrl(nextPath);
+        const source = searchParams.get('source') as 'workingTree' | 'index' | 'head' | 'commit' || 'workingTree';
+        const ref = searchParams.get('ref') || undefined;
+
+        let originalSource: 'workingTree' | 'index' | 'head' | 'commit' = 'index';
+        let originalRef: string | undefined = undefined;
+        let modifiedSource: 'workingTree' | 'index' | 'head' | 'commit' = source;
+        let modifiedRef: string | undefined = ref;
+
+        if (source === 'workingTree') {
+          originalSource = 'index';
+        } else if (source === 'index') {
+          originalSource = 'head';
+        } else if (source === 'commit' && ref) {
+          originalSource = 'commit';
+          originalRef = `${ref}^`;
+        }
+
+        // Fetch original content
+        let originalContent = '';
+        try {
+          const res = await window.terminalApi.gitFileContents({
+            cwd: rootPath,
+            filePath,
+            source: originalSource,
+            ref: originalRef
+          });
+          if (res && !res.error && res.content !== undefined) {
+            originalContent = res.content;
+          }
+        } catch (e) {
+          console.warn('Failed to load original file contents for diff, defaulting to empty string:', e);
+        }
+
+        // Fetch modified content
+        let modifiedContent = '';
+        const resMod = await window.terminalApi.gitFileContents({
+          cwd: rootPath,
+          filePath,
+          source: modifiedSource,
+          ref: modifiedRef
+        });
+        if (resMod.error) {
+          throw new Error(resMod.error);
+        }
+        if (resMod.content !== undefined) {
+          modifiedContent = resMod.content;
+        }
+
+        return { originalContent, modifiedContent };
+      };
+
+      const timeoutPromise = new Promise<never>((_, reject) =>
+        window.setTimeout(() => reject(new Error('Git diff load timed out (10s).')), 10000)
+      );
+
+      Promise.race([fetchDiffData(), timeoutPromise])
+        .then(({ originalContent, modifiedContent }) => {
+          setActiveDiff({
+            path: nextPath,
+            name: displayName,
+            content: modifiedContent,
+            savedContent: modifiedContent,
+            originalContent,
+            modifiedContent,
+            loading: false,
+            saving: false,
+            isDiff: true
+          });
+        })
+        .catch((error: unknown) => {
+          setActiveDiff({
+            path: nextPath,
+            name: displayName,
+            content: '',
+            savedContent: '',
+            loading: false,
+            saving: false,
+            isDiff: true,
+            error: error instanceof Error ? error.message : String(error)
+          });
+        });
+      return;
+    }
+
+    setActiveDiff(null);
+
     setTabs((current) => {
       if (current.some((tab) => tab.path === nextPath)) {
         return current.map((tab) => (tab.path === nextPath ? { ...tab, loading: true, error: undefined } : tab));
@@ -562,7 +693,7 @@ export function FileEditorWorkspace({
           )
         );
       });
-  }, []);
+  }, [rootPath]);
 
   useEffect(() => {
     if (activeFilePath) {
@@ -570,7 +701,10 @@ export function FileEditorWorkspace({
     }
   }, [activeFilePath, loadFile]);
 
-  const selectedTab = tabs.find((tab) => tab.path === selectedPath) || null;
+  const isDiffView = activeFilePath.startsWith('gitdiff://');
+  const selectedTab = isDiffView
+    ? activeDiff
+    : tabs.find((tab) => tab.path === selectedPath) || null;
 
   // Handle pending navigation to definitions once the file has loaded
   useEffect(() => {
@@ -787,9 +921,11 @@ export function FileEditorWorkspace({
     }
   }, [globalSearchQuery, globalSearchCaseSensitive, globalSearchWholeWord, globalSearchUseRegex, selectedTab]);
 
-  const handleEditorDidMount = (editor: any, monaco: Monaco) => {
-    editorRef.current = editor;
-    monacoRef.current = monaco;
+  const initializeMonaco = (monaco: Monaco) => {
+    if ((monaco as any).__initialized) {
+      return;
+    }
+    (monaco as any).__initialized = true;
 
     // Disable semantic validation (type and module resolution checks) to prevent import errors
     monaco.languages.typescript.typescriptDefaults.setDiagnosticsOptions({
@@ -843,6 +979,21 @@ export function FileEditorWorkspace({
         'editorGutter.background': '#1f1f1f'
       }
     });
+
+    registerMonacoProviders(monaco);
+  };
+
+  const handleDiffEditorDidMount = (editor: any, monaco: Monaco) => {
+    monacoRef.current = monaco;
+    initializeMonaco(monaco);
+    monaco.editor.setTheme('carogent-dark');
+  };
+
+  const handleEditorDidMount = (editor: any, monaco: Monaco) => {
+    editorRef.current = editor;
+    monacoRef.current = monaco;
+
+    initializeMonaco(monaco);
     monaco.editor.setTheme('carogent-dark');
 
     const editorService = editor._codeEditorService;
@@ -878,7 +1029,6 @@ export function FileEditorWorkspace({
       }
     });
 
-    registerMonacoProviders(monaco);
     // Apply search decorations immediately on mount
     updateSearchDecorations();
   };
@@ -922,49 +1072,51 @@ export function FileEditorWorkspace({
   const hasDirtyTabs = tabs.some((tab) => tab.content !== tab.savedContent);
 
   return (
-    <section className="file-editor-workspace">
-      <div className="file-editor-tabs">
-        {onClose && (
-          <button
-            className="file-editor-close-btn"
-            onClick={onClose}
-            title="Close Editor"
-            type="button"
-          >
-            <CloseIcon />
-          </button>
-        )}
-        {tabs.map((tab) => {
-          const dirty = tab.content !== tab.savedContent;
-
-          return (
+    <section className={`file-editor-workspace${isDiffView ? ' is-diff-view' : ''}`}>
+      {!isDiffView && (
+        <div className="file-editor-tabs">
+          {onClose && (
             <button
-              key={tab.path}
-              className={`file-editor-tab${tab.path === selectedPath ? ' is-active' : ''}${dirty ? ' is-dirty' : ''}`}
+              className="file-editor-close-btn"
+              onClick={onClose}
+              title="Close Editor"
               type="button"
-              title={tab.path}
-              onClick={() => {
-                setSelectedPath(tab.path);
-                onActiveFileChange?.(tab.path);
-              }}
             >
-              <span className="file-editor-tab-name">{tab.name}{dirty ? ' *' : ''}</span>
-              <span
-                className="file-editor-tab-close"
-                role="button"
-                tabIndex={-1}
-                onClick={(event) => {
-                  event.stopPropagation();
-                  closeTab(tab.path);
+              <CloseIcon />
+            </button>
+          )}
+          {tabs.map((tab) => {
+            const dirty = tab.content !== tab.savedContent;
+
+            return (
+              <button
+                key={tab.path}
+                className={`file-editor-tab${tab.path === selectedPath ? ' is-active' : ''}${dirty ? ' is-dirty' : ''}`}
+                type="button"
+                title={tab.path}
+                onClick={() => {
+                  setSelectedPath(tab.path);
+                  onActiveFileChange?.(tab.path);
                 }}
               >
-                <CloseIcon />
-              </span>
-            </button>
-          );
-        })}
-      </div>
-      {!tabs.length ? (
+                <span className="file-editor-tab-name">{tab.name}{dirty ? ' *' : ''}</span>
+                <span
+                  className="file-editor-tab-close"
+                  role="button"
+                  tabIndex={-1}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    closeTab(tab.path);
+                  }}
+                >
+                  <CloseIcon />
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      )}
+      {(!isDiffView && !tabs.length) ? (
         <div className="file-editor-empty" style={{ gridRow: '2 / span 2' }}>
           <div className="file-editor-empty-title">Select a file</div>
           <div className="file-editor-empty-text">Choose a file from Explorer to edit it here.</div>
@@ -972,19 +1124,89 @@ export function FileEditorWorkspace({
       ) : selectedTab && (
         <>
           <div className="file-editor-toolbar">
-            <div className="file-editor-path" title={selectedTab.path}>
-              {getRelativePath(selectedTab.path, rootPath)}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0, flex: 1 }}>
+              {selectedTab.isDiff && (
+                <button
+                  className="file-editor-action"
+                  type="button"
+                  title="Close Diff Preview"
+                  onClick={() => {
+                    setActiveDiff(null);
+                    if (tabs.length === 0) {
+                      onClose?.();
+                      onActiveFileChange?.('');
+                    } else {
+                      const lastTab = tabs[tabs.length - 1];
+                      onActiveFileChange?.(lastTab.path);
+                    }
+                  }}
+                  style={{
+                    flexShrink: 0,
+                    display: 'grid',
+                    placeItems: 'center'
+                  }}
+                >
+                  <CloseIcon />
+                </button>
+              )}
+              <div className="file-editor-path" title={selectedTab.path}>
+                {selectedTab.isDiff ? (
+                  (() => {
+                    try {
+                      const { filePath, searchParams } = parseGitDiffUrl(selectedTab.path);
+                      const relative = getRelativePath(filePath, rootPath);
+                      const source = searchParams.get('source');
+                      const ref = searchParams.get('ref');
+                      let statusLabel = 'Working Tree';
+                      if (source === 'index') {
+                        statusLabel = 'Staged';
+                      } else if (source === 'head') {
+                        statusLabel = 'HEAD';
+                      } else if (source === 'commit' && ref) {
+                        statusLabel = `Commit ${ref.substring(0, 8)}`;
+                      }
+                      return `Diff: ${relative} (${statusLabel})`;
+                    } catch {
+                      return selectedTab.path;
+                    }
+                  })()
+                ) : (
+                  getRelativePath(selectedTab.path, rootPath)
+                )}
+              </div>
             </div>
             <div className="file-editor-actions">
-              <span className={`file-editor-save-state${hasDirtyTabs ? ' is-dirty' : ''}`}>
-                {selectedTab.saving
-                  ? 'Saving...'
-                  : selectedTab.content !== selectedTab.savedContent
-                  ? 'Unsaved'
-                  : selectedTab.modifiedAt
-                  ? `Saved ${formatModifiedAt(selectedTab.modifiedAt)}`
-                  : 'Saved'}
-              </span>
+              {selectedTab.isDiff && (
+                <div className="diff-mode-toggle" style={{ display: 'flex', gap: '4px', marginRight: '12px' }}>
+                  <button
+                    className={`file-editor-diff-btn ${diffMode === 'side-by-side' ? 'is-active' : ''}`}
+                    type="button"
+                    title="Side by Side (Split View)"
+                    onClick={() => setDiffMode('side-by-side')}
+                  >
+                    Side by Side
+                  </button>
+                  <button
+                    className={`file-editor-diff-btn ${diffMode === 'inline' ? 'is-active' : ''}`}
+                    type="button"
+                    title="Single / Inline View"
+                    onClick={() => setDiffMode('inline')}
+                  >
+                    Inline
+                  </button>
+                </div>
+              )}
+              {!selectedTab.isDiff && (
+                <span className={`file-editor-save-state${hasDirtyTabs ? ' is-dirty' : ''}`}>
+                  {selectedTab.saving
+                    ? 'Saving...'
+                    : selectedTab.content !== selectedTab.savedContent
+                    ? 'Unsaved'
+                    : selectedTab.modifiedAt
+                    ? `Saved ${formatModifiedAt(selectedTab.modifiedAt)}`
+                    : 'Saved'}
+                </span>
+              )}
               <button
                 className="file-editor-action"
                 type="button"
@@ -994,14 +1216,16 @@ export function FileEditorWorkspace({
               >
                 <RefreshIcon className={selectedTab.loading ? 'spin' : ''} />
               </button>
-              <button
-                className="file-editor-save-button"
-                type="button"
-                onClick={() => saveFile()}
-                disabled={selectedTab.loading || selectedTab.saving || selectedTab.isImage || selectedTab.content === selectedTab.savedContent}
-              >
-                Save
-              </button>
+              {!selectedTab.isDiff && (
+                <button
+                  className="file-editor-save-button"
+                  type="button"
+                  onClick={() => saveFile()}
+                  disabled={selectedTab.loading || selectedTab.saving || selectedTab.isImage || selectedTab.content === selectedTab.savedContent}
+                >
+                  Save
+                </button>
+              )}
             </div>
           </div>
           {selectedTab.error && <div className="file-editor-error">{selectedTab.error}</div>}
@@ -1096,6 +1320,25 @@ export function FileEditorWorkspace({
                   {Math.round(zoom * 100)}%
                 </div>
               </div>
+            ) : selectedTab.isDiff ? (
+              <DiffEditor
+                height="100%"
+                original={selectedTab.originalContent || ''}
+                modified={selectedTab.modifiedContent || ''}
+                language={getEditorLanguage(selectedTab.path)}
+                theme="carogent-dark"
+                onMount={handleDiffEditorDidMount}
+                options={{
+                  renderSideBySide: diffMode === 'side-by-side',
+                  minimap: { enabled: true },
+                  fontSize: 13,
+                  fontFamily: '"Cascadia Mono", Consolas, monospace',
+                  lineHeight: 20,
+                  wordWrap: 'off',
+                  automaticLayout: true,
+                  readOnly: true
+                }}
+              />
             ) : (
               <Editor
                 height="100%"

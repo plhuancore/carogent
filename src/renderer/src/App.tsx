@@ -1,14 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type {
-  CSSProperties,
-  DragEvent as ReactDragEvent,
-  FormEvent as ReactFormEvent,
-  KeyboardEvent as ReactKeyboardEvent,
-  MouseEvent as ReactMouseEvent,
-  PointerEvent as ReactPointerEvent,
-  RefObject
-} from 'react';
-import type {
   AgentBridgePane,
   AgentBridgeRendererResponse,
   BrowserBridgeStatusEvent,
@@ -17,7 +8,6 @@ import type {
 } from '../../shared/ipcTypes';
 import { FitAddon } from '@xterm/addon-fit';
 import { SearchAddon } from '@xterm/addon-search';
-import type { ISearchOptions } from '@xterm/addon-search';
 import '@xterm/xterm/css/xterm.css';
 import {
   closePane,
@@ -26,7 +16,6 @@ import {
   findPane,
   getFirstPaneId,
   insertBetweenPanes,
-  LayoutNode,
   listPaneIds,
   PaneNode,
   resizeSplit,
@@ -46,20 +35,10 @@ import carogentLogoUrl from './assets/carogent-logo-v2.png';
 import { GitPanel } from './GitPanel';
 import {
   AgentOverlayIcon,
-  ChevronDownIcon,
-  ChevronUpIcon,
-  CloseIcon,
-  CodeIcon,
-  CommandPaletteIcon,
-  GitIcon,
   McpIcon,
   QuickAccessIcon,
-  SearchIcon,
   SettingsIcon,
-  ShellIcon,
-  SplitDownIcon,
-  SplitRightIcon,
-  WrenchIcon
+  ShellIcon
 } from './components/AppIcons';
 import { CurrentFolderTree } from './components/CurrentFolderTree';
 import { FileEditorWorkspace } from './components/FileEditorWorkspace';
@@ -71,17 +50,13 @@ import { NodeView } from './components/TerminalViews';
 import { WorkspaceItem } from './components/WorkspaceItem';
 import { scorePaletteItemMatch, type CommandPaletteItem, type PaletteMode } from './commandPalette';
 import {
-  captureTerminalScroll,
   clearTerminalFitTimers,
   copyTerminalSelection,
   createXterm,
   getDefaultShellOption,
   getPaneShell,
-  getShellOption,
   getShellTitle,
   getTerminalPreviewLines,
-  scheduleTerminalFit,
-  scheduleTerminalScrollRestore,
   type SessionRegistry,
   type TerminalSession
 } from './terminalHelpers';
@@ -1246,6 +1221,28 @@ function App(): JSX.Element {
         }
       },
       {
+        id: 'toggle-workspace-island',
+        title: leftSidebarTab === 'workspace' ? 'Workspace: Hide Workspace Island' : 'Workspace: Show Workspace Island',
+        subtitle: 'Toggle Workspace Island visibility',
+        keywords: `workspace island sidebar show hide toggle panel list active directory ${leftSidebarTab === 'workspace' ? 'hide' : 'show'}`,
+        icon: 'folder',
+        run: () => {
+          setLeftSidebarTab((curr) => curr === 'workspace' ? null : 'workspace');
+          closeQuickAccess();
+        }
+      },
+      {
+        id: 'toggle-search-panel',
+        title: leftSidebarTab === 'search' ? 'Search: Hide Search Panel' : 'Search: Show Search Panel',
+        subtitle: 'Toggle Search panel visibility',
+        keywords: `search find query replace files grep sidebar show hide toggle panel ${leftSidebarTab === 'search' ? 'hide' : 'show'}`,
+        icon: 'search',
+        run: () => {
+          setLeftSidebarTab((curr) => curr === 'search' ? null : 'search');
+          closeQuickAccess();
+        }
+      },
+      {
         id: 'git-refresh',
         title: 'Git: Refresh',
         subtitle: 'Refresh Git repository status and history',
@@ -1325,7 +1322,9 @@ function App(): JSX.Element {
     isGitSidebarOpen,
     setGitRefreshTrigger,
     activeWorkspace.maximizedPaneId,
-    handleToggleMaximize
+    handleToggleMaximize,
+    leftSidebarTab,
+    setLeftSidebarTab
   ]);
   const effectivePaletteMode: PaletteMode = quickAccessQuery.trimStart().startsWith('>')
     ? 'command'
@@ -1741,6 +1740,7 @@ function App(): JSX.Element {
             setIsExplorerSidebarOpenState(true);
           }}
           onLeft={true}
+          activeEditorFilePath={activeEditorFilePath}
         />
       ) : leftSidebarTab ? (
         <aside className="sidebar">

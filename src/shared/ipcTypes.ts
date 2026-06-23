@@ -339,6 +339,7 @@ export type TerminalApi = {
   onExit: (callback: (event: TerminalExitEvent) => void) => () => void;
   gitStatus: (request: { cwd: string }) => Promise<GitStatus>;
   gitDiff: (request: { cwd: string; filePath: string; isStaged: boolean }) => Promise<GitDiffResult>;
+  gitFileContents: (request: { cwd: string; filePath: string; source: 'workingTree' | 'index' | 'head' | 'commit'; ref?: string }) => Promise<{ content?: string; error?: string }>;
   gitImageDiff: (request: { cwd: string; filePath: string; isStaged: boolean; hash?: string }) => Promise<GitImageDiffResult>;
   gitFileSnippet: (request: { cwd: string; filePath: string; source: 'workingTree' | 'index' | 'commit'; ref?: string; startLine: number; lineCount: number }) => Promise<GitFileSnippetResult>;
   gitStage: (request: { cwd: string; filePath: string }) => Promise<void>;
