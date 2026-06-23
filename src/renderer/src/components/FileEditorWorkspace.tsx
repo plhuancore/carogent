@@ -1,14 +1,6 @@
-import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState, memo } from 'react';
-import type {
-  KeyboardEvent as ReactKeyboardEvent,
-  ClipboardEvent as ReactClipboardEvent,
-  MouseEvent as ReactMouseEvent
-} from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import Editor, { Monaco } from '@monaco-editor/react';
 import { CloseIcon, RefreshIcon } from './AppIcons';
-import { highlightCodeLine } from '../git/syntaxHighlight';
-import type { LocalMatchRange } from '../git/syntaxHighlight';
-import 'prism-themes/themes/prism-vsc-dark-plus.css';
-
 
 type EditorTab = {
   path: string;
@@ -19,12 +11,7 @@ type EditorTab = {
   loading: boolean;
   saving: boolean;
   error?: string;
-};
-
-type HistoryEntry = {
-  content: string;
-  selectionStart: number;
-  selectionEnd: number;
+  isImage?: boolean;
 };
 
 type FileEditorWorkspaceProps = {
@@ -66,66 +53,343 @@ function formatModifiedAt(value?: number): string {
   return new Date(value).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 }
 
-function getSearchRegex(query: string, caseSensitive: boolean, wholeWord: boolean, useRegex: boolean): RegExp | null {
-  if (!query) return null;
-  try {
-    let pattern = useRegex ? query : query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    if (wholeWord) {
-      pattern = `\\b${pattern}\\b`;
-    }
-    const flags = caseSensitive ? 'g' : 'gi';
-    return new RegExp(pattern, flags);
-  } catch (e) {
-    return null;
+function getEditorLanguage(filePath: string): string {
+  const ext = filePath.split('.').pop()?.toLowerCase() || '';
+  switch (ext) {
+    case 'ts':
+    case 'tsx':
+      return 'typescript';
+    case 'js':
+    case 'jsx':
+      return 'javascript';
+    case 'json':
+      return 'json';
+    case 'css':
+    case 'scss':
+    case 'less':
+      return 'css';
+    case 'html':
+    case 'htm':
+      return 'html';
+    case 'md':
+    case 'markdown':
+      return 'markdown';
+    case 'py':
+    case 'pyw':
+      return 'python';
+    case 'go':
+      return 'go';
+    case 'rs':
+      return 'rust';
+    case 'c':
+    case 'h':
+      return 'c';
+    case 'cpp':
+    case 'cc':
+    case 'cxx':
+    case 'hpp':
+      return 'cpp';
+    case 'sh':
+    case 'bash':
+    case 'zsh':
+      return 'shell';
+    case 'yaml':
+    case 'yml':
+      return 'yaml';
+    case 'xml':
+      return 'xml';
+    case 'sql':
+      return 'sql';
+    case 'java':
+      return 'java';
+    case 'rb':
+      return 'ruby';
+    case 'php':
+      return 'php';
+    case 'toml':
+      return 'toml';
+    case 'ini':
+      return 'ini';
+    case 'dockerfile':
+      return 'dockerfile';
+    case 'bat':
+    case 'cmd':
+      return 'bat';
+    case 'ps1':
+      return 'powershell';
+    default:
+      return 'plaintext';
   }
 }
 
-const CodeLine = memo(
-  ({
-    line,
-    filePath,
-    isActive,
-    localMatchRanges
-  }: {
-    line: string;
-    filePath: string;
-    isActive: boolean;
-    localMatchRanges?: LocalMatchRange[];
-  }) => {
-    return (
-      <div className={`file-editor-line${isActive ? ' is-active-search-line' : ''}`}>
-        {highlightCodeLine(line, filePath, localMatchRanges) || '\n'}
-      </div>
-    );
-  }
-);
-CodeLine.displayName = 'CodeLine';
+function isImagePath(path: string): boolean {
+  const ext = path.slice(path.lastIndexOf('.')).toLowerCase();
+  return ['.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp', '.svg'].includes(ext);
+}
 
-const EditorGutter = memo(
-  ({
-    lineCount,
-    activeLineNumber,
-    editorHeight
-  }: {
-    lineCount: number;
-    activeLineNumber?: number;
-    editorHeight: number;
-  }) => {
-    return (
-      <div className="file-editor-gutter" style={{ minHeight: `${editorHeight}px` }}>
-        {Array.from({ length: lineCount }, (_, index) => (
-          <div
-            key={index + 1}
-            className={activeLineNumber === index + 1 ? 'is-active-search-line-gutter' : undefined}
-          >
-            {index + 1}
-          </div>
-        ))}
-      </div>
-    );
+// Relative import path resolver
+function resolveRelativePath(currentFilePath: string, relativeImportPath: string): string {
+  const current = currentFilePath.replace(/\\/g, '/');
+  const rel = relativeImportPath.replace(/\\/g, '/');
+
+  const currentParts = current.split('/');
+  currentParts.pop(); // Remove the file name to get the directory
+
+  const relParts = rel.split('/');
+  for (const part of relParts) {
+    if (part === '.') {
+      continue;
+    } else if (part === '..') {
+      currentParts.pop();
+    } else {
+      currentParts.push(part);
+    }
   }
-);
-EditorGutter.displayName = 'EditorGutter';
+  return currentParts.join('/');
+}
+
+const extensions = ['.tsx', '.ts', '.d.ts', '.jsx', '.js', '/index.tsx', '/index.ts', '/index.d.ts', '/index.jsx', '/index.js'];
+
+async function tryReadImportFile(resolvedBase: string): Promise<{ path: string; content: string } | null> {
+  for (const ext of extensions) {
+    const fullPath = resolvedBase + ext;
+    try {
+      const result = await window.terminalApi.readTextFile({ path: fullPath });
+      if (result && typeof result.content === 'string') {
+        return { path: result.path || fullPath, content: result.content };
+      }
+    } catch {
+      // Ignore and check next extension
+    }
+  }
+  return null;
+}
+
+function findDefinitionInContent(content: string, word: string): { lineNumber: number; columnNumber: number } | null {
+  const escapedWord = word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+  // Find all import and re-export ranges to exclude false positives
+  const ignoreRanges: { start: number; end: number }[] = [];
+  const ignoreRegexes = [
+    /import\s+[\s\S]*?from\s+['"][^'"]+['"]/g,
+    /export\s+[\s\S]*?from\s+['"][^'"]+['"]/g
+  ];
+  for (const regex of ignoreRegexes) {
+    let m;
+    while ((m = regex.exec(content)) !== null) {
+      ignoreRanges.push({ start: m.index, end: m.index + m[0].length });
+    }
+  }
+
+  const declarationPatterns = [
+    // 1. Explicit declaration: const/let/var/function/class/interface/type/enum/abstract class word
+    new RegExp(`\\b(const|let|var|function|class|interface|type|enum|abstract\\s+class)\\s+${escapedWord}\\b`, 'g'),
+    
+    // 2. Destructured variable in object: const { ..., word, ... }
+    new RegExp(`\\b(const|let|var)\\s+\\{[^}]*?\\b${escapedWord}\\b`, 'g'),
+    
+    // 3. Destructured variable in array: const [ ..., word, ... ]
+    new RegExp(`\\b(const|let|var)\\s+\\[[^\\]]*?\\b${escapedWord}\\b`, 'g'),
+    
+    // 4. Function name: function word(
+    new RegExp(`\\bfunction\\s+${escapedWord}\\b`, 'g'),
+    
+    // 5. Function/arrow parameter list: (..., word, ...) => or (..., word) {
+    new RegExp(`\\([^)]*?\\b${escapedWord}\\b[^)]*?\\)\\s*(=>|\\{)`, 'g'),
+    
+    // 6. Destructured parameter in function: ({ ..., word, ... })
+    new RegExp(`\\(\\s*\\{[^}]*?\\b${escapedWord}\\b[^}]*?\\}\\s*\\)`, 'g'),
+    
+    // 7. Arrow function single param: word =>
+    new RegExp(`\\b${escapedWord}\\s*=>`, 'g'),
+    
+    // 8. Class property/method: word = ... or word(...) {
+    new RegExp(`\\b${escapedWord}\\s*\\([^)]*\\)\\s*\\{`, 'g'),
+    
+    // 9. Type/interface/object member: word: or word?:
+    new RegExp(`\\b${escapedWord}\\s*\\??\\s*:`, 'g'),
+    
+    // 10. Property assignment: word = value (class property or fallback)
+    new RegExp(`\\b${escapedWord}\\s*=`, 'g')
+  ];
+
+  for (const pattern of declarationPatterns) {
+    pattern.lastIndex = 0;
+    let match;
+    while ((match = pattern.exec(content)) !== null) {
+      const matchText = match[0];
+      const wordRegex = new RegExp(`\\b${escapedWord}\\b`);
+      const wordMatch = matchText.match(wordRegex);
+      const wordOffset = wordMatch && wordMatch.index !== undefined ? wordMatch.index : 0;
+      const wordAbsoluteIndex = match.index + wordOffset;
+
+      // Check if this match index falls within ignored import/export ranges
+      const isIgnored = ignoreRanges.some(
+        (r) => wordAbsoluteIndex >= r.start && wordAbsoluteIndex <= r.end
+      );
+      if (isIgnored) {
+        continue;
+      }
+
+      // Convert absolute index to line and column numbers
+      const textBeforeWord = content.substring(0, wordAbsoluteIndex);
+      const linesBefore = textBeforeWord.split('\n');
+      const lineNumber = linesBefore.length;
+      const columnNumber = linesBefore[linesBefore.length - 1].length + 1;
+      return { lineNumber, columnNumber };
+    }
+  }
+
+  return null;
+}
+
+// Recursively tracks named exports or defaults
+function findReExportPath(content: string, word: string): string | null {
+  const escapedWord = word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const reExportRegex = /export\s+((?:(?!export)[\s\S])*?)\s+from\s+['"]([^'"]+)['"]/g;
+
+  let match;
+  while ((match = reExportRegex.exec(content)) !== null) {
+    const exportClause = match[1];
+    const exportPath = match[2];
+
+    const wordRegex = new RegExp(`\\b${escapedWord}\\b`);
+    if (wordRegex.test(exportClause)) {
+      return exportPath;
+    }
+  }
+  return null;
+}
+
+function findImportPath(content: string, word: string): string | null {
+  const escapedWord = word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const importRegex = /import\s+((?:(?!import)[\s\S])*?)\s+from\s+['"]([^'"]+)['"]/g;
+
+  let match;
+  while ((match = importRegex.exec(content)) !== null) {
+    const importClause = match[1];
+    const importPath = match[2];
+
+    const wordRegex = new RegExp(`\\b${escapedWord}\\b`);
+    if (wordRegex.test(importClause)) {
+      return importPath;
+    }
+  }
+  return null;
+}
+
+async function resolveDefinition(
+  currentFilePath: string,
+  currentFileContent: string,
+  word: string,
+  namespace?: string | null
+): Promise<{ path: string; lineNumber: number; columnNumber: number; wordLength: number; contentSnippet: string } | null> {
+  // CSS variable resolution
+  if (word.startsWith('--')) {
+    const lines = currentFileContent.split('\n');
+    const escapedVar = word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const varRegex = new RegExp(`^\\s*${escapedVar}\\s*:`);
+    for (let i = 0; i < lines.length; i++) {
+      if (varRegex.test(lines[i])) {
+        return {
+          path: currentFilePath,
+          lineNumber: i + 1,
+          columnNumber: lines[i].indexOf(word) + 1 || 1,
+          wordLength: word.length,
+          contentSnippet: lines.slice(Math.max(0, i - 1), Math.min(lines.length, i + 3)).join('\n')
+        };
+      }
+    }
+    return null;
+  }
+
+  const wordLength = word.length;
+
+  // If there's a namespace (e.g. layout.splitPane -> namespace is 'layout', word is 'splitPane')
+  if (namespace) {
+    const importPath = findImportPath(currentFileContent, namespace);
+    if (importPath && importPath.startsWith('.')) {
+      let resolvedBase = resolveRelativePath(currentFilePath, importPath);
+      let targetFile = await tryReadImportFile(resolvedBase);
+
+      let depth = 0;
+      while (targetFile && depth < 5) {
+        const targetDef = findDefinitionInContent(targetFile.content, word);
+        if (targetDef) {
+          const lines = targetFile.content.split('\n');
+          const startLine = Math.max(0, targetDef.lineNumber - 3);
+          const endLine = Math.min(lines.length, targetDef.lineNumber + 3);
+          return {
+            path: targetFile.path,
+            lineNumber: targetDef.lineNumber,
+            columnNumber: targetDef.columnNumber,
+            wordLength,
+            contentSnippet: lines.slice(startLine, endLine).join('\n')
+          };
+        }
+
+        const nestedImport = findReExportPath(targetFile.content, word);
+        if (nestedImport && nestedImport.startsWith('.')) {
+          resolvedBase = resolveRelativePath(targetFile.path, nestedImport);
+          targetFile = await tryReadImportFile(resolvedBase);
+          depth++;
+        } else {
+          break;
+        }
+      }
+    }
+  }
+
+  // 1. Local definition
+  const localDef = findDefinitionInContent(currentFileContent, word);
+  if (localDef) {
+    const lines = currentFileContent.split('\n');
+    const startLine = Math.max(0, localDef.lineNumber - 3);
+    const endLine = Math.min(lines.length, localDef.lineNumber + 3);
+    return {
+      path: currentFilePath,
+      lineNumber: localDef.lineNumber,
+      columnNumber: localDef.columnNumber,
+      wordLength,
+      contentSnippet: lines.slice(startLine, endLine).join('\n')
+    };
+  }
+
+  // 2. Imports
+  const importPath = findImportPath(currentFileContent, word);
+  if (importPath && importPath.startsWith('.')) {
+    let resolvedBase = resolveRelativePath(currentFilePath, importPath);
+    let targetFile = await tryReadImportFile(resolvedBase);
+
+    let depth = 0;
+    while (targetFile && depth < 5) {
+      const targetDef = findDefinitionInContent(targetFile.content, word);
+      if (targetDef) {
+        const lines = targetFile.content.split('\n');
+        const startLine = Math.max(0, targetDef.lineNumber - 3);
+        const endLine = Math.min(lines.length, targetDef.lineNumber + 3);
+        return {
+          path: targetFile.path,
+          lineNumber: targetDef.lineNumber,
+          columnNumber: targetDef.columnNumber,
+          wordLength,
+          contentSnippet: lines.slice(startLine, endLine).join('\n')
+        };
+      }
+
+      const nestedImport = findReExportPath(targetFile.content, word);
+      if (nestedImport && nestedImport.startsWith('.')) {
+        resolvedBase = resolveRelativePath(targetFile.path, nestedImport);
+        targetFile = await tryReadImportFile(resolvedBase);
+        depth++;
+      } else {
+        break;
+      }
+    }
+  }
+
+  return null;
+}
 
 export function FileEditorWorkspace({
   activeFilePath,
@@ -143,6 +407,50 @@ export function FileEditorWorkspace({
   const tabsRef = useRef<EditorTab[]>([]);
   const selectedPathRef = useRef('');
 
+  const editorRef = useRef<any>(null);
+  const monacoRef = useRef<Monaco | null>(null);
+  const decorationsRef = useRef<string[]>([]);
+  const pendingNavigationRef = useRef<{
+    path: string;
+    line: number;
+    column: number;
+    wordLength: number;
+  } | null>(null);
+
+  const applyNavigation = useCallback((editor: any, pending: { path: string; line: number; column: number; wordLength: number }) => {
+    const model = editor.getModel();
+    if (model && model.uri.path === pending.path) {
+      if (pending.line > 1 && model.getLineCount() < pending.line) {
+        return false;
+      }
+      editor.revealLineInCenter(pending.line);
+      if (pending.wordLength > 0) {
+        editor.setSelection({
+          startLineNumber: pending.line,
+          startColumn: pending.column,
+          endLineNumber: pending.line,
+          endColumn: pending.column + pending.wordLength
+        });
+      } else {
+        editor.setPosition({ lineNumber: pending.line, column: pending.column });
+      }
+      editor.focus();
+      return true;
+    }
+    return false;
+  }, []);
+
+  const [zoom, setZoom] = useState(1);
+  const [pan, setPan] = useState({ x: 0, y: 0 });
+  const [isDragging, setIsDragging] = useState(false);
+  const dragStartRef = useRef({ x: 0, y: 0 });
+
+  useEffect(() => {
+    setZoom(1);
+    setPan({ x: 0, y: 0 });
+    setIsDragging(false);
+  }, [selectedPath]);
+
   useEffect(() => {
     selectedPathRef.current = selectedPath;
   }, [selectedPath]);
@@ -153,24 +461,12 @@ export function FileEditorWorkspace({
     }
   }, [selectedPath, onActiveFilePathChange]);
 
-  const surfaceRef = useRef<HTMLDivElement>(null);
-  const editorInputRef = useRef<HTMLTextAreaElement | null>(null);
-  const isCopiedLineRef = useRef(false);
-  const lastCopiedLineTextRef = useRef('');
-
-  // Custom Undo/Redo History Stack
-  const historyRef = useRef<Record<string, { past: HistoryEntry[]; future: HistoryEntry[] }>>({});
-  const lastEditTimeRef = useRef(0);
-  const lastActionTypeRef = useRef('');
-  const lastSelectionRef = useRef({ start: 0, end: 0 });
-
-  // Local Find states
-  const [findActive, setFindActive] = useState(false);
-  const [findQuery, setFindQuery] = useState('');
-  const [findCaseSensitive, setFindCaseSensitive] = useState(false);
-  const [findWholeWord, setFindWholeWord] = useState(false);
-  const [findUseRegex, setFindUseRegex] = useState(false);
-  const [activeFindIndex, setActiveFindIndex] = useState(0);
+  useEffect(() => {
+    return () => {
+      editorRef.current = null;
+      monacoRef.current = null;
+    };
+  }, []);
 
   useEffect(() => {
     tabsRef.current = tabs;
@@ -212,8 +508,26 @@ export function FileEditorWorkspace({
       window.setTimeout(() => reject(new Error('File load timed out (10s). File may be too large or inaccessible.')), 10000)
     );
 
-    Promise.race([window.terminalApi.readTextFile({ path: nextPath }), timeoutPromise])
+    const isImage = isImagePath(nextPath);
+
+    const loadPromise = isImage
+      ? window.terminalApi.getImagePreview({ path: nextPath }).then((result) => ({
+          path: nextPath,
+          content: result.dataUrl,
+          savedContent: result.dataUrl,
+          modifiedAt: Date.now()
+        }))
+      : window.terminalApi.readTextFile({ path: nextPath });
+
+    Promise.race([loadPromise, timeoutPromise])
       .then((result) => {
+        if (monacoRef.current && !isImage) {
+          const uri = monacoRef.current.Uri.file(result.path);
+          const model = monacoRef.current.editor.getModel(uri);
+          if (model) {
+            model.setValue(result.content);
+          }
+        }
         setTabs((current) =>
           current.map((tab) =>
             tab.path === nextPath
@@ -225,7 +539,8 @@ export function FileEditorWorkspace({
                   savedContent: result.content,
                   modifiedAt: result.modifiedAt,
                   loading: false,
-                  error: undefined
+                  error: undefined,
+                  isImage: isImage
                 }
               : tab
           )
@@ -253,178 +568,22 @@ export function FileEditorWorkspace({
     }
   }, [activeFilePath, loadFile]);
 
-  // Scroll to activeLineNumber
-  useEffect(() => {
-    if (activeLineNumber && activeLineNumber > 0) {
-      // Wait slightly for file rendering to complete
-      const timer = window.setTimeout(() => {
-        if (surfaceRef.current) {
-          // 12px padding top in pre, 20px per line, offset by 80px for context visibility
-          const targetScrollTop = 12 + (activeLineNumber - 1) * 20 - 80;
-          surfaceRef.current.scrollTop = Math.max(0, targetScrollTop);
-        }
-      }, 50);
-      return () => window.clearTimeout(timer);
-    }
-    return undefined;
-  }, [activeLineNumber, selectedPath]);
-
   const selectedTab = tabs.find((tab) => tab.path === selectedPath) || null;
-  const selectedLines = useMemo(() => {
-    if (!selectedTab) {
-      return [''];
-    }
 
-    return selectedTab.content.split('\n');
-  }, [selectedTab?.content]);
-  const deferredGlobalSearchQuery = useDeferredValue(globalSearchQuery);
-
-  const localMatches = useMemo(() => {
-    if (!selectedTab || !findQuery) return [];
-    const regex = getSearchRegex(findQuery, findCaseSensitive, findWholeWord, findUseRegex);
-    if (!regex) return [];
-
-    const list: { lineIndex: number; charIndex: number; length: number }[] = [];
-    selectedLines.forEach((line, lineIndex) => {
-      let match;
-      regex.lastIndex = 0;
-      while ((match = regex.exec(line)) !== null) {
-        if (match[0].length === 0) {
-          regex.lastIndex++;
-          continue;
-        }
-        list.push({
-          lineIndex,
-          charIndex: match.index,
-          length: match[0].length
-        });
-      }
-    });
-    return list;
-  }, [selectedLines, selectedTab, findQuery, findCaseSensitive, findWholeWord, findUseRegex]);
-
-  const localFindRegexForLineHighlight = useMemo(() => {
-    return getSearchRegex(findQuery, findCaseSensitive, findWholeWord, findUseRegex);
-  }, [findQuery, findCaseSensitive, findWholeWord, findUseRegex]);
-
-  const globalSearchRegexForLineHighlight = useMemo(() => {
-    return getSearchRegex(
-      deferredGlobalSearchQuery,
-      globalSearchCaseSensitive,
-      globalSearchWholeWord,
-      globalSearchUseRegex
-    );
-  }, [deferredGlobalSearchQuery, globalSearchCaseSensitive, globalSearchUseRegex, globalSearchWholeWord]);
-
+  // Handle pending navigation to definitions once the file has loaded
   useEffect(() => {
-    if (localMatches.length === 0) {
-      setActiveFindIndex(0);
-    } else if (activeFindIndex >= localMatches.length) {
-      setActiveFindIndex(localMatches.length - 1);
-    }
-  }, [localMatches, activeFindIndex]);
-
-  useEffect(() => {
-    if (findActive && localMatches.length > 0 && activeFindIndex < localMatches.length) {
-      const activeMatch = localMatches[activeFindIndex];
-      const targetLine = activeMatch.lineIndex + 1;
-      if (surfaceRef.current) {
-        const targetScrollTop = 12 + (targetLine - 1) * 20 - 80;
-        surfaceRef.current.scrollTop = Math.max(0, targetScrollTop);
-      }
-    }
-  }, [activeFindIndex, localMatches, findActive]);
-
-  useEffect(() => {
-    const handleGlobalKeyDown = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'f') {
-        const activeEl = document.activeElement;
-        if (activeEl?.id === 'local-find-input') {
-          return;
-        }
-        e.preventDefault();
-        setFindActive(true);
-        window.requestAnimationFrame(() => {
-          const findInput = document.getElementById('local-find-input');
-          if (findInput) {
-            findInput.focus();
-            (findInput as HTMLInputElement).select();
+    if (selectedTab && !selectedTab.loading && pendingNavigationRef.current) {
+      const pending = pendingNavigationRef.current;
+      if (pending.path === selectedTab.path) {
+        if (editorRef.current) {
+          const applied = applyNavigation(editorRef.current, pending);
+          if (applied) {
+            pendingNavigationRef.current = null;
           }
-        });
+        }
       }
-    };
-
-    window.addEventListener('keydown', handleGlobalKeyDown);
-    return () => {
-      window.removeEventListener('keydown', handleGlobalKeyDown);
-    };
-  }, [selectedPath]);
-  const hasDirtyTabs = tabs.some((tab) => tab.content !== tab.savedContent);
-
-  const lineCount = useMemo(() => {
-    if (!selectedTab) {
-      return 1;
     }
-
-    return Math.max(1, selectedLines.length);
-  }, [selectedLines, selectedTab]);
-  const editorHeight = lineCount * 20 + 24;
-  const editorContentWidth = useMemo(() => {
-    const longestLineLength = selectedLines.reduce((maxLength, line) => {
-      const visualLength = line.replace(/\t/g, '  ').length;
-      return Math.max(maxLength, visualLength);
-    }, 0);
-
-    return Math.max(0, longestLineLength * 8 + 32);
-  }, [selectedLines]);
-
-  const focusEditorAtEnd = useCallback((): void => {
-    const textarea = editorInputRef.current;
-    if (!textarea || textarea.disabled) {
-      return;
-    }
-
-    const end = textarea.value.length;
-    textarea.focus();
-    textarea.setSelectionRange(end, end);
-    lastSelectionRef.current = { start: end, end };
-  }, []);
-
-  const handleEditorMouseDown = (event: ReactMouseEvent<HTMLTextAreaElement>): void => {
-    if (!selectedTab || selectedTab.loading) {
-      return;
-    }
-
-    const textarea = event.currentTarget;
-    const clickY = event.clientY - textarea.getBoundingClientRect().top + textarea.scrollTop;
-
-    if (clickY > editorHeight) {
-      event.preventDefault();
-      focusEditorAtEnd();
-    }
-  };
-
-  const handleEditorSurfaceMouseDown = (event: ReactMouseEvent<HTMLDivElement>): void => {
-    if (!selectedTab || selectedTab.loading) {
-      return;
-    }
-
-    if (event.target instanceof HTMLTextAreaElement) {
-      return;
-    }
-
-    const surface = surfaceRef.current;
-    if (!surface) {
-      return;
-    }
-
-    const clickY = event.clientY - surface.getBoundingClientRect().top + surface.scrollTop;
-
-    if (clickY > editorHeight) {
-      event.preventDefault();
-      focusEditorAtEnd();
-    }
-  };
+  }, [selectedTab, selectedTab?.loading, applyNavigation]);
 
   const saveFile = useCallback((path = selectedPath): void => {
     const tab = tabs.find((item) => item.path === path);
@@ -482,6 +641,18 @@ export function FileEditorWorkspace({
         onActiveFileChange?.(nextSelected.path);
       }
     }
+
+    // Delay model disposal to the next tick so the editor can switch away from it first
+    setTimeout(() => {
+      if (monacoRef.current) {
+        const uri = monacoRef.current.Uri.file(path);
+        const model = monacoRef.current.editor.getModel(uri);
+        // Only dispose if it's not the currently active model in the editor
+        if (model && (!editorRef.current || editorRef.current.getModel() !== model)) {
+          model.dispose();
+        }
+      }
+    }, 0);
   };
 
   const updateSelectedContent = useCallback((content: string): void => {
@@ -493,375 +664,260 @@ export function FileEditorWorkspace({
     setTabs((current) => current.map((tab) => (tab.path === path ? { ...tab, content } : tab)));
   }, []);
 
-  const pushHistory = useCallback((
-    path: string,
-    content: string,
-    selectionStart: number,
-    selectionEnd: number,
-    actionType: 'type' | 'cut' | 'paste' | 'tab' | 'move' | 'other' = 'other'
-  ) => {
-    if (!historyRef.current[path]) {
-      historyRef.current[path] = { past: [], future: [] };
+
+
+  const handleNavigateToDefinition = useCallback((targetPath: string, line: number, column = 1, wordLength = 0) => {
+    const normalizedPath = targetPath.replace(/^\/([a-zA-Z]:)/, '$1');
+
+    pendingNavigationRef.current = { path: normalizedPath, line, column, wordLength };
+    loadFile(normalizedPath);
+    setSelectedPath(normalizedPath);
+    onActiveFileChange?.(normalizedPath);
+
+    if (editorRef.current) {
+      const applied = applyNavigation(editorRef.current, pendingNavigationRef.current);
+      if (applied) {
+        pendingNavigationRef.current = null;
+      }
     }
-    const hist = historyRef.current[path];
-    const lastEntry = hist.past[hist.past.length - 1];
+  }, [loadFile, onActiveFileChange, applyNavigation]);
 
-    if (!lastEntry || lastEntry.content !== content) {
-      const now = Date.now();
-      const timeDiff = now - lastEditTimeRef.current;
+  const registerMonacoProviders = (monaco: Monaco) => {
+    if ((monaco as any).__providersRegistered) {
+      return;
+    }
+    (monaco as any).__providersRegistered = true;
 
-      const shouldGroup =
-        actionType === 'type' &&
-        lastActionTypeRef.current === 'type' &&
-        timeDiff < 1200 &&
-        !content.endsWith(' ') &&
-        !content.endsWith('\n');
+    const resolveDef = async (model: any, position: any) => {
+      let wordInfo = model.getWordAtPosition(position);
+      if (!wordInfo) return null;
+      let word = wordInfo.word;
 
-      if (!shouldGroup) {
-        if (hist.past.length >= 200) {
-          hist.past.shift();
+      const lineText = model.getLineContent(position.lineNumber);
+      if (model.getLanguageId() === 'css' || model.getLanguageId() === 'scss') {
+        const hoverIndex = position.column - 1;
+        const beforeWord = lineText.substring(0, hoverIndex + word.length);
+        const match = beforeWord.match(/--[a-zA-Z0-9_-]*$/);
+        if (match) {
+          word = match[0];
         }
-        hist.past.push({ content, selectionStart, selectionEnd });
-        hist.future = [];
       }
 
-      lastEditTimeRef.current = now;
-      lastActionTypeRef.current = actionType;
-    }
-  }, []);
+      const filePath = model.uri.path;
+      const fileContent = model.getValue();
 
-  const handleUndo = useCallback((path: string, textarea: HTMLTextAreaElement) => {
-    const hist = historyRef.current[path];
-    if (!hist || hist.past.length === 0) return;
+      // Extract namespace if word is preceded by an identifier and a dot (e.g. layout.splitPane)
+      const beforeWord = lineText.substring(0, position.column - 1);
+      const nsMatch = beforeWord.match(/\b([a-zA-Z0-9_$]+)\s*\.\s*$/);
+      const namespace = nsMatch ? nsMatch[1] : null;
 
-    const currentContent = textarea.value;
-    const currentStart = textarea.selectionStart;
-    const currentEnd = textarea.selectionEnd;
-
-    const prevEntry = hist.past.pop()!;
-
-    hist.future.push({
-      content: currentContent,
-      selectionStart: currentStart,
-      selectionEnd: currentEnd
-    });
-
-    updateSelectedContent(prevEntry.content);
-
-    lastEditTimeRef.current = 0;
-    lastActionTypeRef.current = '';
-
-    window.requestAnimationFrame(() => {
-      textarea.focus();
-      textarea.selectionStart = prevEntry.selectionStart;
-      textarea.selectionEnd = prevEntry.selectionEnd;
-    });
-  }, [updateSelectedContent]);
-
-  const handleRedo = useCallback((path: string, textarea: HTMLTextAreaElement) => {
-    const hist = historyRef.current[path];
-    if (!hist || hist.future.length === 0) return;
-
-    const currentContent = textarea.value;
-    const currentStart = textarea.selectionStart;
-    const currentEnd = textarea.selectionEnd;
-
-    const nextEntry = hist.future.pop()!;
-
-    hist.past.push({
-      content: currentContent,
-      selectionStart: currentStart,
-      selectionEnd: currentEnd
-    });
-
-    updateSelectedContent(nextEntry.content);
-
-    lastEditTimeRef.current = 0;
-    lastActionTypeRef.current = '';
-
-    window.requestAnimationFrame(() => {
-      textarea.focus();
-      textarea.selectionStart = nextEntry.selectionStart;
-      textarea.selectionEnd = nextEntry.selectionEnd;
-    });
-  }, [updateSelectedContent]);
-
-  const navigateFind = useCallback((direction: 'next' | 'prev') => {
-    if (localMatches.length === 0) return;
-    if (direction === 'next') {
-      setActiveFindIndex((prev) => (prev + 1) % localMatches.length);
-    } else {
-      setActiveFindIndex((prev) => (prev - 1 + localMatches.length) % localMatches.length);
-    }
-  }, [localMatches]);
-
-  const handleCopy = (e: ReactClipboardEvent<HTMLTextAreaElement>) => {
-    const textarea = e.currentTarget;
-    if (textarea.selectionStart === textarea.selectionEnd) {
-      const content = textarea.value;
-      const selectionStart = textarea.selectionStart;
-      const lineStart = content.lastIndexOf('\n', selectionStart - 1) + 1;
-      let lineEnd = content.indexOf('\n', selectionStart);
-      if (lineEnd === -1) {
-        lineEnd = content.length;
-      }
-      const lineText = content.substring(lineStart, lineEnd) + '\n';
-      
-      e.clipboardData.setData('text/plain', lineText);
-      e.clipboardData.setData('application/x-carogent-line', 'true');
-      isCopiedLineRef.current = true;
-      lastCopiedLineTextRef.current = lineText;
-      e.preventDefault();
-    } else {
-      isCopiedLineRef.current = false;
-      lastCopiedLineTextRef.current = '';
-    }
-  };
-
-  const handleCut = (e: ReactClipboardEvent<HTMLTextAreaElement>) => {
-    const textarea = e.currentTarget;
-    if (textarea.selectionStart === textarea.selectionEnd) {
-      const content = textarea.value;
-      const selectionStart = textarea.selectionStart;
-      const lineStart = content.lastIndexOf('\n', selectionStart - 1) + 1;
-      let lineEnd = content.indexOf('\n', selectionStart);
-      
-      let lineText = '';
-      let nextContent = '';
-      let nextCursorPos = lineStart;
-      
-      if (lineEnd === -1) {
-        lineEnd = content.length;
-        lineText = content.substring(lineStart, lineEnd) + '\n';
-        if (lineStart > 0) {
-          nextContent = content.substring(0, lineStart - 1);
-          nextCursorPos = lineStart - 1;
-        } else {
-          nextContent = '';
-          nextCursorPos = 0;
-        }
-      } else {
-        lineText = content.substring(lineStart, lineEnd + 1);
-        nextContent = content.substring(0, lineStart) + content.substring(lineEnd + 1);
-        nextCursorPos = lineStart;
-      }
-      
-      e.clipboardData.setData('text/plain', lineText);
-      e.clipboardData.setData('application/x-carogent-line', 'true');
-      isCopiedLineRef.current = true;
-      lastCopiedLineTextRef.current = lineText;
-      
-      if (selectedTab) {
-        pushHistory(selectedTab.path, content, selectionStart, selectionStart, 'cut');
-      }
-      updateSelectedContent(nextContent);
-      window.requestAnimationFrame(() => {
-        textarea.selectionStart = nextCursorPos;
-        textarea.selectionEnd = nextCursorPos;
-      });
-      e.preventDefault();
-    } else {
-      isCopiedLineRef.current = false;
-      lastCopiedLineTextRef.current = '';
-    }
-  };
-
-  const handlePaste = (e: ReactClipboardEvent<HTMLTextAreaElement>) => {
-    const textarea = e.currentTarget;
-    const clipboardText = e.clipboardData.getData('text/plain');
-    const isLine = e.clipboardData.types.includes('application/x-carogent-line') || 
-                   (isCopiedLineRef.current && clipboardText === lastCopiedLineTextRef.current);
-    if (isLine && textarea.selectionStart === textarea.selectionEnd) {
-      e.preventDefault();
-      const content = textarea.value;
-      const selectionStart = textarea.selectionStart;
-      
-      const lineStart = content.lastIndexOf('\n', selectionStart - 1) + 1;
-      const nextContent = content.substring(0, lineStart) + clipboardText + content.substring(lineStart);
-      
-      if (selectedTab) {
-        pushHistory(selectedTab.path, content, selectionStart, selectionStart, 'paste');
-      }
-      updateSelectedContent(nextContent);
-      
-      const nextCursorPos = selectionStart + clipboardText.length;
-      window.requestAnimationFrame(() => {
-        textarea.selectionStart = nextCursorPos;
-        textarea.selectionEnd = nextCursorPos;
-      });
-    }
-  };
-
-  const handleFindInputKeyDown = (e: ReactKeyboardEvent<HTMLInputElement>) => {
-    if (e.key === 'Enter') {
-      e.preventDefault();
-      if (e.shiftKey) {
-        navigateFind('prev');
-      } else {
-        navigateFind('next');
-      }
-    } else if (e.key === 'Escape') {
-      e.preventDefault();
-      setFindActive(false);
-      const editorInput = document.querySelector('.file-editor-input') as HTMLTextAreaElement | null;
-      if (editorInput) {
-        editorInput.focus();
-      }
-    }
-  };
-
-  const handleEditorKeyDown = (event: ReactKeyboardEvent<HTMLTextAreaElement>): void => {
-    // Record current selection for onChange history
-    const textarea = event.currentTarget;
-    lastSelectionRef.current = {
-      start: textarea.selectionStart,
-      end: textarea.selectionEnd
+      return await resolveDefinition(filePath, fileContent, word, namespace);
     };
 
-    // Undo shortcut: Cmd/Ctrl + Z (but NOT shift)
-    if ((event.metaKey || event.ctrlKey) && !event.shiftKey && event.key.toLowerCase() === 'z') {
-      event.preventDefault();
-      if (selectedTab) {
-        handleUndo(selectedTab.path, event.currentTarget);
-      }
-      return;
-    }
+    const languages = ['typescript', 'javascript', 'css'];
+    languages.forEach((lang) => {
+      monaco.languages.registerDefinitionProvider(lang, {
+        async provideDefinition(model: any, position: any) {
+          const def = await resolveDef(model, position);
+          if (!def) return null;
 
-    // Redo shortcut: Cmd/Ctrl + Shift + Z OR Cmd/Ctrl + Y
-    if (
-      ((event.metaKey || event.ctrlKey) && event.shiftKey && event.key.toLowerCase() === 'z') ||
-      ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'y')
-    ) {
-      event.preventDefault();
-      if (selectedTab) {
-        handleRedo(selectedTab.path, event.currentTarget);
-      }
-      return;
-    }
-
-    if (event.altKey && (event.key === 'ArrowUp' || event.key === 'ArrowDown')) {
-      event.preventDefault();
-      if (!selectedTab) return;
-      const content = textarea.value;
-      const selStart = textarea.selectionStart;
-      const selEnd = textarea.selectionEnd;
-      const direction = event.key === 'ArrowUp' ? 'up' : 'down';
-
-      const lines = content.split('\n');
-      
-      const getPosFromIndex = (text: string, index: number) => {
-        let line = 0;
-        let col = 0;
-        for (let i = 0; i < index; i++) {
-          if (text[i] === '\n') {
-            line++;
-            col = 0;
-          } else {
-            col++;
-          }
-        }
-        return { line, col };
-      };
-
-      const getIndexFromPos = (linesArr: string[], line: number, col: number) => {
-        let index = 0;
-        for (let i = 0; i < line; i++) {
-          index += linesArr[i].length + 1;
-        }
-        index += Math.min(col, linesArr[line] ? linesArr[line].length : 0);
-        return index;
-      };
-
-      const startPos = getPosFromIndex(content, selStart);
-      const endPos = getPosFromIndex(content, selEnd);
-      
-      let firstLine = startPos.line;
-      let lastLine = endPos.line;
-      if (selStart < selEnd && endPos.col === 0 && lastLine > firstLine) {
-        lastLine--;
-      }
-
-      if (direction === 'up') {
-        if (firstLine > 0) {
-          const newLines = [...lines];
-          const lineAbove = newLines[firstLine - 1];
-          newLines.splice(firstLine - 1, 1);
-          newLines.splice(lastLine, 0, lineAbove);
-          
-          const newContent = newLines.join('\n');
-          const newSelStart = getIndexFromPos(newLines, startPos.line - 1, startPos.col);
-          const newSelEnd = getIndexFromPos(newLines, endPos.line - 1, endPos.col);
-          
-          pushHistory(selectedTab.path, content, selStart, selEnd, 'move');
-          updateSelectedContent(newContent);
-          window.requestAnimationFrame(() => {
-            textarea.selectionStart = newSelStart;
-            textarea.selectionEnd = newSelEnd;
-          });
-        }
-      } else {
-        if (lastLine < lines.length - 1) {
-          const newLines = [...lines];
-          const lineBelow = newLines[lastLine + 1];
-          newLines.splice(lastLine + 1, 1);
-          newLines.splice(firstLine, 0, lineBelow);
-          
-          const newContent = newLines.join('\n');
-          const newSelStart = getIndexFromPos(newLines, startPos.line + 1, startPos.col);
-          const newSelEnd = getIndexFromPos(newLines, endPos.line + 1, endPos.col);
-          
-          pushHistory(selectedTab.path, content, selStart, selEnd, 'move');
-          updateSelectedContent(newContent);
-          window.requestAnimationFrame(() => {
-            textarea.selectionStart = newSelStart;
-            textarea.selectionEnd = newSelEnd;
-          });
-        }
-      }
-      return;
-    }
-
-    if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 's') {
-      event.preventDefault();
-      saveFile();
-      return;
-    }
-
-    if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'f') {
-      event.preventDefault();
-      setFindActive(true);
-      window.requestAnimationFrame(() => {
-        const findInput = document.getElementById('local-find-input');
-        if (findInput) {
-          findInput.focus();
-          (findInput as HTMLInputElement).select();
+          return {
+            uri: monaco.Uri.file(def.path),
+            range: new monaco.Range(
+              def.lineNumber,
+              def.columnNumber || 1,
+              def.lineNumber,
+              (def.columnNumber || 1) + (def.wordLength || 0)
+            )
+          };
         }
       });
-      return;
-    }
 
-    if (event.key === 'Escape' && findActive) {
-      event.preventDefault();
-      setFindActive(false);
-      return;
-    }
+      monaco.languages.registerHoverProvider(lang, {
+        async provideHover(model: any, position: any) {
+          const def = await resolveDef(model, position);
+          if (!def) return null;
 
-    if (event.key === 'Tab') {
-      event.preventDefault();
-      const start = textarea.selectionStart;
-      const end = textarea.selectionEnd;
-      const nextContent = `${selectedTab?.content.slice(0, start) || ''}  ${selectedTab?.content.slice(end) || ''}`;
+          const relativePathLabel = def.path.split(/[\\/]/).pop() || def.path;
 
-      if (selectedTab) {
-        pushHistory(selectedTab.path, selectedTab.content, start, end, 'tab');
-      }
-      updateSelectedContent(nextContent);
-      window.requestAnimationFrame(() => {
-        textarea.selectionStart = start + 2;
-        textarea.selectionEnd = start + 2;
+          return {
+            contents: [
+              { value: `**Definition** (${relativePathLabel}:line ${def.lineNumber})` },
+              { value: '```' + lang + '\n' + def.contentSnippet + '\n```' }
+            ]
+          };
+        }
       });
-    }
+    });
   };
+
+  const updateSearchDecorations = useCallback(() => {
+    if (!editorRef.current || !monacoRef.current || !selectedTab) return;
+    const editor = editorRef.current;
+    const model = editor.getModel();
+    if (!model) return;
+
+    if (!globalSearchQuery) {
+      decorationsRef.current = editor.deltaDecorations(decorationsRef.current, []);
+      return;
+    }
+
+    try {
+      const matches = model.findMatches(
+        globalSearchQuery,
+        false,
+        globalSearchUseRegex,
+        globalSearchWholeWord,
+        globalSearchCaseSensitive ? null : false,
+        true
+      );
+
+      const newDecorations = matches.map((match: any) => ({
+        range: match.range,
+        options: {
+          inlineClassName: 'global-search-match-highlight'
+        }
+      }));
+
+      decorationsRef.current = editor.deltaDecorations(decorationsRef.current, newDecorations);
+    } catch (e) {
+      // Ignore invalid regex search queries while typing
+    }
+  }, [globalSearchQuery, globalSearchCaseSensitive, globalSearchWholeWord, globalSearchUseRegex, selectedTab]);
+
+  const handleEditorDidMount = (editor: any, monaco: Monaco) => {
+    editorRef.current = editor;
+    monacoRef.current = monaco;
+
+    // Disable semantic validation (type and module resolution checks) to prevent import errors
+    monaco.languages.typescript.typescriptDefaults.setDiagnosticsOptions({
+      noSemanticValidation: true,
+      noSyntaxValidation: false
+    });
+    monaco.languages.typescript.javascriptDefaults.setDiagnosticsOptions({
+      noSemanticValidation: true,
+      noSyntaxValidation: false
+    });
+
+    // Disable built-in definition and hover providers to avoid duplicate popups (e.g. "Click to show 2 definitions")
+    monaco.languages.typescript.typescriptDefaults.setModeConfiguration({
+      definitions: false,
+      hovers: false
+    });
+    monaco.languages.typescript.javascriptDefaults.setModeConfiguration({
+      definitions: false,
+      hovers: false
+    });
+    if (monaco.languages.css && monaco.languages.css.cssDefaults) {
+      monaco.languages.css.cssDefaults.setModeConfiguration({
+        definitions: false,
+        hovers: false
+      });
+    }
+
+    monaco.editor.defineTheme('carogent-dark', {
+      base: 'vs-dark',
+      inherit: true,
+      rules: [
+        { token: 'comment', foreground: '6a9955', fontStyle: 'italic' },
+        { token: 'keyword', foreground: '569cd6' },
+        { token: 'keyword.control', foreground: 'c586c0' },
+        { token: 'string', foreground: 'ce9178' },
+        { token: 'number', foreground: 'b5cea8' },
+        { token: 'type', foreground: '4ec9b0' },
+        { token: 'class', foreground: '4ec9b0' },
+        { token: 'function', foreground: 'dcdcaa' },
+        { token: 'identifier', foreground: '9cdcfe' },
+        { token: 'operator', foreground: 'cccccc' },
+        { token: 'delimiter', foreground: 'cccccc' }
+      ],
+      colors: {
+        'editor.background': '#1f1f1f',
+        'editor.foreground': '#cccccc',
+        'editor.lineHighlightBackground': '#2d2d2d',
+        'editorLineNumber.foreground': '#6e7681',
+        'editorLineNumber.activeForeground': '#e6edf3',
+        'editor.selectionBackground': '#264f78',
+        'editorGutter.background': '#1f1f1f'
+      }
+    });
+    monaco.editor.setTheme('carogent-dark');
+
+    const editorService = editor._codeEditorService;
+    if (editorService) {
+      const originalOpenEditor = editorService.openCodeEditor.bind(editorService);
+      editorService.openCodeEditor = async (input: any, source: any, sideBySide: any) => {
+        const result = await originalOpenEditor(input, source, sideBySide);
+        if (!result && input && input.resource) {
+          const targetPath = input.resource.path;
+          const selection = input.options ? input.options.selection : null;
+          const line = selection ? selection.startLineNumber : 1;
+          const column = selection ? selection.startColumn : 1;
+          const endColumn = selection ? selection.endColumn : 1;
+          const wordLength = endColumn - column;
+
+          handleNavigateToDefinition(targetPath, line, column, wordLength);
+          return true;
+        }
+        return result;
+      };
+    }
+
+    editor.onDidChangeModel(() => {
+      if (pendingNavigationRef.current) {
+        window.requestAnimationFrame(() => {
+          if (pendingNavigationRef.current) {
+            const applied = applyNavigation(editor, pendingNavigationRef.current);
+            if (applied) {
+              pendingNavigationRef.current = null;
+            }
+          }
+        });
+      }
+    });
+
+    registerMonacoProviders(monaco);
+    // Apply search decorations immediately on mount
+    updateSearchDecorations();
+  };
+
+  useEffect(() => {
+    decorationsRef.current = [];
+  }, [selectedPath]);
+
+  // Handle activeLineNumber changes
+  useEffect(() => {
+    if (editorRef.current && activeLineNumber && activeLineNumber > 0) {
+      const editor = editorRef.current;
+      window.requestAnimationFrame(() => {
+        editor.revealLineInCenter(activeLineNumber);
+        editor.setPosition({ lineNumber: activeLineNumber, column: 1 });
+        editor.focus();
+      });
+    }
+  }, [activeLineNumber, selectedPath]);
+
+  // Handle global search highlight decorations
+  useEffect(() => {
+    updateSearchDecorations();
+  }, [updateSearchDecorations]);
+
+  // Handle Ctrl/Cmd+S saving shortcut
+  useEffect(() => {
+    const handleGlobalKeyDown = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 's') {
+        e.preventDefault();
+        saveFile();
+      }
+    };
+
+    window.addEventListener('keydown', handleGlobalKeyDown);
+    return () => {
+      window.removeEventListener('keydown', handleGlobalKeyDown);
+    };
+  }, [saveFile]);
+
+  const hasDirtyTabs = tabs.some((tab) => tab.content !== tab.savedContent);
 
   if (!tabs.length) {
     return (
@@ -934,201 +990,143 @@ export function FileEditorWorkspace({
                 className="file-editor-save-button"
                 type="button"
                 onClick={() => saveFile()}
-                disabled={selectedTab.loading || selectedTab.saving || selectedTab.content === selectedTab.savedContent}
+                disabled={selectedTab.loading || selectedTab.saving || selectedTab.isImage || selectedTab.content === selectedTab.savedContent}
               >
                 Save
               </button>
             </div>
           </div>
           {selectedTab.error && <div className="file-editor-error">{selectedTab.error}</div>}
-          {findActive && (
-            <div className="local-find-widget">
-              <div className="local-find-input-wrapper">
-                <input
-                  id="local-find-input"
-                  type="text"
-                  placeholder="Find"
-                  value={findQuery}
-                  onChange={(e) => {
-                    setFindQuery(e.target.value);
-                    setActiveFindIndex(0);
+
+          <div className="file-editor-surface" style={{ position: 'relative', height: 'calc(100% - 75px)', overflow: 'hidden' }}>
+            {selectedTab.isImage ? (
+              <div
+                className="file-editor-image-preview"
+                onWheel={(e) => {
+                  const delta = e.deltaY;
+                  setZoom((prev) => {
+                    const factor = delta < 0 ? 1.15 : 0.85;
+                    const next = prev * factor;
+                    return Math.min(Math.max(next, 0.1), 20); // 10% to 2000%
+                  });
+                }}
+                onMouseDown={(e) => {
+                  if (e.button !== 0) return;
+                  e.preventDefault();
+                  setIsDragging(true);
+                  dragStartRef.current = { x: e.clientX - pan.x, y: e.clientY - pan.y };
+                }}
+                onMouseMove={(e) => {
+                  if (!isDragging) return;
+                  setPan({
+                    x: e.clientX - dragStartRef.current.x,
+                    y: e.clientY - dragStartRef.current.y
+                  });
+                }}
+                onMouseUp={() => setIsDragging(false)}
+                onMouseLeave={() => setIsDragging(false)}
+                onDoubleClick={() => {
+                  setZoom(1);
+                  setPan({ x: 0, y: 0 });
+                }}
+                style={{
+                  position: 'relative',
+                  width: '100%',
+                  height: '100%',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  backgroundColor: '#1e1e1e',
+                  backgroundImage:
+                    'linear-gradient(45deg, #252526 25%, transparent 25%), linear-gradient(-45deg, #252526 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #252526 75%), linear-gradient(-45deg, transparent 75%, #252526 75%)',
+                  backgroundSize: '16px 16px',
+                  backgroundPosition: '0 0, 0 8px, 8px -8px, -8px 0px',
+                  overflow: 'hidden',
+                  userSelect: 'none',
+                  cursor: isDragging ? 'grabbing' : zoom > 1 ? 'grab' : 'default'
+                }}
+              >
+                <div
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    maxWidth: '90%',
+                    maxHeight: '90%',
+                    transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
+                    transformOrigin: 'center center',
+                    transition: isDragging ? 'none' : 'transform 0.1s ease-out'
                   }}
-                  onKeyDown={handleFindInputKeyDown}
-                  spellCheck={false}
-                  autoComplete="off"
-                />
-                <div className="local-find-options">
-                  <button
-                    type="button"
-                    className={`local-find-option ${findCaseSensitive ? 'is-active' : ''}`}
-                    onClick={() => {
-                      setFindCaseSensitive(prev => !prev);
-                      setActiveFindIndex(0);
+                >
+                  <img
+                    src={selectedTab.content}
+                    alt={selectedTab.name}
+                    style={{
+                      maxWidth: '100%',
+                      maxHeight: '100%',
+                      objectFit: 'contain',
+                      pointerEvents: 'none'
                     }}
-                    title="Match Case (Aa)"
-                  >
-                    Aa
-                  </button>
-                  <button
-                    type="button"
-                    className={`local-find-option ${findWholeWord ? 'is-active' : ''}`}
-                    onClick={() => {
-                      setFindWholeWord(prev => !prev);
-                      setActiveFindIndex(0);
-                    }}
-                    title="Match Whole Word (ab)"
-                  >
-                    ab
-                  </button>
-                  <button
-                    type="button"
-                    className={`local-find-option ${findUseRegex ? 'is-active' : ''}`}
-                    onClick={() => {
-                      setFindUseRegex(prev => !prev);
-                      setActiveFindIndex(0);
-                    }}
-                    title="Use Regular Expression (.*)"
-                  >
-                    .*
-                  </button>
+                  />
+                </div>
+                <div
+                  style={{
+                    position: 'absolute',
+                    bottom: '15px',
+                    right: '15px',
+                    background: 'rgba(0,0,0,0.72)',
+                    backdropFilter: 'blur(4px)',
+                    border: '1px solid rgba(255,255,255,0.08)',
+                    padding: '4px 10px',
+                    borderRadius: '4px',
+                    color: '#e2e8f0',
+                    fontSize: '11px',
+                    pointerEvents: 'none',
+                    fontFamily: 'monospace'
+                  }}
+                >
+                  {Math.round(zoom * 100)}%
                 </div>
               </div>
-              <div className="local-find-controls">
-                <span className="local-find-count">
-                  {localMatches.length > 0
-                    ? `${activeFindIndex + 1} of ${localMatches.length}`
-                    : 'No results'}
-                </span>
-                <button
-                  type="button"
-                  className="local-find-action"
-                  onClick={() => navigateFind('prev')}
-                  disabled={localMatches.length === 0}
-                  title="Previous Match (Shift+Enter)"
-                >
-                  ↑
-                </button>
-                <button
-                  type="button"
-                  className="local-find-action"
-                  onClick={() => navigateFind('next')}
-                  disabled={localMatches.length === 0}
-                  title="Next Match (Enter)"
-                >
-                  ↓
-                </button>
-                <button
-                  type="button"
-                  className="local-find-action close-action"
-                  onClick={() => {
-                    setFindActive(false);
-                    const editorInput = document.querySelector('.file-editor-input') as HTMLTextAreaElement | null;
-                    if (editorInput) {
-                      editorInput.focus();
-                    }
-                  }}
-                  title="Close (Escape)"
-                >
-                  <CloseIcon />
-                </button>
-              </div>
-            </div>
-          )}
-
-          <div ref={surfaceRef} className="file-editor-surface" onMouseDown={handleEditorSurfaceMouseDown}>
+            ) : (
+              <Editor
+                height="100%"
+                path={selectedTab.path}
+                language={getEditorLanguage(selectedTab.path)}
+                theme="carogent-dark"
+                value={selectedTab.content}
+                onChange={(value) => updateSelectedContent(value || '')}
+                onMount={handleEditorDidMount}
+                options={{
+                  minimap: { enabled: true },
+                  fontSize: 13,
+                  fontFamily: '"Cascadia Mono", Consolas, monospace',
+                  lineHeight: 20,
+                  wordWrap: 'off',
+                  automaticLayout: true,
+                  scrollbar: {
+                    vertical: 'visible',
+                    horizontal: 'visible',
+                    verticalScrollbarSize: 10,
+                    horizontalScrollbarSize: 10
+                  },
+                  gotoLocation: {
+                    multiple: 'goto',
+                    multipleDefinitions: 'goto',
+                    multipleReferences: 'goto',
+                    multipleDeclarations: 'goto',
+                    multipleImplementations: 'goto',
+                    multipleTypeDefinitions: 'goto'
+                  }
+                }}
+              />
+            )}
             {selectedTab.loading && (
-              <div className="file-editor-loading-overlay">
+              <div className="file-editor-loading-overlay" style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, zIndex: 10 }}>
                 <div className="file-editor-loading-spinner" />
                 <span>Loading file...</span>
               </div>
             )}
-            <EditorGutter
-              lineCount={lineCount}
-              activeLineNumber={activeLineNumber}
-              editorHeight={editorHeight}
-            />
-            <div
-              className="file-editor-container"
-              style={{ minHeight: `${editorHeight}px`, minWidth: `${editorContentWidth}px` }}
-            >
-              <pre className="file-editor-highlight" style={{ minHeight: `${editorHeight}px` }}>
-                {selectedLines.map((line, index) => {
-                  let localMatchRanges: LocalMatchRange[] | undefined = undefined;
-                  const regexForLineHighlight = findActive
-                    ? localFindRegexForLineHighlight
-                    : globalSearchRegexForLineHighlight;
-
-                  if (regexForLineHighlight) {
-                    let match;
-                    regexForLineHighlight.lastIndex = 0;
-                    while ((match = regexForLineHighlight.exec(line)) !== null) {
-                      const matchIndex = match.index;
-                      const matchText = match[0];
-                      if (matchText.length === 0) {
-                        regexForLineHighlight.lastIndex++;
-                        continue;
-                      }
-                      
-                      const isActiveMatch =
-                        findActive &&
-                        localMatches[activeFindIndex] &&
-                        localMatches[activeFindIndex].lineIndex === index &&
-                        localMatches[activeFindIndex].charIndex === matchIndex;
-                        
-                      if (!localMatchRanges) {
-                        localMatchRanges = [];
-                      }
-                      localMatchRanges.push({
-                        start: matchIndex,
-                        end: matchIndex + matchText.length,
-                        isActive: !!isActiveMatch
-                      });
-                    }
-                  }
-
-                  return (
-                    <CodeLine
-                      key={index}
-                      line={line}
-                      filePath={selectedTab.path}
-                      isActive={activeLineNumber === index + 1}
-                      localMatchRanges={localMatchRanges}
-                    />
-                  );
-                })}
-              </pre>
-              <textarea
-                ref={editorInputRef}
-                className="file-editor-input"
-                value={selectedTab.content}
-                wrap="off"
-                spellCheck={false}
-                disabled={selectedTab.loading}
-                style={{ minHeight: `${editorHeight}px` }}
-                onChange={(event) => {
-                  const nextVal = event.target.value;
-                  const textarea = event.currentTarget;
-                  pushHistory(selectedTab.path, selectedTab.content, lastSelectionRef.current.start, lastSelectionRef.current.end, 'type');
-                  updateSelectedContent(nextVal);
-                  lastSelectionRef.current = {
-                    start: textarea.selectionStart,
-                    end: textarea.selectionEnd
-                  };
-                }}
-                onKeyDown={handleEditorKeyDown}
-                onMouseDown={handleEditorMouseDown}
-                onSelect={(event) => {
-                  const textarea = event.currentTarget;
-                  lastSelectionRef.current = {
-                    start: textarea.selectionStart,
-                    end: textarea.selectionEnd
-                  };
-                }}
-                onCopy={handleCopy}
-                onCut={handleCut}
-                onPaste={handlePaste}
-              />
-            </div>
           </div>
         </>
       )}

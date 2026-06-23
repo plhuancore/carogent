@@ -1165,14 +1165,11 @@
 
 .file-editor-surface {
   position: relative;
-  display: grid;
+  display: block;
   min-width: 0;
   min-height: 0;
-  grid-template-columns: 58px minmax(0, 1fr);
-  align-items: start;
   background: #181818;
-  overflow: auto;
-  scrollbar-gutter: stable;
+  overflow: hidden;
 }
 
 .file-editor-gutter {
@@ -2254,4 +2251,206 @@
   background-color: rgba(242, 100, 25, 0.7) !important;
   box-shadow: 0 0 0 1px rgb(242, 100, 25);
   color: #ffffff !important;
+}
+
+.selection-match {
+  background-color: rgba(255, 255, 255, 0.12);
+  color: inherit;
+  border-radius: 2px;
+  padding: 0;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.2);
+}
+
+.global-search-match-highlight {
+  background-color: rgba(234, 185, 23, 0.35) !important;
+  border-radius: 2px;
+}
+
+/* Monaco Pane View */
+.explorer-viewlet-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 20px 8px 14px;
+  min-height: 38px;
+}
+
+.explorer-viewlet-title {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  color: #94a3b8;
+}
+
+.explorer-panes-container {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+
+.monaco-pane {
+  display: flex;
+  flex-direction: column;
+  flex: 0 0 auto;
+  border-bottom: 1px solid #1a222c;
+  background: transparent;
+}
+
+.monaco-pane.is-expanded {
+  flex: 1;
+  min-height: 0;
+}
+
+.monaco-pane.is-collapsed {
+  flex: 0 0 auto;
+}
+
+.monaco-pane-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 24px;
+  background-color: #0b0f14;
+  padding: 0 8px 0 4px;
+  cursor: pointer;
+  user-select: none;
+  border-top: 1px solid rgba(255, 255, 255, 0.02);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.02);
+}
+
+.monaco-pane-header:hover {
+  background-color: #0d121a;
+}
+
+.monaco-pane-header:focus-visible {
+  outline: 1px solid #2dd4bf;
+}
+
+.monaco-pane-header-arrow {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  color: #7c8797;
+  transform: rotate(-90deg);
+  transition: transform 0.1s ease;
+  margin-right: 4px;
+}
+
+.monaco-pane-header-arrow.is-expanded {
+  transform: rotate(0deg);
+}
+
+.monaco-pane-header-arrow svg {
+  width: 12px;
+  height: 12px;
+  stroke: currentColor;
+  stroke-width: 2.2;
+  fill: none;
+}
+
+.monaco-pane-header-title {
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  color: #abb2bf;
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.monaco-pane-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  opacity: 0;
+  transition: opacity 100ms ease;
+}
+
+.monaco-pane-header:hover .monaco-pane-actions {
+  opacity: 1;
+}
+
+.monaco-pane-actions button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border: 0;
+  border-radius: 3px;
+  background: transparent;
+  color: #7c8797;
+  cursor: pointer;
+  padding: 0;
+}
+
+.monaco-pane-actions button:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.08);
+  color: #ffffff;
+}
+
+.monaco-pane-actions button:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+
+.monaco-pane-actions svg {
+  width: 13px;
+  height: 13px;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  fill: none;
+}
+
+.monaco-pane-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+}
+
+/* Adjust folder tree list to sit within monaco-pane-body */
+.monaco-pane-body.folder-tree-list {
+  margin: 0;
+  padding: 2px 0 8px 0;
+  background: transparent;
+  overflow-x: hidden;
+}
+
+/* Vertical Indent Guides */
+.folder-tree-row {
+  position: relative; /* Anchor for absolute guides */
+}
+
+.folder-tree-create-row {
+  position: relative; /* Anchor for absolute guides */
+}
+
+.folder-tree-skeleton-row {
+  position: relative; /* Anchor for absolute guides */
+}
+
+.folder-tree-indent-guide {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background-color: rgba(255, 255, 255, 0.1);
+  pointer-events: none;
+}
+
+/* Outline Pane styles */
+.outline-pane {
+  border-bottom: 0;
+}
+
+.outline-body {
+  padding: 10px 14px;
 }

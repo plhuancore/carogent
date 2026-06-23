@@ -1300,25 +1300,6 @@ function App(): JSX.Element {
     return () => window.removeEventListener('keydown', handleKeyDown, true);
   }, [openQuickAccess, isExplorerSidebarOpen, activePaneCwd]);
 
-  // Escape key to exit fullscreen shell
-  useEffect(() => {
-    if (!activeWorkspace.maximizedPaneId) {
-      return;
-    }
-
-    const handleKeyDown = (event: KeyboardEvent): void => {
-      if (event.key === 'Escape' && !event.metaKey && !event.ctrlKey && !event.altKey && !event.shiftKey) {
-        updateActiveWorkspace((workspace) => ({
-          ...workspace,
-          maximizedPaneId: undefined
-        }));
-      }
-    };
-
-    window.addEventListener('keydown', handleKeyDown, true);
-    return () => window.removeEventListener('keydown', handleKeyDown, true);
-  }, [activeWorkspace.maximizedPaneId, updateActiveWorkspace]);
-
   useEffect(() => {
     if (!quickAccessOpen) {
       return;

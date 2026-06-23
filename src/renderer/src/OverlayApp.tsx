@@ -78,6 +78,7 @@ function OverlayApp(): JSX.Element {
       }
 
       const timestamp = item.notifyTimestamp || 0;
+
       const lastTimestamp = lastTimestamps.current.get(item.paneId) || 0;
 
       if (timestamp > 0 && timestamp > lastTimestamp) {

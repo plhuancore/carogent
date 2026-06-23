@@ -41,6 +41,7 @@ export type LocalMatchRange = {
   start: number;
   end: number;
   isActive: boolean;
+  isSelectionMatch?: boolean;
 };
 
 function segmentLeafString(
@@ -81,7 +82,7 @@ function segmentLeafString(
     elements.push(
       <mark
         key={`match-${idx}`}
-        className={`local-find-match${range.isActive ? ' is-active-local-match' : ''}`}
+        className={range.isSelectionMatch ? 'selection-match' : `local-find-match${range.isActive ? ' is-active-local-match' : ''}`}
       >
         {matchText}
       </mark>

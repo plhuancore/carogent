@@ -2664,9 +2664,7 @@ export const GitPanel: React.FC<GitPanelProps> = ({
                                           {Object.entries(groupedCommitFiles).map(([dir, files]) => (
                                             <div key={dir} style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                                               <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#8b949e', fontWeight: 500 }}>
-                                                <svg className="git-svg-icon" viewBox="0 0 16 16" width="14" height="14" fill="currentColor">
-                                                  <path d="M1.75 1A1.75 1.75 0 0 0 0 2.75v10.5C0 14.216.784 15 1.75 15h12.5A1.75 1.75 0 0 0 16 13.25v-8.5A1.75 1.75 0 0 0 14.25 3H7.5a.25.25 0 0 1-.2-.1l-.9-1.2A1.75 1.75 0 0 0 5 1H1.75z"/>
-                                                </svg>
+                                                <FileIcon filename={dir.split('/').pop() || dir} isDirectory={true} isOpen={true} size={14} />
                                                 <span>{dir ? dir.split('/').join(' / ') : '.'}</span>
                                               </div>
                                               <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', paddingLeft: '16px' }}>
@@ -2692,9 +2690,7 @@ export const GitPanel: React.FC<GitPanelProps> = ({
                                                       className="git-commit-file-item"
                                                     >
                                                       <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                                        <svg className="git-svg-icon" viewBox="0 0 16 16" width="14" height="14" fill="currentColor" style={{ opacity: 0.8 }}>
-                                                          <path d="M2 1.75C2 .784 2.784 0 3.75 0h6.586c.464 0 .909.184 1.237.513l3.664 3.663c.33.329.513.774.513 1.238v8.836A1.75 1.75 0 0 1 14 16H3.75A1.75 1.75 0 0 1 2 14.25V1.75zm1.75-.25a.25.25 0 0 0-.25.25v12.5c0 .138.112.25.25.25h10.25a.25.25 0 0 0 .25-.25V5.5h-3a.75.75 0 0 1-.75-.75V1.5H3.75z"/>
-                                                        </svg>
+                                                        <FileIcon filename={file.name} isDirectory={false} size={14} />
                                                         <span>{file.name}</span>
                                                       </div>
                                                       <span style={{ fontSize: '11px', fontFamily: 'monospace' }}>

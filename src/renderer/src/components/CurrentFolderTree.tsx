@@ -8,6 +8,7 @@ import type {
 } from 'react';
 import type { DirectoryEntry, DirectoryListResult, FindFilesResultEntry } from '../../../shared/ipcTypes';
 import { ChevronDownIcon, CloseIcon, CollapseAllIcon, FileTreeIcon, NewFileIcon, NewFolderIcon, RefreshIcon } from './AppIcons';
+import { FileIcon } from '../FileIcon';
 
 type TreeNodeState = {
   directory?: DirectoryListResult;
@@ -106,6 +107,10 @@ function getPathAncestors(root: string, target: string): string[] {
   return ancestors;
 }
 
+function getFileExtensionIcon(name: string, type: 'file' | 'directory', isOpen?: boolean): JSX.Element {
+  return <FileIcon filename={name} isDirectory={type === 'directory'} isOpen={isOpen} />;
+}
+
 export function CurrentFolderTree({
   rootPath,
   onClose,
@@ -131,6 +136,9 @@ export function CurrentFolderTree({
   const skipCreateDraftBlurRef = useRef(false);
   const renamingEntryRef = useRef(false);
   const skipRenameDraftBlurRef = useRef(false);
+
+  const [isRootPaneExpanded, setIsRootPaneExpanded] = useState(true);
+  const [isOutlinePaneExpanded, setIsOutlinePaneExpanded] = useState(false);
 
   useEffect(() => {
     let query = filterQuery.trim();
@@ -601,6 +609,22 @@ export function CurrentFolderTree({
     }
   };
 
+  const renderIndentGuides = (depth: number) => {
+    const guides: JSX.Element[] = [];
+    for (let i = 0; i < depth; i++) {
+      guides.push(
+        <span
+          key={i}
+          className="folder-tree-indent-guide"
+          style={{
+            left: `${TREE_BASE_INDENT_PX + i * TREE_DEPTH_INDENT_PX + 11}px`
+          }}
+        />
+      );
+    }
+    return guides;
+  };
+
   const renderCreateDraft = (parentPath: string, depth: number): JSX.Element | null => {
     if (!createDraft || getPathKey(createDraft.parentPath) !== getPathKey(parentPath)) {
       return null;
@@ -611,9 +635,10 @@ export function CurrentFolderTree({
         className={`folder-tree-create-row is-${createDraft.type}`}
         style={{ paddingLeft: TREE_BASE_INDENT_PX + depth * TREE_DEPTH_INDENT_PX }}
       >
+        {renderIndentGuides(depth)}
         <span className="folder-tree-disclosure" />
         <span className="folder-tree-icon">
-          <FileTreeIcon type={createDraft.type} />
+          {getFileExtensionIcon(createDraft.name, createDraft.type)}
         </span>
         <input
           ref={createDraftInputRef}
@@ -685,11 +710,12 @@ export function CurrentFolderTree({
             className={`folder-tree-create-row folder-tree-rename-row is-${entry.type}`}
             style={{ paddingLeft: TREE_BASE_INDENT_PX + depth * TREE_DEPTH_INDENT_PX }}
           >
+            {renderIndentGuides(depth)}
             <span className={`folder-tree-disclosure${expanded ? ' is-expanded' : ''}`}>
               {isDirectory ? <ChevronDownIcon /> : null}
             </span>
             <span className="folder-tree-icon">
-              <FileTreeIcon type={entry.type} />
+              {getFileExtensionIcon(renameDraft.name, entry.type, expanded)}
             </span>
             <input
               ref={renameDraftInputRef}
@@ -725,11 +751,12 @@ export function CurrentFolderTree({
           onContextMenu={(event) => handleContextMenu(event, entry)}
           onDragStart={(event) => handleDragStart(event, entry.path)}
         >
+          {renderIndentGuides(depth)}
           <span className={`folder-tree-disclosure${expanded ? ' is-expanded' : ''}`}>
             {isDirectory ? <ChevronDownIcon /> : null}
           </span>
           <span className="folder-tree-icon">
-            <FileTreeIcon type={entry.type} />
+            {getFileExtensionIcon(entry.name, entry.type, expanded)}
           </span>
           <span className="folder-tree-name">{entry.name}</span>
         </button>
@@ -743,6 +770,7 @@ export function CurrentFolderTree({
                     className="folder-tree-skeleton-row"
                     style={{ paddingLeft: TREE_BASE_INDENT_PX + (depth + 1) * TREE_DEPTH_INDENT_PX }}
                   >
+                    {renderIndentGuides(depth + 1)}
                     <span className="folder-tree-skeleton-icon" />
                     <span className="folder-tree-skeleton-label" style={{ width: `${w * 100}%` }} />
                   </div>
@@ -771,116 +799,10 @@ export function CurrentFolderTree({
     : undefined;
   const hasExpandedNode = Object.values(nodes).some((node) => node.expanded);
 
-  const renderRootEntry = (): JSX.Element | null => {
-    if (!rootEntry) {
-      return null;
-    }
-
-    const expanded = Boolean(rootNode?.expanded);
-    const isActive = rootEntry.path === activeDirectoryPath;
-
-    return (
-      <div className="folder-tree-node folder-tree-root-node" key={rootEntry.path}>
-        <div className="folder-tree-root-row">
-          <button
-            className={`folder-tree-row is-directory is-root${isActive ? ' is-active' : ''}`}
-            type="button"
-            draggable
-            title={rootEntry.path}
-            style={{ paddingLeft: TREE_BASE_INDENT_PX }}
-            onClick={() => openDirectoryRow(rootEntry.path)}
-            onContextMenu={(event) => handleContextMenu(event, rootEntry)}
-            onDragStart={(event) => handleDragStart(event, rootEntry.path)}
-          >
-            <span className={`folder-tree-disclosure${expanded ? ' is-expanded' : ''}`}>
-              <ChevronDownIcon />
-            </span>
-            <span className="folder-tree-name">{rootEntry.name}</span>
-          </button>
-          <div className="folder-tree-root-actions" aria-label="Root folder actions">
-            <button
-              type="button"
-              title="New file in root"
-              aria-label="New file in root"
-              onMouseDown={(event) => event.stopPropagation()}
-              onClick={(event) => beginCreateEntryInRoot('file', event)}
-              disabled={!rootPath.trim()}
-            >
-              <NewFileIcon />
-            </button>
-            <button
-              type="button"
-              title="New folder in root"
-              aria-label="New folder in root"
-              onMouseDown={(event) => event.stopPropagation()}
-              onClick={(event) => beginCreateEntryInRoot('directory', event)}
-              disabled={!rootPath.trim()}
-            >
-              <NewFolderIcon />
-            </button>
-            <button
-              type="button"
-              title="Refresh explorer"
-              aria-label="Refresh explorer"
-              onMouseDown={(event) => event.stopPropagation()}
-              onClick={(event) => {
-                event.stopPropagation();
-                loadDirectory(rootPath, true);
-              }}
-              disabled={!rootPath.trim() || rootNode?.loading}
-            >
-              <RefreshIcon className={rootNode?.loading ? 'spin' : ''} />
-            </button>
-            <button
-              type="button"
-              title="Collapse folders"
-              aria-label="Collapse folders"
-              onMouseDown={(event) => event.stopPropagation()}
-              onClick={(event) => {
-                event.stopPropagation();
-                collapseAll();
-              }}
-              disabled={!hasExpandedNode}
-            >
-              <CollapseAllIcon />
-            </button>
-          </div>
-        </div>
-        {expanded && (
-          <div className="folder-tree-children">
-            {rootNode?.loading && !rootNode.directory && (
-              <>
-                {[0.7, 0.5, 0.85].map((w, i) => (
-                  <div
-                    key={i}
-                    className="folder-tree-skeleton-row"
-                    style={{ paddingLeft: TREE_BASE_INDENT_PX + TREE_DEPTH_INDENT_PX }}
-                  >
-                    <span className="folder-tree-skeleton-icon" />
-                    <span className="folder-tree-skeleton-label" style={{ width: `${w * 100}%` }} />
-                  </div>
-                ))}
-              </>
-            )}
-            {rootNode?.error && <div className="folder-tree-status is-error" style={{ paddingLeft: TREE_STATUS_INDENT_PX }}>{rootNode.error}</div>}
-            {renderCreateDraft(rootEntry.path, 1)}
-            {rootNode?.directory?.entries.map((child) => renderEntry(child, 1))}
-            {rootNode?.directory && rootNode.directory.entries.length === 0 && (
-              <div className="folder-tree-status" style={{ paddingLeft: TREE_STATUS_INDENT_PX }}>Empty</div>
-            )}
-          </div>
-        )}
-      </div>
-    );
-  };
-
   return (
     <section className="folder-tree-panel">
-      <div className="folder-tree-header">
-        <div className="folder-tree-heading">
-          <span className="folder-tree-title">Explorer</span>
-          <span className="folder-tree-root" title={rootPath}>{rootPath ? getFolderName(rootPath) : 'No active folder'}</span>
-        </div>
+      <div className="explorer-viewlet-header">
+        <span className="explorer-viewlet-title">Explorer</span>
       </div>
 
       <div className="folder-tree-search-bar">
@@ -904,60 +826,168 @@ export function CurrentFolderTree({
         )}
       </div>
 
-      {filterQuery.trim() ? (
-        <div className="folder-tree-list">
-          {createError && <div className="folder-tree-status is-error">{createError}</div>}
-          {filterLoading && <div className="folder-tree-status">Filtering...</div>}
-          {filterError && <div className="folder-tree-status is-error">{filterError}</div>}
-          {!filterLoading && !filterError && filterResults.length === 0 && (
-            <div className="folder-tree-status">No matching files found.</div>
-          )}
-          {!filterLoading && !filterError && filterResults.map((entry) => {
-            const isDir = entry.type === 'directory';
-            return (
-              <button
-                key={entry.path}
-                className={`folder-tree-row is-search-result${activeFilePath === entry.path ? ' is-active' : ''}`}
-                type="button"
-                title={entry.path}
-                style={{ paddingLeft: 8 }}
-                onClick={() => {
-                  if (isDir) {
-                    setFilterQuery('');
-                    setActiveDirectoryPath(entry.path);
-                    loadDirectory(entry.path, true);
-                  } else {
-                    setActiveDirectoryPath(null);
-                    let line: number | undefined = undefined;
-                    const match = filterQuery.trim().match(/^(.*?):(\d+)$/);
-                    if (match) {
-                      line = parseInt(match[2], 10);
+      <div className="explorer-panes-container">
+        {filterQuery.trim() ? (
+          <div className="folder-tree-list search-results-active">
+            {createError && <div className="folder-tree-status is-error">{createError}</div>}
+            {filterLoading && <div className="folder-tree-status">Filtering...</div>}
+            {filterError && <div className="folder-tree-status is-error">{filterError}</div>}
+            {!filterLoading && !filterError && filterResults.length === 0 && (
+              <div className="folder-tree-status">No matching files found.</div>
+            )}
+            {!filterLoading && !filterError && filterResults.map((entry) => {
+              const isDir = entry.type === 'directory';
+              return (
+                <button
+                  key={entry.path}
+                  className={`folder-tree-row is-search-result${activeFilePath === entry.path ? ' is-active' : ''}`}
+                  type="button"
+                  title={entry.path}
+                  style={{ paddingLeft: 8 }}
+                  onClick={() => {
+                    if (isDir) {
+                      setFilterQuery('');
+                      setActiveDirectoryPath(entry.path);
+                      loadDirectory(entry.path, true);
+                    } else {
+                      setActiveDirectoryPath(null);
+                      let line: number | undefined = undefined;
+                      const match = filterQuery.trim().match(/^(.*?):(\d+)$/);
+                      if (match) {
+                        line = parseInt(match[2], 10);
+                      }
+                      onOpenFile(entry.path, line);
                     }
-                    onOpenFile(entry.path, line);
+                  }}
+                >
+                  <span className="folder-tree-disclosure" />
+                  <span className="folder-tree-icon">
+                    {getFileExtensionIcon(entry.name, entry.type)}
+                  </span>
+                  <span className="folder-tree-name">{entry.name}</span>
+                  <span className="folder-tree-search-path" title={entry.relativeFilePath}>
+                    {entry.relativeFilePath.split(/[\\/]/).slice(0, -1).join('/') || '.'}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        ) : (
+          <>
+            {/* PANE 1: Folder Tree Pane */}
+            <div className={`monaco-pane ${isRootPaneExpanded ? 'is-expanded' : 'is-collapsed'}`}>
+              <div
+                className="monaco-pane-header"
+                role="button"
+                tabIndex={0}
+                onClick={() => setIsRootPaneExpanded(!isRootPaneExpanded)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    setIsRootPaneExpanded(!isRootPaneExpanded);
                   }
                 }}
               >
-                <span className="folder-tree-disclosure" />
-                <span className="folder-tree-icon">
-                  <FileTreeIcon type={entry.type} />
+                <span className={`monaco-pane-header-arrow ${isRootPaneExpanded ? 'is-expanded' : ''}`}>
+                  <ChevronDownIcon />
                 </span>
-                <span className="folder-tree-name">{entry.name}</span>
-                <span className="folder-tree-search-path" title={entry.relativeFilePath}>
-                  {entry.relativeFilePath.split(/[\\/]/).slice(0, -1).join('/') || '.'}
+                <span className="monaco-pane-header-title">
+                  {rootPath ? getFolderName(rootPath).toUpperCase() : 'NO ACTIVE FOLDER'}
                 </span>
-              </button>
-            );
-          })}
-        </div>
-      ) : (
-        <div className="folder-tree-list">
-          {createError && <div className="folder-tree-status is-error">{createError}</div>}
-          {!rootPath.trim() && <div className="folder-tree-status">Starting shell...</div>}
-          {rootNode?.loading && !rootNode.directory && <div className="folder-tree-status">Loading...</div>}
-          {rootNode?.error && !rootEntry && <div className="folder-tree-status is-error">{rootNode.error}</div>}
-          {renderRootEntry()}
-        </div>
-      )}
+                {rootPath.trim() && (
+                  <div className="monaco-pane-actions" onClick={(e) => e.stopPropagation()}>
+                    <button
+                      type="button"
+                      title="New File..."
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        beginCreateEntry(rootPath, 'file');
+                      }}
+                    >
+                      <NewFileIcon />
+                    </button>
+                    <button
+                      type="button"
+                      title="New Folder..."
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        beginCreateEntry(rootPath, 'directory');
+                      }}
+                    >
+                      <NewFolderIcon />
+                    </button>
+                    <button
+                      type="button"
+                      title="Refresh Explorer"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        loadDirectory(rootPath, true);
+                      }}
+                      disabled={rootNode?.loading}
+                    >
+                      <RefreshIcon className={rootNode?.loading ? 'spin' : ''} />
+                    </button>
+                    <button
+                      type="button"
+                      title="Collapse Folders"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        collapseAll();
+                      }}
+                      disabled={!hasExpandedNode}
+                    >
+                      <CollapseAllIcon />
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              {isRootPaneExpanded && (
+                <div className="monaco-pane-body folder-tree-list">
+                  {createError && <div className="folder-tree-status is-error">{createError}</div>}
+                  {!rootPath.trim() && <div className="folder-tree-status">Starting shell...</div>}
+                  {rootNode?.loading && !rootNode.directory && <div className="folder-tree-status">Loading...</div>}
+                  {rootNode?.error && <div className="folder-tree-status is-error">{rootNode.error}</div>}
+
+                  {rootNode?.directory && (
+                    <div className="folder-tree-children root-children">
+                      {renderCreateDraft(rootPath, 0)}
+                      {rootNode.directory.entries.map((child) => renderEntry(child, 0))}
+                      {rootNode.directory.entries.length === 0 && (
+                        <div className="folder-tree-status" style={{ paddingLeft: 12 }}>Empty</div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* PANE 2: Outline Pane */}
+            <div className={`monaco-pane outline-pane ${isOutlinePaneExpanded ? 'is-expanded' : 'is-collapsed'}`}>
+              <div
+                className="monaco-pane-header"
+                role="button"
+                tabIndex={0}
+                onClick={() => setIsOutlinePaneExpanded(!isOutlinePaneExpanded)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    setIsOutlinePaneExpanded(!isOutlinePaneExpanded);
+                  }
+                }}
+              >
+                <span className={`monaco-pane-header-arrow ${isOutlinePaneExpanded ? 'is-expanded' : ''}`}>
+                  <ChevronDownIcon />
+                </span>
+                <span className="monaco-pane-header-title">OUTLINE</span>
+              </div>
+              {isOutlinePaneExpanded && (
+                <div className="monaco-pane-body outline-body">
+                  <div className="folder-tree-status">No outline information available</div>
+                </div>
+              )}
+            </div>
+          </>
+        )}
+      </div>
 
       {contextMenu && createPortal(
         <div
