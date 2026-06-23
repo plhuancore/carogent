@@ -162,6 +162,37 @@ function escapeTerminalPath(path: string): string {
   return `'${path.replace(/'/g, "'\\''")}'`;
 }
 
+function WorkspaceTabIcon(): JSX.Element {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ width: '20px', height: '20px' }}>
+      <rect x="3" y="3" width="18" height="18" rx="2" />
+      <path d="M9 3v18" />
+      <path d="M15 12h3" />
+      <path d="M15 16h2" />
+    </svg>
+  );
+}
+
+function FolderTabIcon(): JSX.Element {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ width: '20px', height: '20px' }}>
+      <path d="M15 2h-4a2 2 0 0 0-2 2v11a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V8" />
+      <path d="M16.706 2.706A2.4 2.4 0 0 0 15 2v5a1 1 0 0 0 1 1h5a2.4 2.4 0 0 0-.706-1.706z" />
+      <path d="M5 7a2 2 0 0 0-2 2v11a2 2 0 0 0 2 2h8a2 2 0 0 0 1.732-1" />
+    </svg>
+  );
+}
+
+function GitCustomIcon(): JSX.Element {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ width: '20px', height: '20px' }}>
+      <path d="M15 6a9 9 0 0 0-9 9V3" />
+      <circle cx="18" cy="6" r="3" />
+      <circle cx="6" cy="18" r="3" />
+    </svg>
+  );
+}
+
 function App(): JSX.Element {
   const initialStore = useMemo(() => loadWorkspaceStore(), []);
   const [workspaces, setWorkspaces] = useState<WorkspaceState[]>(() => initialStore.workspaces);
@@ -209,8 +240,32 @@ function App(): JSX.Element {
     clientCount: 0,
     enabled: true
   });
-  const [isGitSidebarOpen, setIsGitSidebarOpen] = useState(false);
-  const [isExplorerSidebarOpen, setIsExplorerSidebarOpen] = useState(false);
+  const [leftSidebarTab, setLeftSidebarTab] = useState<'workspace' | 'explorer' | 'git' | null>('workspace');
+  const [isExplorerSidebarOpen, setIsExplorerSidebarOpenState] = useState(false);
+  const setIsExplorerSidebarOpen = useCallback((open: boolean | ((prev: boolean) => boolean)) => {
+    setIsExplorerSidebarOpenState((prev) => {
+      const next = typeof open === 'function' ? open(prev) : open;
+      if (next) {
+        setLeftSidebarTab((currTab) => (currTab === 'git' ? 'git' : 'explorer'));
+      } else {
+        setLeftSidebarTab('workspace');
+      }
+      return next;
+    });
+  }, []);
+
+  const isGitSidebarOpen = leftSidebarTab === 'git';
+  const setIsGitSidebarOpen = useCallback((open: boolean | ((prev: boolean) => boolean)) => {
+    setLeftSidebarTab((prevTab) => {
+      const isOpen = prevTab === 'git';
+      const nextOpen = typeof open === 'function' ? open(isOpen) : open;
+      if (!nextOpen) {
+        setIsExplorerSidebarOpenState(false);
+        return 'workspace';
+      }
+      return 'git';
+    });
+  }, []);
   const [sidebarActiveTab, setSidebarActiveTab] = useState<'explorer' | 'search'>('explorer');
   const [activeEditorFilePath, setActiveEditorFilePath] = useState('');
   const [activeEditorLineNumber, setActiveEditorLineNumber] = useState<number | undefined>(undefined);
@@ -262,6 +317,8 @@ function App(): JSX.Element {
   const shellOptionsRef = useRef<TerminalShellOption[] | null>(shellOptions);
   const quickAccessInputRef = useRef<HTMLInputElement | null>(null);
   const settingsMenuRef = useRef<HTMLDivElement | null>(null);
+  const islandSettingsMenuRef = useRef<HTMLDivElement | null>(null);
+  const [islandSettingsMenuOpen, setIslandSettingsMenuOpen] = useState(false);
 
   const activeWorkspace =
     workspaces.find((workspace) => workspace.id === activeWorkspaceId) || workspaces[0];
@@ -1345,6 +1402,32 @@ function App(): JSX.Element {
   }, [settingsMenuOpen]);
 
   useEffect(() => {
+    if (!islandSettingsMenuOpen) {
+      return;
+    }
+
+    const handlePointerDown = (event: MouseEvent): void => {
+      if (!islandSettingsMenuRef.current?.contains(event.target as Node)) {
+        setIslandSettingsMenuOpen(false);
+      }
+    };
+
+    const handleKeyDown = (event: KeyboardEvent): void => {
+      if (event.key === 'Escape') {
+        setIslandSettingsMenuOpen(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handlePointerDown);
+    window.addEventListener('keydown', handleKeyDown);
+
+    return () => {
+      document.removeEventListener('mousedown', handlePointerDown);
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [islandSettingsMenuOpen]);
+
+  useEffect(() => {
     return window.terminalApi.onOpenAgentPane(({ workspaceId, paneId }) => {
       setActiveWorkspaceId(workspaceId);
       setWorkspaces((current) =>
@@ -1357,6 +1440,71 @@ function App(): JSX.Element {
       }
     });
   }, []);
+
+  const renderSettingsMenu = (closeMenu: () => void) => (
+    <div className="settings-menu" role="menu">
+      <button
+        className="settings-menu-item"
+        type="button"
+        role="menuitem"
+        onClick={() => {
+          closeMenu();
+          setQuickAccessManagerOpen(true);
+        }}
+      >
+        <QuickAccessIcon />
+        Quick Access
+      </button>
+      <button
+        className="settings-menu-item"
+        type="button"
+        role="menuitemcheckbox"
+        aria-checked={agentOverlayVisible}
+        onClick={handleToggleAgentOverlay}
+      >
+        <AgentOverlayIcon />
+        Floating Bar
+        <span className="settings-menu-check" aria-hidden="true">
+          {agentOverlayVisible ? '✓' : ''}
+        </span>
+      </button>
+      <button
+        className="settings-menu-item"
+        type="button"
+        role="menuitem"
+        onClick={() => {
+          closeMenu();
+          setMcpSettingsOpen(true);
+        }}
+      >
+        <McpIcon />
+        Carogent MCP
+      </button>
+      <div className="settings-menu-divider" style={{ height: '1px', background: '#2b3038', margin: '6px 0' }} />
+      <div className="settings-menu-header" style={{ padding: '4px 10px', fontSize: '10px', color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Default Shell</div>
+      {shellOptions?.map((option) => {
+        const isSelected = option.shell === activeDefaultShell;
+        return (
+          <button
+            key={option.shell}
+            className="settings-menu-item"
+            type="button"
+            role="menuitemradio"
+            aria-checked={isSelected}
+            onClick={() => {
+              handleSetDefaultShell(option.shell);
+            }}
+          >
+            <ShellIcon name={option.icon} />
+            {option.label}
+            <span className="settings-menu-check" aria-hidden="true">
+              {isSelected ? '✓' : ''}
+            </span>
+          </button>
+        );
+      })}
+    </div>
+  );
 
   if (shellOptionsError) {
     return (
@@ -1380,137 +1528,224 @@ function App(): JSX.Element {
 
   return (
     <main
-      className={`app-shell${isGitSidebarOpen ? ' has-git-sidebar' : ''}`}
+      className={`app-shell ${!leftSidebarTab ? 'sidebar-collapsed' : ''}`}
       style={{
         '--sidebar-width': `${leftSidebarWidth}px`,
         '--git-sidebar-width': `${gitSidebarWidth}px`
       } as React.CSSProperties}
     >
-      <aside className="sidebar">
-        {isExplorerSidebarOpen ? (
-          <>
-            <div className="sidebar-panel-container">
-              <div className="sidebar-tabs-header">
-                <div className="sidebar-tabs">
+      <div className="activity-island">
+        <div className="activity-island-top">
+          <div className="activity-island-logo">
+            <img src={carogentLogoUrl} alt="Carogent" />
+          </div>
+          <div className="activity-island-divider" />
+          <button
+            className={`activity-island-btn ${leftSidebarTab === 'workspace' ? 'is-active' : ''}`}
+            onClick={() => {
+              if (leftSidebarTab === 'workspace') {
+                setLeftSidebarTab(null);
+              } else {
+                setLeftSidebarTab('workspace');
+                setIsExplorerSidebarOpenState(false);
+              }
+            }}
+            title="Terminal Workspace"
+            type="button"
+          >
+            <WorkspaceTabIcon />
+          </button>
+          <button
+            className={`activity-island-btn ${leftSidebarTab === 'explorer' ? 'is-active' : ''}`}
+            onClick={() => {
+              if (leftSidebarTab === 'explorer') {
+                setLeftSidebarTab(null);
+              } else {
+                setLeftSidebarTab('explorer');
+              }
+            }}
+            title="File Explorer"
+            type="button"
+          >
+            <FolderTabIcon />
+          </button>
+          <button
+            className={`activity-island-btn ${leftSidebarTab === 'git' ? 'git-active' : ''}`}
+            onClick={() => {
+              if (leftSidebarTab === 'git') {
+                setLeftSidebarTab(null);
+              } else {
+                setLeftSidebarTab('git');
+              }
+            }}
+            title="Git Control"
+            type="button"
+          >
+            <GitCustomIcon />
+          </button>
+        </div>
+        <div className="activity-island-bottom">
+          <div className="settings-menu-wrap" ref={islandSettingsMenuRef}>
+            <button
+              className="activity-island-btn"
+              onClick={() => setIslandSettingsMenuOpen((open) => !open)}
+              title="Settings"
+              type="button"
+              aria-haspopup="menu"
+              aria-expanded={islandSettingsMenuOpen}
+            >
+              <SettingsIcon />
+            </button>
+            {islandSettingsMenuOpen && renderSettingsMenu(() => setIslandSettingsMenuOpen(false))}
+          </div>
+        </div>
+      </div>
+
+      {leftSidebarTab === 'git' ? (
+        <GitPanel
+          cwd={sessions.current.get(activePaneId)?.cwd || activePane?.cwd || ''}
+          onClose={() => setLeftSidebarTab(isExplorerSidebarOpen ? 'explorer' : 'workspace')}
+          width={leftSidebarWidth}
+          onResize={setLeftSidebarWidth}
+          activePaneId={activePaneId}
+          terminalId={sessions.current.get(activePaneId)?.terminalId}
+          refreshTrigger={gitRefreshTrigger}
+          onOpenFile={(filePath) => {
+            setActiveEditorFilePath(filePath);
+            setActiveEditorLineNumber(undefined);
+            setIsExplorerSidebarOpenState(true);
+          }}
+          onLeft={true}
+        />
+      ) : leftSidebarTab ? (
+        <aside className="sidebar">
+          {leftSidebarTab === 'explorer' ? (
+            <>
+              <div className="sidebar-panel-container">
+                <div className="sidebar-tabs-header">
+                  <div className="sidebar-tabs">
+                    <button
+                      className={`sidebar-tab-button ${sidebarActiveTab === 'explorer' ? 'is-active' : ''}`}
+                      type="button"
+                      onClick={() => setSidebarActiveTab('explorer')}
+                    >
+                      Explorer
+                    </button>
+                    <button
+                      className={`sidebar-tab-button ${sidebarActiveTab === 'search' ? 'is-active' : ''}`}
+                      type="button"
+                      onClick={() => setSidebarActiveTab('search')}
+                    >
+                      Search
+                    </button>
+                  </div>
                   <button
-                    className={`sidebar-tab-button ${sidebarActiveTab === 'explorer' ? 'is-active' : ''}`}
+                    className="sidebar-close-button"
                     type="button"
-                    onClick={() => setSidebarActiveTab('explorer')}
+                    title="Close sidebar"
+                    onClick={() => setIsExplorerSidebarOpen(false)}
                   >
-                    Explorer
-                  </button>
-                  <button
-                    className={`sidebar-tab-button ${sidebarActiveTab === 'search' ? 'is-active' : ''}`}
-                    type="button"
-                    onClick={() => setSidebarActiveTab('search')}
-                  >
-                    Search
+                    <CloseIcon />
                   </button>
                 </div>
-                <button
-                  className="sidebar-close-button"
-                  type="button"
-                  title="Close sidebar"
-                  onClick={() => setIsExplorerSidebarOpen(false)}
-                >
-                  <CloseIcon />
-                </button>
+
+                <div className="sidebar-panel-content">
+                  {sidebarActiveTab === 'explorer' ? (
+                    <CurrentFolderTree
+                      rootPath={activePaneCwd}
+                      onClose={() => setIsExplorerSidebarOpen(false)}
+                      onOpenFile={(path, line) => {
+                        setActiveEditorFilePath(path);
+                        setActiveEditorLineNumber(line);
+                        setIsExplorerSidebarOpen(true);
+                      }}
+                      activeFilePath={activeEditorFilePath}
+                    />
+                  ) : (
+                    <SearchPanel
+                      rootPath={activePaneCwd}
+                      onClose={() => setIsExplorerSidebarOpen(false)}
+                      onOpenFile={(path, line) => {
+                        setActiveEditorFilePath(path);
+                        setActiveEditorLineNumber(line);
+                        setIsExplorerSidebarOpen(true);
+                      }}
+                      onCommitSearchHighlight={handleCommitSearchHighlight}
+                      activeFilePath={activeEditorFilePath}
+                      activeLineNumber={activeEditorLineNumber}
+                    />
+                  )}
+                </div>
+              </div>
+              <div className="sidebar-resize-handle" onPointerDown={handleLeftResizeStart} />
+            </>
+          ) : (
+            <>
+              <div className="sidebar-brand-workspace">
+                <div className="brand">
+                  <div className="brand-mark">
+                    <img className="brand-mark-logo" src={carogentLogoUrl} alt="" />
+                  </div>
+                  <div>
+                    <div className="brand-title">Carogent</div>
+                    <div className="brand-subtitle">Terminal Workspace</div>
+                  </div>
+                </div>
+
+                <section className="workspace-list">
+                  <div className="workspace-list-header">
+                    <span>Workspaces</span>
+                    <button className="workspace-add-button" type="button" title="Add workspace" onClick={handleAddWorkspace}>
+                      <svg
+                        xmlns="http://www.w3.org/2000/svg"
+                        width="14"
+                        height="14"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        className="lucide lucide-plus-icon lucide-plus"
+                      >
+                        <path d="M5 12h14" />
+                        <path d="M12 5v14" />
+                      </svg>
+                    </button>
+                  </div>
+                  {workspaces.map((workspace) => (
+                    <WorkspaceItem
+                      key={workspace.id}
+                      workspace={workspace}
+                      active={workspace.id === activeWorkspaceId}
+                      canDelete={workspaces.length > 1}
+                      onSelect={setActiveWorkspaceId}
+                      onRename={handleRenameWorkspace}
+                      onColorChange={handleUpdateWorkspaceColor}
+                      onDelete={handleDeleteWorkspace}
+                    />
+                  ))}
+                </section>
               </div>
 
-              <div className="sidebar-panel-content">
-                {sidebarActiveTab === 'explorer' ? (
-                  <CurrentFolderTree
-                    rootPath={activePaneCwd}
-                    onClose={() => setIsExplorerSidebarOpen(false)}
-                    onOpenFile={(path, line) => {
-                      setActiveEditorFilePath(path);
-                      setActiveEditorLineNumber(line);
-                    }}
-                    activeFilePath={activeEditorFilePath}
-                  />
-                ) : (
-                  <SearchPanel
-                    rootPath={activePaneCwd}
-                    onClose={() => setIsExplorerSidebarOpen(false)}
-                    onOpenFile={(path, line) => {
-                      setActiveEditorFilePath(path);
-                      setActiveEditorLineNumber(line);
-                    }}
-                    onCommitSearchHighlight={handleCommitSearchHighlight}
-                    activeFilePath={activeEditorFilePath}
-                    activeLineNumber={activeEditorLineNumber}
-                  />
-                )}
-              </div>
-            </div>
-            <div className="sidebar-resize-handle" onPointerDown={handleLeftResizeStart} />
-          </>
-        ) : (
-          <>
-          <div className="sidebar-brand-workspace">
-            <div className="brand">
-              <div className="brand-mark">
-                <img className="brand-mark-logo" src={carogentLogoUrl} alt="" />
-              </div>
-              <div>
-                <div className="brand-title">Carogent</div>
-                <div className="brand-subtitle">Terminal Workspace</div>
-              </div>
-            </div>
+              <PinnedFolderPanel
+                pinnedDirectory={pinnedDirectory}
+                collapsed={pinnedFolderCollapsed}
+                onPinnedDirectoryChange={setPinnedDirectory}
+                onCollapsedChange={setPinnedFolderCollapsed}
+                onInsertPath={handleInsertPath}
+              />
 
-            <section className="workspace-list">
-              <div className="workspace-list-header">
-                <span>Workspaces</span>
-                <button className="workspace-add-button" type="button" title="Add workspace" onClick={handleAddWorkspace}>
-                  <svg
-                    xmlns="http://www.w3.org/2000/svg"
-                    width="14"
-                    height="14"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    className="lucide lucide-plus-icon lucide-plus"
-                  >
-                    <path d="M5 12h14" />
-                    <path d="M12 5v14" />
-                  </svg>
-                </button>
+              <div className="sidebar-footer">
+                <div className="footer-label">Active Pane</div>
+                <div className="footer-value">{activePaneTitle}</div>
+                <div className="footer-path">{activePaneCwd || 'Starting shell...'}</div>
               </div>
-              {workspaces.map((workspace) => (
-                <WorkspaceItem
-                  key={workspace.id}
-                  workspace={workspace}
-                  active={workspace.id === activeWorkspaceId}
-                  canDelete={workspaces.length > 1}
-                  onSelect={setActiveWorkspaceId}
-                  onRename={handleRenameWorkspace}
-                  onColorChange={handleUpdateWorkspaceColor}
-                  onDelete={handleDeleteWorkspace}
-                />
-              ))}
-            </section>
-          </div>
-
-          <PinnedFolderPanel
-            pinnedDirectory={pinnedDirectory}
-            collapsed={pinnedFolderCollapsed}
-            onPinnedDirectoryChange={setPinnedDirectory}
-            onCollapsedChange={setPinnedFolderCollapsed}
-            onInsertPath={handleInsertPath}
-          />
-
-          <div className="sidebar-footer">
-            <div className="footer-label">Active Pane</div>
-            <div className="footer-value">{activePaneTitle}</div>
-            <div className="footer-path">{activePaneCwd || 'Starting shell...'}</div>
-          </div>
-          <div className="sidebar-resize-handle" onPointerDown={handleLeftResizeStart} />
-          </>
-        )}
-      </aside>
+              <div className="sidebar-resize-handle" onPointerDown={handleLeftResizeStart} />
+            </>
+          )}
+        </aside>
+      ) : null}
 
       <section className="workspace">
         <header className="topbar">
@@ -1543,18 +1778,6 @@ function App(): JSX.Element {
               Open in Browser
             </button>
             <button
-              className={`topbar-button topbar-button-secondary ${isGitSidebarOpen ? 'is-active' : ''}`}
-              type="button"
-              onClick={() => setIsGitSidebarOpen((open) => !open)}
-              title="Toggle Git Control Sidebar"
-              style={isGitSidebarOpen ? { borderColor: 'var(--color-git)', color: 'var(--color-git)' } : undefined}
-            >
-              <svg viewBox="0 0 16 16" width="12" height="12" style={{ fill: 'currentColor' }}>
-                <path d="M5 3.25a.75.75 0 1 1-1.5 0 .75.75 0 0 1 1.5 0zm0 2.122a2.25 2.25 0 1 0-1.5 0v5.256a2.251 2.251 0 1 0 1.5 0V5.372zm8-.25a.75.75 0 1 1-1.5 0 .75.75 0 0 1 1.5 0zM11.5 7.25a2.25 2.25 0 1 0 0 4.5 2.25 2.25 0 0 0 0-4.5z"/>
-              </svg>
-              Git Control
-            </button>
-            <button
               className="settings-button"
               type="button"
               onClick={() => setIsExplorerSidebarOpen((open) => !open)}
@@ -1575,70 +1798,7 @@ function App(): JSX.Element {
               >
                 <SettingsIcon />
               </button>
-              {settingsMenuOpen && (
-                <div className="settings-menu" role="menu">
-                  <button
-                    className="settings-menu-item"
-                    type="button"
-                    role="menuitem"
-                    onClick={() => {
-                      setSettingsMenuOpen(false);
-                      setQuickAccessManagerOpen(true);
-                    }}
-                  >
-                    <QuickAccessIcon />
-                    Quick Access
-                  </button>
-                  <button
-                    className="settings-menu-item"
-                    type="button"
-                    role="menuitemcheckbox"
-                    aria-checked={agentOverlayVisible}
-                    onClick={handleToggleAgentOverlay}
-                  >
-                    <AgentOverlayIcon />
-                    Floating Bar
-                    <span className="settings-menu-check" aria-hidden="true">
-                      {agentOverlayVisible ? '✓' : ''}
-                    </span>
-                  </button>
-                  <button
-                    className="settings-menu-item"
-                    type="button"
-                    role="menuitem"
-                    onClick={() => {
-                      setSettingsMenuOpen(false);
-                      setMcpSettingsOpen(true);
-                    }}
-                  >
-                    <McpIcon />
-                    Carogent MCP
-                  </button>
-                  <div className="settings-menu-divider" style={{ height: '1px', background: '#2b3038', margin: '6px 0' }} />
-                  <div className="settings-menu-header" style={{ padding: '4px 10px', fontSize: '10px', color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Default Shell</div>
-                  {shellOptions?.map((option) => {
-                    const isSelected = option.shell === activeDefaultShell;
-                    return (
-                      <button
-                        key={option.shell}
-                        className="settings-menu-item"
-                        type="button"
-                        role="menuitemradio"
-                        aria-checked={isSelected}
-                        onClick={() => {
-                          handleSetDefaultShell(option.shell);
-                        }}
-                      >
-                        <ShellIcon name={option.icon} />
-                        {option.label}
-                        <span className="settings-menu-check" aria-hidden="true">
-                          {isSelected ? '✓' : ''}
-                        </span>
-                      </button>
-                    );
-                  })}
-                </div>
-              )}
+              {settingsMenuOpen && renderSettingsMenu(() => setSettingsMenuOpen(false))}
             </div>
           </div>
         </header>
@@ -1683,22 +1843,6 @@ function App(): JSX.Element {
           </div>
         )}
       </section>
-      {isGitSidebarOpen && (
-        <GitPanel
-          cwd={sessions.current.get(activePaneId)?.cwd || activePane?.cwd || ''}
-          onClose={() => setIsGitSidebarOpen(false)}
-          width={gitSidebarWidth}
-          onResize={setGitSidebarWidth}
-          activePaneId={activePaneId}
-          terminalId={sessions.current.get(activePaneId)?.terminalId}
-          refreshTrigger={gitRefreshTrigger}
-          onOpenFile={(filePath) => {
-            setActiveEditorFilePath(filePath);
-            setActiveEditorLineNumber(undefined);
-            setIsExplorerSidebarOpen(true);
-          }}
-        />
-      )}
       {quickAccessOpen && (
         <QuickAccessPalette
           inputRef={quickAccessInputRef}

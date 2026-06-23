@@ -1376,3 +1376,15 @@
   border: 1px solid #30363d;
   z-index: 10;
 }
+
+/* Left-positioned Git Panel */
+.git-panel.on-left {
+  border-left: 0;
+  border-right: 1px solid var(--color-border);
+  border-radius: 14px;
+}
+
+.git-panel.on-left .git-sidebar-resize-handle {
+  left: auto;
+  right: -3px;
+}

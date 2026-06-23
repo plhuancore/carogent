@@ -56,6 +56,7 @@ interface GitPanelProps {
   terminalId?: string;
   refreshTrigger?: number;
   onOpenFile?: (filePath: string) => void;
+  onLeft?: boolean;
 }
 
 function groupFilesByDirectory(files: { additions: number; deletions: number; path: string }[]) {
@@ -406,7 +407,8 @@ export const GitPanel: React.FC<GitPanelProps> = ({
   activePaneId,
   terminalId,
   refreshTrigger = 0,
-  onOpenFile
+  onOpenFile,
+  onLeft = false
 }) => {
   const handleOpenFileClick = (e: React.MouseEvent, relPath: string) => {
     e.stopPropagation();
@@ -779,7 +781,8 @@ export const GitPanel: React.FC<GitPanelProps> = ({
     const startWidth = width;
 
     const handlePointerMove = (moveEvent: PointerEvent) => {
-      const newWidth = startWidth + (startX - moveEvent.clientX);
+      const delta = onLeft ? (moveEvent.clientX - startX) : (startX - moveEvent.clientX);
+      const newWidth = startWidth + delta;
       const constrainedWidth = Math.max(280, Math.min(800, newWidth));
       onResize(constrainedWidth);
     };
@@ -1856,7 +1859,7 @@ export const GitPanel: React.FC<GitPanelProps> = ({
   // Loading skeleton/null checks
   if (!status) {
     return (
-      <aside className="git-panel" style={{ width }}>
+      <aside className={`git-panel ${onLeft ? 'on-left' : ''}`} style={{ width }}>
         <div className="git-sidebar-resize-handle" onPointerDown={handleResizeStart} />
         <div className="git-panel-header">
           <span className="git-panel-title">Git Control</span>
@@ -1875,7 +1878,7 @@ export const GitPanel: React.FC<GitPanelProps> = ({
   // Not a repo state
   if (!status.isRepo) {
     return (
-      <aside className="git-panel" style={{ width }}>
+      <aside className={`git-panel ${onLeft ? 'on-left' : ''}`} style={{ width }}>
         <div className="git-sidebar-resize-handle" onPointerDown={handleResizeStart} />
         <div className="git-panel-header">
           <span className="git-panel-title">Git Control</span>
@@ -2047,7 +2050,7 @@ export const GitPanel: React.FC<GitPanelProps> = ({
   );
 
   return (
-    <aside className={`git-panel ${isDiffMaximized ? 'is-maximized' : ''}`} style={{ width, zIndex: isDiffMaximized ? 30 : undefined }}>
+    <aside className={`git-panel ${isDiffMaximized ? 'is-maximized' : ''} ${onLeft ? 'on-left' : ''}`} style={{ width, zIndex: isDiffMaximized ? 30 : undefined }}>
       <div className="git-sidebar-resize-handle" onPointerDown={handleResizeStart} />
       {/* 1. Header with Branch Name and Repo info */}
       <div className="git-panel-header">

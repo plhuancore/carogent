@@ -1,13 +1,17 @@
 .app-shell {
   display: grid;
-  grid-template-columns: var(--sidebar-width, 244px) minmax(0, 1fr);
+  grid-template-columns: 56px var(--sidebar-width, 244px) minmax(0, 1fr);
   width: 100%;
   height: 100%;
   background: #050607;
 }
 
 .app-shell.has-git-sidebar {
-  grid-template-columns: var(--sidebar-width, 244px) minmax(0, 1fr) var(--git-sidebar-width, 380px);
+  grid-template-columns: 56px var(--sidebar-width, 244px) minmax(0, 1fr) var(--git-sidebar-width, 380px);
+}
+
+.app-shell.sidebar-collapsed {
+  grid-template-columns: 56px minmax(0, 1fr);
 }
 
 .sidebar {
@@ -2453,4 +2457,129 @@
 
 .outline-body {
   padding: 10px 14px;
+}
+
+/* Activity Island Left Navigation Bar */
+.activity-island {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: space-between;
+  width: 56px;
+  min-height: 0;
+  border: 1px solid var(--color-border);
+  border-radius: 14px;
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.01) 42%, transparent),
+    var(--color-panel);
+  backdrop-filter: blur(22px);
+  padding: 14px 0;
+  box-shadow: var(--shadow-island);
+  box-sizing: border-box;
+}
+
+.activity-island-top,
+.activity-island-bottom {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 100%;
+  gap: 12px;
+}
+
+.activity-island-logo {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  margin-bottom: 4px;
+}
+
+.activity-island-logo img {
+  width: 28px;
+  height: 28px;
+  object-fit: cover;
+  border-radius: 8px;
+  border: 1px solid var(--color-border-strong);
+  background: var(--color-panel-2);
+}
+
+.activity-island-divider {
+  width: 28px;
+  height: 1px;
+  background: var(--color-border-subtle);
+  margin-bottom: 4px;
+}
+
+.activity-island-btn {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 10px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--color-muted);
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.activity-island-btn:hover {
+  color: var(--color-text-strong);
+  background: var(--color-panel-2);
+  border-color: var(--color-border-subtle);
+  transform: translateY(-1px);
+}
+
+.activity-island-btn.is-active {
+  color: var(--color-accent-strong);
+  background: transparent;
+  border-color: transparent;
+  box-shadow: none;
+}
+
+.activity-island-btn.is-active::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 10px;
+  bottom: 10px;
+  width: 3px;
+  border-radius: 0 4px 4px 0;
+  background: var(--color-accent);
+}
+
+.activity-island-btn.git-active {
+  color: var(--color-git, #f05032);
+  background: transparent;
+  border-color: transparent;
+  box-shadow: none;
+}
+
+.activity-island-btn.git-active::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 10px;
+  bottom: 10px;
+  width: 3px;
+  border-radius: 0 4px 4px 0;
+  background: var(--color-git, #f05032);
+}
+
+.activity-island .settings-menu-wrap .settings-menu {
+  top: auto;
+  bottom: 0;
+  left: 46px;
+  right: auto;
+}
+
+/* On small screens, hide the island */
+@media (max-width: 760px) {
+  .activity-island {
+    display: none;
+  }
 }
