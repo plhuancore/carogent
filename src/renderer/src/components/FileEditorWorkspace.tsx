@@ -24,6 +24,7 @@ type FileEditorWorkspaceProps = {
   globalSearchCaseSensitive?: boolean;
   globalSearchWholeWord?: boolean;
   globalSearchUseRegex?: boolean;
+  onClose?: () => void;
 };
 
 function getFileName(path: string): string {
@@ -400,7 +401,8 @@ export function FileEditorWorkspace({
   globalSearchQuery = '',
   globalSearchCaseSensitive = false,
   globalSearchWholeWord = false,
-  globalSearchUseRegex = false
+  globalSearchUseRegex = false,
+  onClose
 }: FileEditorWorkspaceProps): JSX.Element {
   const [tabs, setTabs] = useState<EditorTab[]>([]);
   const [selectedPath, setSelectedPath] = useState('');
@@ -919,18 +921,19 @@ export function FileEditorWorkspace({
 
   const hasDirtyTabs = tabs.some((tab) => tab.content !== tab.savedContent);
 
-  if (!tabs.length) {
-    return (
-      <div className="file-editor-empty">
-        <div className="file-editor-empty-title">Select a file</div>
-        <div className="file-editor-empty-text">Choose a file from Explorer to edit it here.</div>
-      </div>
-    );
-  }
-
   return (
     <section className="file-editor-workspace">
       <div className="file-editor-tabs">
+        {onClose && (
+          <button
+            className="file-editor-close-btn"
+            onClick={onClose}
+            title="Close Editor"
+            type="button"
+          >
+            <CloseIcon />
+          </button>
+        )}
         {tabs.map((tab) => {
           const dirty = tab.content !== tab.savedContent;
 
@@ -961,7 +964,12 @@ export function FileEditorWorkspace({
           );
         })}
       </div>
-      {selectedTab && (
+      {!tabs.length ? (
+        <div className="file-editor-empty" style={{ gridRow: '2 / span 2' }}>
+          <div className="file-editor-empty-title">Select a file</div>
+          <div className="file-editor-empty-text">Choose a file from Explorer to edit it here.</div>
+        </div>
+      ) : selectedTab && (
         <>
           <div className="file-editor-toolbar">
             <div className="file-editor-path" title={selectedTab.path}>

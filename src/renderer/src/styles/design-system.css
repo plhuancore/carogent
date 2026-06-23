@@ -46,6 +46,17 @@ textarea:focus-visible {
   backdrop-filter: blur(22px);
 }
 
+.git-panel.on-left {
+  border: 1px solid var(--color-border) !important;
+  border-radius: var(--radius-xl) !important;
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.07), rgba(255, 255, 255, 0.015) 45%, transparent),
+    rgba(25, 24, 32, 0.72) !important;
+  backdrop-filter: blur(18px) !important;
+  box-shadow: var(--shadow-island) !important;
+  z-index: 300 !important;
+}
+
 .git-panel-header,
 .git-tabs,
 .git-tab-content,
@@ -321,7 +332,7 @@ textarea:focus-visible {
 .file-editor-workspace {
   overflow: hidden;
   border: 1px solid var(--color-border);
-  border-radius: 12px;
+  border-radius: 0;
   background:
     linear-gradient(135deg, rgba(255, 255, 255, 0.07), rgba(255, 255, 255, 0.014) 44%, transparent),
     rgba(25, 24, 32, 0.88);
@@ -333,7 +344,7 @@ textarea:focus-visible {
 .file-editor-surface {
   margin: 10px;
   border: 1px solid var(--color-border);
-  border-radius: 12px;
+  border-radius: 0;
   background: var(--color-terminal);
 }
 
@@ -1035,7 +1046,7 @@ textarea:focus-visible {
 
 .pinned-folder-name {
   font-size: 12px;
-  font-weight: 560;
+  font-weight: 450;
 }
 
 .pinned-image-preview {
@@ -1069,8 +1080,9 @@ textarea:focus-visible {
   min-height: 0;
 }
 
-.git-panel.is-maximized {
-  backdrop-filter: none;
+.git-panel.is-maximized,
+.git-panel.on-left.is-maximized {
+  backdrop-filter: none !important;
 }
 
 .sidebar-resize-handle,
@@ -1257,7 +1269,7 @@ textarea:focus-visible {
 .git-commit-container,
 .git-commit-form {
   border-bottom-color: var(--color-border);
-  background: rgba(13, 12, 17, 0.5);
+  background: transparent !important;
   padding: 10px;
 }
 
@@ -1366,9 +1378,13 @@ textarea:focus-visible {
 .git-file-name {
   color: var(--color-text-strong);
   font-size: 13.5px;
-  font-weight: 500;
+  font-weight: 400 !important;
   -webkit-font-smoothing: subpixel-antialiased;
   -moz-osx-font-smoothing: auto;
+}
+
+.git-file-row.selected .git-file-name {
+  font-weight: 500 !important;
 }
 
 .git-file-dir {
@@ -1555,15 +1571,15 @@ textarea:focus-visible {
 }
 
 .git-history-search-input {
-  border-color: var(--color-border);
-  border-radius: var(--radius-md);
-  background: rgba(19, 18, 23, 0.7);
-  color: var(--color-text);
+  border-color: var(--color-border) !important;
+  border-radius: var(--radius-md) !important;
+  background: rgba(19, 18, 23, 0.5) !important;
+  color: var(--color-text) !important;
 }
 
 .git-history-search-input:focus {
-  border-color: var(--color-accent);
-  box-shadow: 0 0 0 3px rgba(167, 139, 250, 0.14);
+  border-color: var(--color-accent) !important;
+  box-shadow: 0 0 0 3px var(--color-accent-muted) !important;
 }
 
 .git-history-find-option:hover,
@@ -2017,6 +2033,67 @@ textarea:focus-visible {
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2) !important;
 }
 
+.explorer-viewlet-title {
+  color: var(--color-text-strong) !important;
+  font-size: 12px !important;
+  font-weight: 800 !important;
+  letter-spacing: 0.04em !important;
+  text-transform: uppercase !important;
+  font-family: var(--font-sans) !important;
+}
+
+.monaco-pane-header {
+  background-color: rgba(255, 255, 255, 0.02) !important;
+  border-top: 1px solid var(--color-border-subtle) !important;
+  border-bottom: 1px solid var(--color-border-subtle) !important;
+  height: 28px !important;
+}
+
+.monaco-pane-header:hover {
+  background-color: rgba(255, 255, 255, 0.05) !important;
+}
+
+.monaco-pane-header-title {
+  color: var(--color-text-strong) !important;
+  font-family: var(--font-sans) !important;
+  font-size: 11px !important;
+  font-weight: 700 !important;
+  letter-spacing: 0.06em !important;
+}
+
+.monaco-pane-header-arrow {
+  color: var(--color-subtle) !important;
+}
+
+.monaco-pane-actions button {
+  color: var(--color-subtle) !important;
+}
+
+.monaco-pane-actions button:hover:not(:disabled) {
+  background: var(--color-panel-2) !important;
+  color: var(--color-accent-strong) !important;
+}
+
+.folder-tree-search-bar {
+  background: rgba(19, 18, 23, 0.5) !important;
+  border: 1px solid var(--color-border) !important;
+  border-radius: var(--radius-md) !important;
+  margin: 4px 8px 10px 8px !important;
+  padding: 4px 24px 4px 10px !important;
+  min-height: 32px !important;
+  transition: all 0.15s ease !important;
+}
+
+.folder-tree-search-bar:focus-within {
+  border-color: var(--color-accent) !important;
+  box-shadow: 0 0 0 3px var(--color-accent-muted) !important;
+}
+
+.folder-tree-search-input {
+  color: var(--color-text) !important;
+  font-family: var(--font-sans) !important;
+}
+
 .folder-tree-header {
   border-bottom: none !important;
   padding: 0 4px 12px 4px !important;
@@ -2043,7 +2120,7 @@ textarea:focus-visible {
   margin: 1px 0 !important;
   transition: background-color 120ms ease, color 120ms ease !important;
   font-size: 13px !important;
-  font-weight: 500 !important;
+  font-weight: 400 !important;
   color: var(--color-text) !important;
   -webkit-font-smoothing: subpixel-antialiased !important;
   -moz-osx-font-smoothing: auto !important;
@@ -2051,7 +2128,7 @@ textarea:focus-visible {
 
 .folder-tree-name {
   font-size: 13px !important;
-  font-weight: 500 !important;
+  font-weight: 400 !important;
 }
 
 .folder-tree-row:hover {
@@ -2083,7 +2160,7 @@ textarea:focus-visible {
 .folder-tree-row.is-active {
   background: var(--color-accent-surface) !important;
   color: var(--color-accent-strong) !important;
-  font-weight: 600 !important;
+  font-weight: 500 !important;
 }
 
 .folder-tree-disclosure {

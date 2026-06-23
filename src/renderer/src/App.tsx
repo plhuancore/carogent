@@ -164,18 +164,18 @@ function escapeTerminalPath(path: string): string {
 
 function WorkspaceTabIcon(): JSX.Element {
   return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ width: '20px', height: '20px' }}>
-      <rect x="3" y="3" width="18" height="18" rx="2" />
-      <path d="M9 3v18" />
-      <path d="M15 12h3" />
-      <path d="M15 16h2" />
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ width: '24px', height: '24px' }}>
+      <path d="M11 13a3 3 0 1 1 2.83-4H14a2 2 0 0 1 0 4z"/>
+      <path d="M12 17v4"/>
+      <path d="M8 21h8"/>
+      <rect x="2" y="3" width="20" height="14" rx="2"/>
     </svg>
   );
 }
 
 function FolderTabIcon(): JSX.Element {
   return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ width: '20px', height: '20px' }}>
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ width: '24px', height: '24px' }}>
       <path d="M15 2h-4a2 2 0 0 0-2 2v11a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V8" />
       <path d="M16.706 2.706A2.4 2.4 0 0 0 15 2v5a1 1 0 0 0 1 1h5a2.4 2.4 0 0 0-.706-1.706z" />
       <path d="M5 7a2 2 0 0 0-2 2v11a2 2 0 0 0 2 2h8a2 2 0 0 0 1.732-1" />
@@ -183,9 +183,18 @@ function FolderTabIcon(): JSX.Element {
   );
 }
 
+function SearchTabIcon(): JSX.Element {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ width: '24px', height: '24px' }}>
+      <circle cx="11" cy="11" r="8" />
+      <path d="m21 21-4.3-4.3" />
+    </svg>
+  );
+}
+
 function GitCustomIcon(): JSX.Element {
   return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ width: '20px', height: '20px' }}>
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ width: '24px', height: '24px' }}>
       <path d="M15 6a9 9 0 0 0-9 9V3" />
       <circle cx="18" cy="6" r="3" />
       <circle cx="6" cy="18" r="3" />
@@ -240,13 +249,13 @@ function App(): JSX.Element {
     clientCount: 0,
     enabled: true
   });
-  const [leftSidebarTab, setLeftSidebarTab] = useState<'workspace' | 'explorer' | 'git' | null>('workspace');
+  const [leftSidebarTab, setLeftSidebarTab] = useState<'workspace' | 'explorer' | 'search' | 'git' | null>('workspace');
   const [isExplorerSidebarOpen, setIsExplorerSidebarOpenState] = useState(false);
   const setIsExplorerSidebarOpen = useCallback((open: boolean | ((prev: boolean) => boolean)) => {
     setIsExplorerSidebarOpenState((prev) => {
       const next = typeof open === 'function' ? open(prev) : open;
       if (next) {
-        setLeftSidebarTab((currTab) => (currTab === 'git' ? 'git' : 'explorer'));
+        setLeftSidebarTab((currTab) => (currTab === 'git' || currTab === 'search' ? currTab : 'explorer'));
       } else {
         setLeftSidebarTab('workspace');
       }
@@ -266,7 +275,7 @@ function App(): JSX.Element {
       return 'git';
     });
   }, []);
-  const [sidebarActiveTab, setSidebarActiveTab] = useState<'explorer' | 'search'>('explorer');
+
   const [activeEditorFilePath, setActiveEditorFilePath] = useState('');
   const [activeEditorLineNumber, setActiveEditorLineNumber] = useState<number | undefined>(undefined);
   const [gitRefreshTrigger, setGitRefreshTrigger] = useState(0);
@@ -317,8 +326,6 @@ function App(): JSX.Element {
   const shellOptionsRef = useRef<TerminalShellOption[] | null>(shellOptions);
   const quickAccessInputRef = useRef<HTMLInputElement | null>(null);
   const settingsMenuRef = useRef<HTMLDivElement | null>(null);
-  const islandSettingsMenuRef = useRef<HTMLDivElement | null>(null);
-  const [islandSettingsMenuOpen, setIslandSettingsMenuOpen] = useState(false);
 
   const activeWorkspace =
     workspaces.find((workspace) => workspace.id === activeWorkspaceId) || workspaces[0];
@@ -1402,32 +1409,6 @@ function App(): JSX.Element {
   }, [settingsMenuOpen]);
 
   useEffect(() => {
-    if (!islandSettingsMenuOpen) {
-      return;
-    }
-
-    const handlePointerDown = (event: MouseEvent): void => {
-      if (!islandSettingsMenuRef.current?.contains(event.target as Node)) {
-        setIslandSettingsMenuOpen(false);
-      }
-    };
-
-    const handleKeyDown = (event: KeyboardEvent): void => {
-      if (event.key === 'Escape') {
-        setIslandSettingsMenuOpen(false);
-      }
-    };
-
-    document.addEventListener('mousedown', handlePointerDown);
-    window.addEventListener('keydown', handleKeyDown);
-
-    return () => {
-      document.removeEventListener('mousedown', handlePointerDown);
-      window.removeEventListener('keydown', handleKeyDown);
-    };
-  }, [islandSettingsMenuOpen]);
-
-  useEffect(() => {
     return window.terminalApi.onOpenAgentPane(({ workspaceId, paneId }) => {
       setActiveWorkspaceId(workspaceId);
       setWorkspaces((current) =>
@@ -1570,6 +1551,20 @@ function App(): JSX.Element {
             <FolderTabIcon />
           </button>
           <button
+            className={`activity-island-btn ${leftSidebarTab === 'search' ? 'is-active' : ''}`}
+            onClick={() => {
+              if (leftSidebarTab === 'search') {
+                setLeftSidebarTab(null);
+              } else {
+                setLeftSidebarTab('search');
+              }
+            }}
+            title="Search"
+            type="button"
+          >
+            <SearchTabIcon />
+          </button>
+          <button
             className={`activity-island-btn ${leftSidebarTab === 'git' ? 'git-active' : ''}`}
             onClick={() => {
               if (leftSidebarTab === 'git') {
@@ -1585,18 +1580,18 @@ function App(): JSX.Element {
           </button>
         </div>
         <div className="activity-island-bottom">
-          <div className="settings-menu-wrap" ref={islandSettingsMenuRef}>
+          <div className="settings-menu-wrap" ref={settingsMenuRef}>
             <button
-              className="activity-island-btn"
-              onClick={() => setIslandSettingsMenuOpen((open) => !open)}
+              className={`activity-island-btn ${settingsMenuOpen ? 'is-active' : ''}`}
+              onClick={() => setSettingsMenuOpen((open) => !open)}
               title="Settings"
               type="button"
               aria-haspopup="menu"
-              aria-expanded={islandSettingsMenuOpen}
+              aria-expanded={settingsMenuOpen}
             >
               <SettingsIcon />
             </button>
-            {islandSettingsMenuOpen && renderSettingsMenu(() => setIslandSettingsMenuOpen(false))}
+            {settingsMenuOpen && renderSettingsMenu(() => setSettingsMenuOpen(false))}
           </div>
         </div>
       </div>
@@ -1619,41 +1614,14 @@ function App(): JSX.Element {
         />
       ) : leftSidebarTab ? (
         <aside className="sidebar">
-          {leftSidebarTab === 'explorer' ? (
+          {leftSidebarTab === 'explorer' || leftSidebarTab === 'search' ? (
             <>
               <div className="sidebar-panel-container">
-                <div className="sidebar-tabs-header">
-                  <div className="sidebar-tabs">
-                    <button
-                      className={`sidebar-tab-button ${sidebarActiveTab === 'explorer' ? 'is-active' : ''}`}
-                      type="button"
-                      onClick={() => setSidebarActiveTab('explorer')}
-                    >
-                      Explorer
-                    </button>
-                    <button
-                      className={`sidebar-tab-button ${sidebarActiveTab === 'search' ? 'is-active' : ''}`}
-                      type="button"
-                      onClick={() => setSidebarActiveTab('search')}
-                    >
-                      Search
-                    </button>
-                  </div>
-                  <button
-                    className="sidebar-close-button"
-                    type="button"
-                    title="Close sidebar"
-                    onClick={() => setIsExplorerSidebarOpen(false)}
-                  >
-                    <CloseIcon />
-                  </button>
-                </div>
-
                 <div className="sidebar-panel-content">
-                  {sidebarActiveTab === 'explorer' ? (
+                  {leftSidebarTab === 'explorer' ? (
                     <CurrentFolderTree
                       rootPath={activePaneCwd}
-                      onClose={() => setIsExplorerSidebarOpen(false)}
+                      onClose={() => {}}
                       onOpenFile={(path, line) => {
                         setActiveEditorFilePath(path);
                         setActiveEditorLineNumber(line);
@@ -1664,7 +1632,7 @@ function App(): JSX.Element {
                   ) : (
                     <SearchPanel
                       rootPath={activePaneCwd}
-                      onClose={() => setIsExplorerSidebarOpen(false)}
+                      onClose={() => {}}
                       onOpenFile={(path, line) => {
                         setActiveEditorFilePath(path);
                         setActiveEditorLineNumber(line);
@@ -1683,9 +1651,6 @@ function App(): JSX.Element {
             <>
               <div className="sidebar-brand-workspace">
                 <div className="brand">
-                  <div className="brand-mark">
-                    <img className="brand-mark-logo" src={carogentLogoUrl} alt="" />
-                  </div>
                   <div>
                     <div className="brand-title">Carogent</div>
                     <div className="brand-subtitle">Terminal Workspace</div>
@@ -1777,29 +1742,7 @@ function App(): JSX.Element {
               />
               Open in Browser
             </button>
-            <button
-              className="settings-button"
-              type="button"
-              onClick={() => setIsExplorerSidebarOpen((open) => !open)}
-              title="Toggle current folder explorer"
-              aria-label="Toggle current folder explorer"
-              style={isExplorerSidebarOpen ? { borderColor: 'var(--color-accent-strong)', color: 'var(--color-accent-strong)' } : undefined}
-            >
-              <WrenchIcon />
-            </button>
-            <div className="settings-menu-wrap" ref={settingsMenuRef}>
-              <button
-                className="settings-button"
-                type="button"
-                title="Settings"
-                aria-haspopup="menu"
-                aria-expanded={settingsMenuOpen}
-                onClick={() => setSettingsMenuOpen((open) => !open)}
-              >
-                <SettingsIcon />
-              </button>
-              {settingsMenuOpen && renderSettingsMenu(() => setSettingsMenuOpen(false))}
-            </div>
+
           </div>
         </header>
 
@@ -1816,6 +1759,7 @@ function App(): JSX.Element {
             globalSearchCaseSensitive={globalSearchCaseSensitive}
             globalSearchWholeWord={globalSearchWholeWord}
             globalSearchUseRegex={globalSearchUseRegex}
+            onClose={() => setIsExplorerSidebarOpenState(false)}
           />
         ) : (
           <div className="terminal-canvas">

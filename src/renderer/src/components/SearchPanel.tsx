@@ -328,6 +328,9 @@ export function SearchPanel({
 
   return (
     <div className="search-panel">
+      <div className="explorer-viewlet-header">
+        <span className="explorer-viewlet-title">Search</span>
+      </div>
       <div className="search-input-form">
         <div className="search-input-container">
           <div className="search-input-icon">

@@ -1,5 +1,16 @@
 import React from 'react';
 
+function iconPath(name: string): string {
+  try {
+    // Resolve relative to window.location.href (which points to index.html's location).
+    // This handles both http://localhost:5173/ in dev and file:///.../out/renderer/index.html in prod,
+    // avoiding the issue where '/icons/...' resolves to the filesystem root 'file:///icons/...' on file://.
+    return new URL(`icons/${name}`, window.location.href).href;
+  } catch {
+    return `/icons/${name}`;
+  }
+}
+
 interface FileIconProps {
   filename: string;
   isDirectory?: boolean;
@@ -59,7 +70,7 @@ export const FileIcon: React.FC<FileIconProps> = ({
     }
 
     const suffix = isOpen ? '-open' : '';
-    const srcPath = `/icons/${folderIconName}${suffix}.svg`;
+    const srcPath = iconPath(`${folderIconName}${suffix}.svg`);
 
     return (
       <img
@@ -198,7 +209,7 @@ export const FileIcon: React.FC<FileIconProps> = ({
     }
   }
 
-  const srcPath = `/icons/${fileIconName}.svg`;
+  const srcPath = iconPath(`${fileIconName}.svg`);
 
   return (
     <img

@@ -99,16 +99,23 @@
   display: flex;
   align-items: center;
   gap: 4px;
-  color: #8b949e;
+  color: var(--color-text);
   font-size: 12px;
   font-weight: 400;
   cursor: pointer;
-  padding: 2px 6px;
-  border-radius: 4px;
-  background: #161b22;
-  border: 1px solid #21262d;
+  padding: 3px 8px;
+  border-radius: 6px;
+  background: rgba(19, 18, 23, 0.5);
+  border: 1px solid var(--color-border);
   min-width: 0;
   position: relative;
+  transition: all 0.15s ease;
+}
+
+.git-repo-dropdown:hover {
+  background: var(--color-panel-3);
+  border-color: var(--color-border-strong);
+  color: var(--color-text-strong);
 }
 
 .git-repo-name {
@@ -118,7 +125,7 @@
 }
 
 .git-dropdown-chevron {
-  color: #8b949e;
+  color: var(--color-muted);
   flex-shrink: 0;
   transition: transform 0.15s ease;
 }
@@ -131,13 +138,16 @@
 .git-worktree-dropdown-list {
   position: absolute;
   top: 100%;
-  right: 0;
-  left: auto;
+  left: 0 !important;
+  right: auto !important;
   margin-top: 6px;
-  background: #161b22;
-  border: 1px solid #30363d;
-  border-radius: 6px;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+  background:
+    linear-gradient(rgba(255, 255, 255, 0.03), rgba(255, 255, 255, 0.03)),
+    rgba(25, 24, 32, 0.95);
+  backdrop-filter: blur(16px);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-lg, 8px);
+  box-shadow: var(--shadow-menu, 0 8px 24px rgba(0, 0, 0, 0.5));
   z-index: 10000;
   min-width: 280px;
   max-width: 340px;
@@ -151,9 +161,9 @@
 .git-worktree-dropdown-header {
   padding: 6px 12px;
   font-size: 10px;
-  font-weight: 600;
-  color: #8b949e;
-  border-bottom: 1px solid #21262d;
+  font-weight: 700;
+  color: var(--color-muted);
+  border-bottom: 1px solid var(--color-border);
   text-transform: uppercase;
   letter-spacing: 0.5px;
 }
@@ -166,7 +176,7 @@
   padding: 8px 12px;
   border: none;
   background: transparent;
-  color: #c9d1d9;
+  color: var(--color-text);
   cursor: pointer;
   text-align: left;
   gap: 2px;
@@ -175,14 +185,14 @@
 }
 
 .git-worktree-dropdown-item:hover {
-  background: #21262d;
-  color: #ffffff;
+  background: var(--color-panel-3);
+  color: var(--color-text-strong);
 }
 
 .git-worktree-dropdown-item.active {
-  background: #17345f;
-  color: #58a6ff;
-  border-left: 2px solid #58a6ff;
+  background: var(--color-accent-surface);
+  color: var(--color-accent-strong);
+  border-left: 2px solid var(--color-accent);
   padding-left: 10px;
 }
 
@@ -817,16 +827,16 @@
   flex-direction: column;
   gap: 8px;
   padding: 12px;
-  background: #080a0d;
+  background: transparent;
   flex-shrink: 0;
 }
 
 .git-commit-input {
   padding: 8px 10px;
-  border-radius: 5px;
-  border: 1px solid #21262d;
-  background: #0d1117;
-  color: #c9d1d9;
+  border-radius: var(--radius-md, 6px);
+  border: 1px solid var(--color-border);
+  background: rgba(19, 18, 23, 0.5);
+  color: var(--color-text);
   font-size: 12px;
   transition: all 0.15s;
 }
@@ -835,12 +845,13 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  color: var(--color-subtle);
 }
 
 .git-commit-input:focus {
   outline: none;
-  border-color: #a3be5c;
-  box-shadow: 0 0 0 2px rgba(163, 190, 92, 0.2);
+  border-color: var(--color-accent);
+  box-shadow: 0 0 0 3px var(--color-accent-muted);
 }
 
 .git-commit-btn {

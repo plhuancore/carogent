@@ -617,7 +617,7 @@ export function CurrentFolderTree({
           key={i}
           className="folder-tree-indent-guide"
           style={{
-            left: `${TREE_BASE_INDENT_PX + i * TREE_DEPTH_INDENT_PX + 11}px`
+            left: `${TREE_BASE_INDENT_PX + i * TREE_DEPTH_INDENT_PX + 7}px`
           }}
         />
       );
@@ -763,19 +763,14 @@ export function CurrentFolderTree({
         {isDirectory && expanded && (
           <div className="folder-tree-children">
             {node?.loading && !node.directory && (
-              <>
-                {[0.7, 0.5, 0.85].map((w, i) => (
-                  <div
-                    key={i}
-                    className="folder-tree-skeleton-row"
-                    style={{ paddingLeft: TREE_BASE_INDENT_PX + (depth + 1) * TREE_DEPTH_INDENT_PX }}
-                  >
-                    {renderIndentGuides(depth + 1)}
-                    <span className="folder-tree-skeleton-icon" />
-                    <span className="folder-tree-skeleton-label" style={{ width: `${w * 100}%` }} />
-                  </div>
-                ))}
-              </>
+              <div
+                className="folder-tree-skeleton-row"
+                style={{ paddingLeft: TREE_BASE_INDENT_PX + (depth + 1) * TREE_DEPTH_INDENT_PX }}
+              >
+                {renderIndentGuides(depth + 1)}
+                <span className="folder-tree-skeleton-icon" />
+                <span className="folder-tree-skeleton-label" style={{ width: '70%' }} />
+              </div>
             )}
             {node?.error && <div className="folder-tree-status is-error" style={{ paddingLeft: TREE_STATUS_INDENT_PX + depth * TREE_DEPTH_INDENT_PX }}>{node.error}</div>}
             {renderCreateDraft(entry.path, depth + 1)}
@@ -950,8 +945,8 @@ export function CurrentFolderTree({
 
                   {rootNode?.directory && (
                     <div className="folder-tree-children root-children">
-                      {renderCreateDraft(rootPath, 0)}
-                      {rootNode.directory.entries.map((child) => renderEntry(child, 0))}
+                      {renderCreateDraft(rootPath, 1)}
+                      {rootNode.directory.entries.map((child) => renderEntry(child, 1))}
                       {rootNode.directory.entries.length === 0 && (
                         <div className="folder-tree-status" style={{ paddingLeft: 12 }}>Empty</div>
                       )}
