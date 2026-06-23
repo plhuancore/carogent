@@ -12,7 +12,8 @@ import type {
   AgentBridgePane,
   AgentBridgeRendererResponse,
   BrowserBridgeStatusEvent,
-  TerminalShellOption
+  TerminalShellOption,
+  GitStatus
 } from '../../shared/ipcTypes';
 import { FitAddon } from '@xterm/addon-fit';
 import { SearchAddon } from '@xterm/addon-search';
@@ -279,6 +280,7 @@ function App(): JSX.Element {
   const [activeEditorFilePath, setActiveEditorFilePath] = useState('');
   const [activeEditorLineNumber, setActiveEditorLineNumber] = useState<number | undefined>(undefined);
   const [gitRefreshTrigger, setGitRefreshTrigger] = useState(0);
+  const [gitChangesCount, setGitChangesCount] = useState(0);
   const [gitSidebarWidth, setGitSidebarWidth] = useState(380);
   const [leftSidebarWidth, setLeftSidebarWidth] = useState(() => {
     const saved = localStorage.getItem('carogent-left-sidebar-width');
@@ -999,6 +1001,55 @@ function App(): JSX.Element {
 
   const activePane = findPane(layout, activePaneId) || findPane(layout, getFirstPaneId(layout));
   const activePaneCwd = sessions.current.get(activePaneId)?.cwd || activePane?.cwd || '';
+
+  // Git Changes Badge polling & event listening
+  useEffect(() => {
+    let active = true;
+    const refreshGitCount = async (cwd: string) => {
+      if (!cwd) {
+        if (active) setGitChangesCount(0);
+        return;
+      }
+      try {
+        const gitStatus: GitStatus = await window.terminalApi.gitStatus({ cwd });
+        if (!active) return;
+        if (gitStatus && gitStatus.isRepo) {
+          const count = (gitStatus.staged?.length || 0) + (gitStatus.unstaged?.length || 0);
+          setGitChangesCount(count);
+        } else {
+          setGitChangesCount(0);
+        }
+      } catch (err) {
+        console.error('Failed to get git status for badge:', err);
+        if (active) setGitChangesCount(0);
+      }
+    };
+
+    // Refresh on mount/trigger/cwd changes
+    refreshGitCount(activePaneCwd);
+
+    // Listen to updates from GitPanel
+    const handleStatusUpdated = (e: Event) => {
+      const customEvent = e as CustomEvent<GitStatus>;
+      if (customEvent.detail) {
+        const count = (customEvent.detail.staged?.length || 0) + (customEvent.detail.unstaged?.length || 0);
+        setGitChangesCount(count);
+      }
+    };
+    window.addEventListener('git-status-updated', handleStatusUpdated);
+
+    // Poll every 5 seconds to capture updates from terminal or external tool
+    const intervalId = setInterval(() => {
+      refreshGitCount(activePaneCwd);
+    }, 5000);
+
+    return () => {
+      active = false;
+      window.removeEventListener('git-status-updated', handleStatusUpdated);
+      clearInterval(intervalId);
+    };
+  }, [activePaneCwd, gitRefreshTrigger]);
+
   const paneIds = listPaneIds(layout);
   const activePaneTitle =
     activePane?.customTitle ||
@@ -1577,6 +1628,11 @@ function App(): JSX.Element {
             type="button"
           >
             <GitCustomIcon />
+            {gitChangesCount > 0 && (
+              <span className="activity-island-badge">
+                {gitChangesCount}
+              </span>
+            )}
           </button>
         </div>
         <div className="activity-island-bottom">

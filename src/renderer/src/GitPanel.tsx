@@ -879,6 +879,7 @@ export const GitPanel: React.FC<GitPanelProps> = ({
           if (cwdRef.current !== cwd) return;
 
           setStatus(gitStatus);
+          window.dispatchEvent(new CustomEvent('git-status-updated', { detail: gitStatus }));
 
           setStagedLimit(prev => Math.max(MAX_DISPLAYED_CHANGES, Math.min(prev, gitStatus.staged?.length || 0)));
           setUnstagedLimit(prev => Math.max(MAX_DISPLAYED_CHANGES, Math.min(prev, gitStatus.unstaged?.length || 0)));
