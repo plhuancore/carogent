@@ -2,6 +2,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Editor, { DiffEditor, Monaco } from '@monaco-editor/react';
 import { CloseIcon, RefreshIcon } from './AppIcons';
 
+const EDITOR_THEME = 'carogent-dark-plus';
+
 function parseGitDiffUrl(urlStr: string): { filePath: string; searchParams: URLSearchParams } {
   const prefix = 'gitdiff://';
   if (!urlStr.startsWith(prefix)) {
@@ -40,6 +42,7 @@ type EditorTab = {
 type FileEditorWorkspaceProps = {
   activeFilePath: string;
   activeLineNumber?: number;
+  activeColumnNumber?: number;
   rootPath: string;
   onActiveFileChange?: (path: string) => void;
   onActiveFilePathChange?: (path: string) => void;
@@ -141,6 +144,66 @@ function getEditorLanguage(filePath: string): string {
     default:
       return 'plaintext';
   }
+}
+
+function defineDarkPlusTheme(monaco: Monaco) {
+  if ((monaco as any).__carogentDarkPlusThemeDefined) {
+    return;
+  }
+
+  (monaco as any).__carogentDarkPlusThemeDefined = true;
+
+  monaco.editor.defineTheme(EDITOR_THEME, {
+    base: 'vs-dark',
+    inherit: true,
+    rules: [
+      { token: '', foreground: 'd4d4d4', background: '1e1e1e' },
+      { token: 'comment', foreground: '6a9955' },
+      { token: 'comment.content', foreground: '6a9955' },
+      { token: 'keyword', foreground: '569cd6' },
+      { token: 'keyword.declaration', foreground: '569cd6' },
+      { token: 'keyword.control', foreground: 'c586c0' },
+      { token: 'keyword.flow', foreground: 'c586c0' },
+      { token: 'string', foreground: 'ce9178' },
+      { token: 'string.key.json', foreground: '9cdcfe' },
+      { token: 'string.value.json', foreground: 'ce9178' },
+      { token: 'number', foreground: 'b5cea8' },
+      { token: 'regexp', foreground: 'd16969' },
+      { token: 'type', foreground: '4ec9b0' },
+      { token: 'type.identifier', foreground: '4ec9b0' },
+      { token: 'class', foreground: '4ec9b0' },
+      { token: 'interface', foreground: '4ec9b0' },
+      { token: 'function', foreground: 'dcdcaa' },
+      { token: 'identifier', foreground: '9cdcfe' },
+      { token: 'variable', foreground: '9cdcfe' },
+      { token: 'variable.local', foreground: '9cdcfe' },
+      { token: 'variable.parameter', foreground: '9cdcfe' },
+      { token: 'operator', foreground: 'd4d4d4' },
+      { token: 'delimiter', foreground: 'd4d4d4' },
+      { token: 'delimiter.html', foreground: '808080' },
+      { token: 'tag', foreground: '569cd6' },
+      { token: 'tag.html', foreground: '569cd6' },
+      { token: 'metatag', foreground: '569cd6' },
+      { token: 'metatag.content.html', foreground: '9cdcfe' },
+      { token: 'attribute.name', foreground: '9cdcfe' },
+      { token: 'attribute.value', foreground: 'ce9178' }
+    ],
+    colors: {
+      'editor.background': '#1e1e1e',
+      'editor.foreground': '#d4d4d4',
+      'editor.lineHighlightBackground': '#2a2d2e',
+      'editorLineNumber.foreground': '#858585',
+      'editorLineNumber.activeForeground': '#c6c6c6',
+      'editor.selectionBackground': '#264f78',
+      'editor.inactiveSelectionBackground': '#3a3d41',
+      'editor.selectionHighlightBackground': '#add6ff26',
+      'editorGutter.background': '#1e1e1e',
+      'editorCursor.foreground': '#aeafad',
+      'editorWhitespace.foreground': '#3b3a32',
+      'editorIndentGuide.background1': '#404040',
+      'editorIndentGuide.activeBackground1': '#707070'
+    } as any
+  });
 }
 
 function isImagePath(path: string): boolean {
@@ -546,6 +609,7 @@ async function resolveDefinition(
 export function FileEditorWorkspace({
   activeFilePath,
   activeLineNumber,
+  activeColumnNumber,
   rootPath,
   onActiveFileChange,
   onActiveFilePathChange,
@@ -912,6 +976,10 @@ export function FileEditorWorkspace({
       }
     }
 
+    if (nextTabs.length === 0) {
+      onClose?.();
+    }
+
     // Delay model disposal to the next tick so the editor can switch away from it first
     setTimeout(() => {
       if (monacoRef.current) {
@@ -1120,6 +1188,8 @@ export function FileEditorWorkspace({
   }, [globalSearchQuery, globalSearchCaseSensitive, globalSearchWholeWord, globalSearchUseRegex, selectedTab]);
 
   const initializeMonaco = (monaco: Monaco) => {
+    defineDarkPlusTheme(monaco);
+
     if ((monaco as any).__initialized) {
       return;
     }
@@ -1151,40 +1221,103 @@ export function FileEditorWorkspace({
       });
     }
 
-    monaco.editor.defineTheme('carogent-dark', {
-      base: 'vs-dark',
-      inherit: true,
-      rules: [
-        { token: 'comment', foreground: '6a9955', fontStyle: 'italic' },
-        { token: 'keyword', foreground: '569cd6' },
-        { token: 'keyword.control', foreground: 'c586c0' },
-        { token: 'string', foreground: 'ce9178' },
-        { token: 'number', foreground: 'b5cea8' },
-        { token: 'type', foreground: '4ec9b0' },
-        { token: 'class', foreground: '4ec9b0' },
-        { token: 'function', foreground: 'dcdcaa' },
-        { token: 'identifier', foreground: '9cdcfe' },
-        { token: 'operator', foreground: 'cccccc' },
-        { token: 'delimiter', foreground: 'cccccc' }
-      ],
-      colors: {
-        'editor.background': '#1f1f1f',
-        'editor.foreground': '#cccccc',
-        'editor.lineHighlightBackground': '#2d2d2d',
-        'editorLineNumber.foreground': '#6e7681',
-        'editorLineNumber.activeForeground': '#e6edf3',
-        'editor.selectionBackground': '#264f78',
-        'editorGutter.background': '#1f1f1f'
-      }
-    });
-
     registerMonacoProviders(monaco);
+
+    // Custom tokenizer enhancements to match VS Code default theme behavior
+    const customizeLanguage = (langId: string) => {
+      console.log(`[Monaco Customizer] Customizing language: ${langId}`);
+      const langs = monaco.languages.getLanguages();
+      const lang = langs.find((l: any) => l.id === langId);
+      
+      const applyCustomization = (mod: any) => {
+        if (!mod) return;
+        const language = mod.language || mod;
+        if (!language || !language.tokenizer) {
+          console.warn(`[Monaco Customizer] No language/tokenizer definition found for ${langId}`);
+          return;
+        }
+
+        const primitiveTypes = ['string', 'number', 'boolean', 'any', 'void', 'unknown', 'never', 'object'];
+        const controlKeywords = [
+          'break', 'case', 'catch', 'continue', 'debugger', 'default', 'do', 'else', 
+          'finally', 'for', 'if', 'in', 'instanceof', 'return', 'switch', 'throw', 
+          'try', 'while', 'with', 'yield', 'export', 'import', 'from', 'as',
+          'new', 'async', 'await'
+        ];
+        const declarationKeywords = ['interface', 'type', 'implements', 'extends', 'function', 'const', 'let', 'var'];
+
+        if (language.keywords) {
+          language.keywords = language.keywords.filter(
+            (k: string) => !primitiveTypes.includes(k) && !controlKeywords.includes(k) && !declarationKeywords.includes(k)
+          );
+        }
+
+        if (language.tokenizer && language.tokenizer.root) {
+          const primRegex = new RegExp(`\\b(${primitiveTypes.join('|')})\\b`);
+          const controlRegex = new RegExp(`\\b(${controlKeywords.join('|')})\\b`);
+          const declarationRegex = new RegExp(`\\b(${declarationKeywords.join('|')})\\b`);
+
+          language.tokenizer.root.unshift(
+            [primRegex, 'type'],
+            [controlRegex, 'keyword.control'],
+            [/\b(const|let|var)(\s+)([a-zA-Z_$][\w$]*)/, ['keyword.declaration', '', 'variable.local']],
+            [/([{\[,]\s*)([a-zA-Z_$][\w$]*)(?=\s*[,}\]])/, ['', 'variable.local']],
+            [/^(\s*)([a-zA-Z_$][\w$]*)(?=\s*,)/, ['', 'variable.local']],
+            [declarationRegex, 'keyword.declaration'],
+            [/\b(interface|type)\s+([a-zA-Z_$][\w$]*)/, ['keyword.declaration', 'type']],
+            [/\b(extends|implements)\s+([a-zA-Z_$][\w$]*)/, ['keyword.declaration', 'type']],
+            [/\b([a-zA-Z_$][\w$]*)\s*(?=\s*=\s*(?:[a-zA-Z_$][\w$]*|\([^)]*\))\s*=>)/, 'function'],
+            [/(\.)([a-zA-Z_$][\w$]*)\s*<[^>]*>\s*(?=\()/, ['delimiter', 'function']],
+            [/(\.)([a-zA-Z_$][\w$]*)\s*(?=\()/, ['delimiter', 'function']],
+            [/(\.)([a-zA-Z_$][\w$]*)/, ['delimiter', 'identifier']],
+            [/\b([a-zA-Z_$][\w$]*)\s*<[^>]*>\s*(?=\()/, 'function'],
+            [/\b([a-zA-Z_$][\w$]*)\s*(?=\()/, 'function']
+          );
+
+          monaco.languages.setMonarchTokensProvider(langId, language);
+          console.log(`[Monaco Customizer] Successfully updated tokenizer for ${langId}`);
+          
+          const models = monaco.editor.getModels();
+          for (const model of models) {
+            const modelLang = model.getLanguageId();
+            if (modelLang === langId) {
+              monaco.editor.setModelLanguage(model, 'plaintext');
+              monaco.editor.setModelLanguage(model, langId);
+            }
+          }
+        }
+      };
+
+      if (lang && lang.loader) {
+        lang.loader().then(applyCustomization).catch((err: any) => console.error(err));
+      } else {
+        const amdRequire = (window as any).require;
+        if (amdRequire) {
+          const modulePath = `vs/basic-languages/${langId}/${langId}`;
+          try {
+            amdRequire([modulePath], (mod: any) => {
+              console.log(`[Monaco Customizer] AMD load resolved for ${langId}`);
+              applyCustomization(mod);
+            }, (err: any) => {
+              console.error(`[Monaco Customizer] AMD load failed for ${langId}:`, err);
+            });
+          } catch (err) {
+            console.error(`[Monaco Customizer] AMD require call failed for ${langId}:`, err);
+          }
+        } else {
+          console.warn(`[Monaco Customizer] No loader or AMD require found for ${langId}`);
+        }
+      }
+    };
+
+    customizeLanguage('typescript');
+    customizeLanguage('javascript');
   };
 
   const handleDiffEditorDidMount = (editor: any, monaco: Monaco) => {
     monacoRef.current = monaco;
     initializeMonaco(monaco);
-    monaco.editor.setTheme('carogent-dark');
+    monaco.editor.setTheme(EDITOR_THEME);
   };
 
   const handleEditorDidMount = (editor: any, monaco: Monaco) => {
@@ -1192,7 +1325,7 @@ export function FileEditorWorkspace({
     monacoRef.current = monaco;
 
     initializeMonaco(monaco);
-    monaco.editor.setTheme('carogent-dark');
+    monaco.editor.setTheme(EDITOR_THEME);
 
     const editorService = editor._codeEditorService;
     if (editorService) {
@@ -1235,37 +1368,86 @@ export function FileEditorWorkspace({
     decorationsRef.current = [];
   }, [selectedPath]);
 
-  // Handle activeLineNumber changes
+  // Handle activeLineNumber and activeColumnNumber changes with retry polling to handle tab loading/mounting races
   useEffect(() => {
-    if (editorRef.current && activeLineNumber && activeLineNumber > 0) {
-      const editor = editorRef.current;
-      window.requestAnimationFrame(() => {
-        editor.revealLineInCenter(activeLineNumber);
-        editor.setPosition({ lineNumber: activeLineNumber, column: 1 });
-        editor.focus();
-      });
+    if (activeLineNumber && activeLineNumber > 0) {
+      const column = activeColumnNumber && activeColumnNumber > 0 ? activeColumnNumber : 1;
+      pendingNavigationRef.current = {
+        path: selectedPath,
+        line: activeLineNumber,
+        column,
+        wordLength: 0
+      };
+
+      let attempts = 0;
+      const checkAndApply = () => {
+        if (!pendingNavigationRef.current) return;
+        if (pendingNavigationRef.current.path !== selectedPath) {
+          return;
+        }
+
+        if (editorRef.current) {
+          const applied = applyNavigation(editorRef.current, pendingNavigationRef.current);
+          if (applied) {
+            pendingNavigationRef.current = null;
+            return;
+          }
+        }
+
+        attempts++;
+        if (attempts < 20 && pendingNavigationRef.current) {
+          setTimeout(checkAndApply, 50);
+        }
+      };
+
+      setTimeout(checkAndApply, 0);
     }
-  }, [activeLineNumber, selectedPath]);
+  }, [activeLineNumber, activeColumnNumber, selectedPath, applyNavigation]);
 
   // Handle global search highlight decorations
   useEffect(() => {
     updateSearchDecorations();
   }, [updateSearchDecorations]);
 
-  // Handle Ctrl/Cmd+S saving shortcut
+  // Handle shortcuts: Ctrl/Cmd+S saving, Ctrl/Cmd+X close tab (when not focusing input/editor/terminal)
   useEffect(() => {
     const handleGlobalKeyDown = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 's') {
         e.preventDefault();
         saveFile();
+      } else if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'x') {
+        const activeElement = document.activeElement;
+        const isInput = activeElement && (
+          activeElement.tagName === 'INPUT' ||
+          activeElement.tagName === 'TEXTAREA' ||
+          (activeElement instanceof HTMLElement && activeElement.isContentEditable) ||
+          activeElement.closest('.monaco-editor') ||
+          activeElement.closest('.terminal-host') ||
+          activeElement.closest('.xterm')
+        );
+
+        if (!isInput && selectedPath) {
+          e.preventDefault();
+          e.stopPropagation();
+          closeTab(selectedPath);
+        }
       }
     };
 
-    window.addEventListener('keydown', handleGlobalKeyDown);
+    window.addEventListener('keydown', handleGlobalKeyDown, true);
     return () => {
-      window.removeEventListener('keydown', handleGlobalKeyDown);
+      window.removeEventListener('keydown', handleGlobalKeyDown, true);
     };
-  }, [saveFile]);
+  }, [saveFile, selectedPath, closeTab]);
+
+  // Listen for the Cmd/Ctrl+W shortcut from main process to close the active tab
+  useEffect(() => {
+    return window.terminalApi.onCloseTab(() => {
+      if (selectedPath) {
+        closeTab(selectedPath);
+      }
+    });
+  }, [selectedPath, closeTab]);
 
   const hasDirtyTabs = tabs.some((tab) => tab.content !== tab.savedContent);
 
@@ -1524,35 +1706,41 @@ export function FileEditorWorkspace({
                 original={selectedTab.originalContent || ''}
                 modified={selectedTab.modifiedContent || ''}
                 language={getEditorLanguage(selectedTab.path)}
-                theme="carogent-dark"
+                theme={EDITOR_THEME}
+                beforeMount={defineDarkPlusTheme}
                 onMount={handleDiffEditorDidMount}
                 options={{
                   renderSideBySide: diffMode === 'side-by-side',
                   minimap: { enabled: true },
                   fontSize: 13,
-                  fontFamily: '"Cascadia Mono", Consolas, monospace',
+                  fontFamily: 'Menlo, Monaco, "Courier New", monospace',
                   lineHeight: 20,
                   wordWrap: 'off',
                   automaticLayout: true,
-                  readOnly: true
-                }}
+                  readOnly: true,
+                  'semanticHighlighting.enabled': 'configuredByTheme',
+                  'bracketPairColorization.enabled': true
+                } as any}
               />
             ) : (
               <Editor
                 height="100%"
                 path={selectedTab.path}
                 language={getEditorLanguage(selectedTab.path)}
-                theme="carogent-dark"
+                theme={EDITOR_THEME}
                 value={selectedTab.content}
                 onChange={(value) => updateSelectedContent(value || '')}
+                beforeMount={defineDarkPlusTheme}
                 onMount={handleEditorDidMount}
                 options={{
                   minimap: { enabled: true },
                   fontSize: 13,
-                  fontFamily: '"Cascadia Mono", Consolas, monospace',
+                  fontFamily: 'Menlo, Monaco, "Courier New", monospace',
                   lineHeight: 20,
                   wordWrap: 'off',
                   automaticLayout: true,
+                  'semanticHighlighting.enabled': 'configuredByTheme',
+                  'bracketPairColorization.enabled': true,
                   scrollbar: {
                     vertical: 'visible',
                     horizontal: 'visible',
@@ -1567,7 +1755,7 @@ export function FileEditorWorkspace({
                     multipleImplementations: 'goto',
                     multipleTypeDefinitions: 'goto'
                   }
-                }}
+                } as any}
               />
             )}
             {selectedTab.loading && (

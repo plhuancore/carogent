@@ -5,7 +5,7 @@ import { ChevronDownIcon, CloseIcon, FileTreeIcon, SearchIcon } from './AppIcons
 type SearchPanelProps = {
   rootPath: string;
   onClose: () => void;
-  onOpenFile: (path: string, lineNumber?: number) => void;
+  onOpenFile: (path: string, lineNumber?: number, columnNumber?: number) => void;
   onCommitSearchHighlight: (options: {
     query: string;
     caseSensitive: boolean;
@@ -63,7 +63,7 @@ const SearchFileResult = memo(({
   activeLineNumber?: number;
   expanded: boolean;
   onToggleExpanded: (path: string) => void;
-  onOpenFile: (path: string, line?: number) => void;
+  onOpenFile: (path: string, line?: number, column?: number) => void;
 }) => {
   const [visibleLineCount, setVisibleLineCount] = useState(SEARCH_MATCH_LINE_BATCH_SIZE);
   const matchesByLine = useMemo(() => {
@@ -162,7 +162,7 @@ const SearchResultsList = memo(({
   activeLineNumber?: number;
   expandedFiles: Record<string, boolean>;
   toggleFileExpanded: (path: string) => void;
-  onOpenFile: (path: string, line?: number) => void;
+  onOpenFile: (path: string, line?: number, column?: number) => void;
 }) => {
   return (
     <div className="search-results-list">

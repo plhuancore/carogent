@@ -359,4 +359,5 @@ export type TerminalApi = {
   gitCommitFiles: (request: { cwd: string; hash: string }) => Promise<{ files: { additions: number; deletions: number; path: string }[]; hasMore: boolean }>;
   gitCommitFileDiff: (request: { cwd: string; hash: string; filePath: string }) => Promise<GitDiffResult>;
   onGitChange: (callback: () => void) => () => void;
+  onCloseTab: (callback: () => void) => () => void;
 };

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import type { FormEvent as ReactFormEvent, KeyboardEvent as ReactKeyboardEvent, RefObject } from 'react';
+import type { FormEvent as ReactFormEvent, KeyboardEvent as ReactKeyboardEvent, RefObject, ReactNode } from 'react';
 import type { QuickAccessItem } from '../storage';
 import type { CommandPaletteItem, PaletteMode } from '../commandPalette';
 import { CommandPaletteIcon, QuickAccessIcon, SearchIcon } from './AppIcons';
@@ -21,7 +21,7 @@ function formatBrowserUrlLabel(value?: string): string {
   }
 }
 
-function highlightTextMatches(text: string, query: string): React.ReactNode {
+export function highlightTextMatches(text: string, query: string): ReactNode {
   const trimmedQuery = query.trim();
   if (!trimmedQuery) {
     return text;
@@ -32,8 +32,8 @@ function highlightTextMatches(text: string, query: string): React.ReactNode {
     cleanQuery = cleanQuery.slice(1).trim();
   }
 
-  // Remove line number suffix (e.g. :17)
-  cleanQuery = cleanQuery.replace(/:\d+$/, '');
+  // Remove line number suffix (e.g. :17 or :17:8)
+  cleanQuery = cleanQuery.replace(/:\d+(:\d+)?$/, '');
 
   // Remove symbol search suffix (e.g. @symbolName)
   cleanQuery = cleanQuery.replace(/@.*$/, '');
@@ -48,6 +48,16 @@ function highlightTextMatches(text: string, query: string): React.ReactNode {
 
   // For each term, find subsequence match in text case-insensitively
   terms.forEach((term) => {
+    // 1. Try substring match first
+    const subIdx = text.toLowerCase().indexOf(term);
+    if (subIdx !== -1) {
+      for (let i = 0; i < term.length; i++) {
+        matchedIndices[subIdx + i] = true;
+      }
+      return;
+    }
+
+    // 2. Fallback to subsequence search
     let textIndex = 0;
     const tempIndices: number[] = [];
     for (let q = 0; q < term.length; q++) {
@@ -69,7 +79,7 @@ function highlightTextMatches(text: string, query: string): React.ReactNode {
   });
 
   // Group consecutive matched/unmatched indices and render
-  const elements: React.ReactNode[] = [];
+  const elements: ReactNode[] = [];
   let currentGroupMatched = matchedIndices[0];
   let currentGroupStart = 0;
 
@@ -93,6 +103,127 @@ function highlightTextMatches(text: string, query: string): React.ReactNode {
   }
 
   return <>{elements}</>;
+}
+
+function renderHighlightedChunks(text: string, matchedIndices: boolean[]): ReactNode {
+  const elements: ReactNode[] = [];
+  let currentGroupMatched = matchedIndices[0];
+  let currentGroupStart = 0;
+
+  for (let i = 1; i <= text.length; i++) {
+    if (i === text.length || matchedIndices[i] !== currentGroupMatched) {
+      const chunk = text.slice(currentGroupStart, i);
+      if (currentGroupMatched) {
+        elements.push(
+          <span key={currentGroupStart} className="quick-access-highlight">
+            {chunk}
+          </span>
+        );
+      } else {
+        elements.push(<span key={currentGroupStart}>{chunk}</span>);
+      }
+      if (i < text.length) {
+        currentGroupMatched = matchedIndices[i];
+        currentGroupStart = i;
+      }
+    }
+  }
+
+  return <>{elements}</>;
+}
+
+function renderFileSearchResult(item: CommandPaletteItem, query: string): ReactNode {
+  const title = item.title;
+  const subtitle = item.subtitle;
+
+  // Reconstruct full path relative to root
+  const fullPath = subtitle === '.' ? title : `${subtitle}/${title}`;
+
+  let cleanQuery = query.trim();
+  if (cleanQuery.startsWith('>')) {
+    cleanQuery = cleanQuery.slice(1).trim();
+  }
+  cleanQuery = cleanQuery.replace(/:\d+(:\d+)?$/, '');
+  cleanQuery = cleanQuery.replace(/@.*$/, '');
+
+  if (!cleanQuery) {
+    return (
+      <>
+        <span className="quick-access-result-name">{title}</span>
+        <span className="quick-access-result-domain">{subtitle}</span>
+      </>
+    );
+  }
+
+  const fullPathLower = fullPath.toLowerCase();
+
+  // Split query by whitespace, forward slashes, and backslashes
+  const terms = cleanQuery.toLowerCase().split(/[\s/\\]+/).filter(Boolean);
+  if (terms.length === 0) {
+    return (
+      <>
+        <span className="quick-access-result-name">{title}</span>
+        <span className="quick-access-result-domain">{subtitle}</span>
+      </>
+    );
+  }
+
+  const matchedIndices = new Array(fullPath.length).fill(false);
+
+  // For each term, find subsequence match in fullPath case-insensitively
+  terms.forEach((term) => {
+    // 1. Try substring match first
+    const subIdx = fullPathLower.indexOf(term);
+    if (subIdx !== -1) {
+      for (let i = 0; i < term.length; i++) {
+        matchedIndices[subIdx + i] = true;
+      }
+      return;
+    }
+
+    // 2. Fallback to subsequence search
+    let textIndex = 0;
+    const tempIndices: number[] = [];
+    for (let q = 0; q < term.length; q++) {
+      const char = term[q];
+      const idx = fullPathLower.indexOf(char, textIndex);
+      if (idx !== -1) {
+        tempIndices.push(idx);
+        textIndex = idx + 1;
+      } else {
+        break;
+      }
+    }
+    if (tempIndices.length === term.length) {
+      tempIndices.forEach((idx) => {
+        matchedIndices[idx] = true;
+      });
+    }
+  });
+
+  // Split matchedIndices back into subtitle and title
+  const subtitleLength = subtitle === '.' ? 0 : subtitle.length;
+
+  let subtitleHighlighted: ReactNode;
+  let titleHighlighted: ReactNode;
+
+  if (subtitle === '.') {
+    subtitleHighlighted = '.';
+    titleHighlighted = renderHighlightedChunks(title, matchedIndices);
+  } else {
+    const subtitleMatched = matchedIndices.slice(0, subtitleLength);
+    subtitleHighlighted = renderHighlightedChunks(subtitle, subtitleMatched);
+
+    const titleMatched = matchedIndices.slice(subtitleLength + 1);
+    titleHighlighted = renderHighlightedChunks(title, titleMatched);
+  }
+
+  return (
+    <>
+      <span className="quick-access-result-name">{titleHighlighted}</span>
+      <span className="quick-access-result-domain">{subtitleHighlighted}</span>
+    </>
+  );
 }
 
 type QuickAccessPaletteProps = {
@@ -171,6 +302,8 @@ export function QuickAccessPalette({
                 ? 'Search files by name (append : to go to line or @ to go to symbol)'
                 : isCommandMode
                 ? 'Search commands'
+                : mode === 'workspace'
+                ? 'Search workspaces'
                 : 'Search quick access'
             }
             onChange={(event) => onQueryChange(event.target.value)}
@@ -189,12 +322,18 @@ export function QuickAccessPalette({
                 <CommandPaletteIcon type={item.icon} />
               </span>
               <span className="quick-access-result-copy">
-                <span className="quick-access-result-name">
-                  {highlightTextMatches(item.title, query)}
-                </span>
-                <span className="quick-access-result-domain">
-                  {highlightTextMatches(item.subtitle, query)}
-                </span>
+                {item.id.startsWith('file-search-') ? (
+                  renderFileSearchResult(item, query)
+                ) : (
+                  <>
+                    <span className="quick-access-result-name">
+                      {highlightTextMatches(item.title, query)}
+                    </span>
+                    <span className="quick-access-result-domain">
+                      {highlightTextMatches(item.subtitle, query)}
+                    </span>
+                  </>
+                )}
               </span>
             </button>
           ))}
@@ -202,19 +341,27 @@ export function QuickAccessPalette({
             <div className="quick-access-empty">
               <div>
                 <div className="quick-access-empty-title">
-                  {isCommandMode
+                  {mode === 'file'
+                    ? (hasQuery ? 'No matching files' : 'No files found')
+                    : isCommandMode
                     ? 'No matching commands'
+                    : mode === 'workspace'
+                    ? (hasQuery ? 'No matching workspaces' : 'No workspaces found')
                     : hasQuery
                     ? 'No matching quick access items'
                     : 'No quick access items'}
                 </div>
                 <div className="quick-access-empty-copy">
-                  {isCommandMode
+                  {mode === 'file'
+                    ? (hasQuery ? 'Try another file search.' : 'Type to search for files in this workspace.')
+                    : isCommandMode
                     ? 'Try another command search.'
+                    : mode === 'workspace'
+                    ? 'Try another workspace name.'
                     : 'Create entries to open your frequent domains faster.'}
                 </div>
               </div>
-              {!isCommandMode && (
+              {mode !== 'file' && !isCommandMode && mode !== 'workspace' && (
                 <button type="button" onClick={onOpenManager}>
                   Manage Quick Access
                 </button>

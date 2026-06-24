@@ -242,6 +242,12 @@ function App(): JSX.Element {
     });
   }, []);
 
+  useEffect(() => {
+    if (leftSidebarTab === 'explorer') {
+      setIsExplorerSidebarOpenState(true);
+    }
+  }, [leftSidebarTab]);
+
   const isGitSidebarOpen = leftSidebarTab === 'git';
   const setIsGitSidebarOpen = useCallback((open: boolean | ((prev: boolean) => boolean)) => {
     setLeftSidebarTab((prevTab) => {
@@ -257,6 +263,7 @@ function App(): JSX.Element {
 
   const [activeEditorFilePath, setActiveEditorFilePath] = useState('');
   const [activeEditorLineNumber, setActiveEditorLineNumber] = useState<number | undefined>(undefined);
+  const [activeEditorColumnNumber, setActiveEditorColumnNumber] = useState<number | undefined>(undefined);
   const [gitRefreshTrigger, setGitRefreshTrigger] = useState(0);
   const [gitChangesCount, setGitChangesCount] = useState(0);
   const [draggingPaneId, setDraggingPaneId] = useState<string | null>(null);
@@ -1161,6 +1168,22 @@ function App(): JSX.Element {
     [handleOpenQuickAccessItem, quickAccessItems]
   );
 
+  const workspacePaletteItems = useMemo<CommandPaletteItem[]>(
+    () =>
+      workspaces.map((ws) => ({
+        id: `workspace-${ws.id}`,
+        title: ws.name,
+        subtitle: `Switch to workspace (${countPanes(ws.layout)} terminal panes)`,
+        keywords: `workspace switch change select move go ${ws.name}`,
+        icon: 'folder',
+        run: () => {
+          setActiveWorkspaceId(ws.id);
+          closeQuickAccess();
+        }
+      })),
+    [workspaces, setActiveWorkspaceId, closeQuickAccess]
+  );
+
   const commandPaletteItems = useMemo<CommandPaletteItem[]>(() => {
     const codePath = activePaneCwd || 'Home directory';
     const browserLabel = formatBrowserUrlLabel(activePane?.browserUrl) || 'localhost:3000';
@@ -1218,6 +1241,9 @@ function App(): JSX.Element {
         icon: 'folder',
         run: () => {
           setIsExplorerSidebarOpen((open) => !open);
+          if (!isExplorerSidebarOpen) {
+            setLeftSidebarTab('explorer');
+          }
           closeQuickAccess();
         }
       },
@@ -1230,6 +1256,16 @@ function App(): JSX.Element {
         run: () => {
           setLeftSidebarTab((curr) => curr === 'workspace' ? null : 'workspace');
           closeQuickAccess();
+        }
+      },
+      {
+        id: 'switch-workspace',
+        title: 'Workspace: Switch Workspace...',
+        subtitle: 'Choose a workspace to switch to',
+        keywords: 'workspace switch change select move go active',
+        icon: 'folder',
+        run: () => {
+          openQuickAccess('workspace');
         }
       },
       {
@@ -1358,7 +1394,9 @@ function App(): JSX.Element {
     leftSidebarTab,
     setLeftSidebarTab,
     pinnedDirectory,
-    handleInsertPath
+    handleInsertPath,
+    openQuickAccess,
+    isExplorerSidebarOpen
   ]);
   const effectivePaletteMode: PaletteMode = quickAccessQuery.trimStart().startsWith('>')
     ? 'command'
@@ -1369,7 +1407,7 @@ function App(): JSX.Element {
     (effectivePaletteMode === 'quick-access' &&
       (quickAccessQuery.includes('/') ||
         quickAccessQuery.includes('\\') ||
-        /:\d+$/.test(quickAccessQuery) ||
+        /:\d+(:\d+)?$/.test(quickAccessQuery) ||
         /^[A-Za-z]:/.test(quickAccessQuery)));
 
   useEffect(() => {
@@ -1381,12 +1419,16 @@ function App(): JSX.Element {
     let isCurrent = true;
     let cleanQuery = quickAccessQuery.trim();
     let targetLineNumber: number | undefined = undefined;
+    let targetColumnNumber: number | undefined = undefined;
 
-    // Check if query matches pattern: <file_path>:<line_number>
-    const match = cleanQuery.match(/^(.*?):(\d+)$/);
+    // Check if query matches pattern: <file_path>:<line_number> or <file_path>:<line_number>:<column_number>
+    const match = cleanQuery.match(/^(.*?):(\d+)(?::(\d+))?$/);
     if (match) {
       cleanQuery = match[1].trim();
       targetLineNumber = parseInt(match[2], 10);
+      if (match[3]) {
+        targetColumnNumber = parseInt(match[3], 10);
+      }
     }
 
     window.terminalApi
@@ -1404,13 +1446,16 @@ function App(): JSX.Element {
               icon: 'code',
               run: () => {
                 let line = targetLineNumber;
-                const clickMatch = quickAccessQuery.trim().match(/^(.*?):(\d+)$/);
+                let column = targetColumnNumber;
+                const clickMatch = quickAccessQuery.trim().match(/^(.*?):(\d+)(?::(\d+))?$/);
                 if (clickMatch) {
                   line = parseInt(clickMatch[2], 10);
+                  column = clickMatch[3] ? parseInt(clickMatch[3], 10) : undefined;
                 }
 
                 setActiveEditorFilePath(file.path);
                 setActiveEditorLineNumber(line);
+                setActiveEditorColumnNumber(column);
                 setIsExplorerSidebarOpen(true);
                 closeQuickAccess();
               }
@@ -1429,7 +1474,35 @@ function App(): JSX.Element {
 
   const filteredPaletteItems = useMemo(() => {
     if (isSearchingFiles) {
-      return fileSearchResults;
+      const rawQuery = quickAccessQuery.trim().replace(/:\d+$/, '').replace(/@.*$/, '');
+      const terms = rawQuery.toLowerCase().split(/[\s/\\]+/).filter(Boolean);
+      if (terms.length === 0) {
+        return fileSearchResults;
+      }
+      return fileSearchResults
+        .map((item, index) => {
+          const fullPath = item.subtitle === '.' ? item.title : `${item.subtitle}/${item.title}`;
+          const fullPathLower = fullPath.toLowerCase();
+          const titleLower = item.title.toLowerCase();
+
+          let score = 0;
+          for (const term of terms) {
+            if (titleLower === term) {
+              score += 150;
+            } else if (titleLower.startsWith(term)) {
+              score += 120;
+            } else if (titleLower.includes(term)) {
+              score += 100;
+            } else if (fullPathLower.includes(term)) {
+              score += 80;
+            } else {
+              score += 30;
+            }
+          }
+          return { item, index, score };
+        })
+        .sort((a, b) => b.score - a.score || a.index - b.index)
+        .map((match) => match.item);
     }
 
     const rawQuery =
@@ -1437,7 +1510,12 @@ function App(): JSX.Element {
         ? quickAccessQuery.trimStart().slice(1)
         : quickAccessQuery;
     const query = rawQuery.trim();
-    const sourceItems = effectivePaletteMode === 'command' ? commandPaletteItems : quickAccessPaletteItems;
+    const sourceItems =
+      effectivePaletteMode === 'command'
+        ? commandPaletteItems
+        : effectivePaletteMode === 'workspace'
+        ? workspacePaletteItems
+        : quickAccessPaletteItems;
 
     if (!query) {
       return sourceItems;
@@ -1450,7 +1528,7 @@ function App(): JSX.Element {
       .filter((match) => match.score > 0)
       .sort((first, second) => second.score - first.score || first.index - second.index)
       .map((match) => match.item);
-  }, [commandPaletteItems, effectivePaletteMode, quickAccessPaletteItems, quickAccessQuery, fileSearchResults]);
+  }, [commandPaletteItems, workspacePaletteItems, effectivePaletteMode, quickAccessPaletteItems, quickAccessQuery, fileSearchResults]);
 
   const handleSaveQuickAccessItem = useCallback((item: QuickAccessItem) => {
     const name = item.name.trim();
@@ -1772,6 +1850,7 @@ function App(): JSX.Element {
           onOpenFile={(filePath) => {
             setActiveEditorFilePath(filePath);
             setActiveEditorLineNumber(undefined);
+            setActiveEditorColumnNumber(undefined);
             setIsExplorerSidebarOpenState(true);
           }}
           onLeft={true}
@@ -1787,9 +1866,10 @@ function App(): JSX.Element {
                     <CurrentFolderTree
                       rootPath={activePaneCwd}
                       onClose={() => {}}
-                      onOpenFile={(path, line) => {
+                      onOpenFile={(path: string, line?: number, column?: number) => {
                         setActiveEditorFilePath(path);
                         setActiveEditorLineNumber(line);
+                        setActiveEditorColumnNumber(column);
                         setIsExplorerSidebarOpen(true);
                       }}
                       activeFilePath={activeEditorFilePath}
@@ -1798,9 +1878,10 @@ function App(): JSX.Element {
                     <SearchPanel
                       rootPath={activePaneCwd}
                       onClose={() => {}}
-                      onOpenFile={(path, line) => {
+                      onOpenFile={(path: string, line?: number, column?: number) => {
                         setActiveEditorFilePath(path);
                         setActiveEditorLineNumber(line);
+                        setActiveEditorColumnNumber(column);
                         setIsExplorerSidebarOpen(true);
                       }}
                       onCommitSearchHighlight={handleCommitSearchHighlight}
@@ -1915,10 +1996,12 @@ function App(): JSX.Element {
           <FileEditorWorkspace
             activeFilePath={activeEditorFilePath}
             activeLineNumber={activeEditorLineNumber}
+            activeColumnNumber={activeEditorColumnNumber}
             rootPath={activePaneCwd}
             onActiveFileChange={(path) => {
               setActiveEditorFilePath(path);
               setActiveEditorLineNumber(undefined);
+              setActiveEditorColumnNumber(undefined);
             }}
             globalSearchQuery={globalSearchQuery}
             globalSearchCaseSensitive={globalSearchCaseSensitive}

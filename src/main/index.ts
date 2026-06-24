@@ -420,6 +420,13 @@ function createWindow(): void {
     mainWindow.loadFile(join(__dirname, '../renderer/index.html'));
   }
 
+  mainWindow.webContents.on('before-input-event', (event, input) => {
+    if (input.type === 'keyDown' && (input.meta || input.control) && input.key.toLowerCase() === 'w') {
+      event.preventDefault();
+      mainWindow?.webContents.send('shortcut:close-tab');
+    }
+  });
+
   mainWindow.on('closed', () => {
     mainWindow = null;
     if (agentDoneOverlayWindow) {

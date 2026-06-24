@@ -469,8 +469,9 @@
   opacity: 0;
   position: absolute;
   right: 0;
-  background: #080a0d;
   z-index: 2;
+  transition: opacity 0.15s ease;
+  padding-left: 0;
 }
 
 .git-file-row:hover .git-file-row-actions {
@@ -479,6 +480,7 @@
 }
 
 .git-file-row.selected .git-file-row-actions {
+  opacity: 1;
   background: #21262d;
 }
 
@@ -498,6 +500,15 @@
 .git-row-action-btn:hover {
   background: #30363d;
   color: #f0f6fc;
+}
+
+.git-file-row.selected .git-row-action-btn {
+  color: #e6edf3;
+}
+
+.git-file-row.selected .git-row-action-btn:hover {
+  background: #30363d;
+  color: #ffffff;
 }
 
 /* Diff Panel Styling */

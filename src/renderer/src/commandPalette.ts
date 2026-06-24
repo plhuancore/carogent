@@ -9,7 +9,7 @@ export type CommandPaletteItem = {
   run: () => void;
 };
 
-export type PaletteMode = 'quick-access' | 'command' | 'file';
+export type PaletteMode = 'quick-access' | 'command' | 'file' | 'workspace';
 
 function normalizeSearchValue(value: string): string {
   return value

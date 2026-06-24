@@ -2251,3 +2251,10 @@ textarea:focus-visible {
   margin-right: -10px !important;
   padding-right: 8px !important;
 }
+
+/* Force subpixel antialiasing for Monaco editor to prevent blurry/washed-out fonts */
+.monaco-editor,
+.monaco-editor * {
+  -webkit-font-smoothing: subpixel-antialiased !important;
+  -moz-osx-font-smoothing: auto !important;
+}

@@ -231,6 +231,15 @@ const terminal: TerminalApi = {
     return () => {
       ipcRenderer.removeListener('git:change', listener);
     };
+  },
+  onCloseTab: (callback: () => void): (() => void) => {
+    const listener = (): void => {
+      callback();
+    };
+    ipcRenderer.on('shortcut:close-tab', listener);
+    return () => {
+      ipcRenderer.removeListener('shortcut:close-tab', listener);
+    };
   }
 };
 

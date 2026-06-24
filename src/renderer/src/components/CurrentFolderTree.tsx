@@ -9,6 +9,7 @@ import type {
 import type { DirectoryEntry, DirectoryListResult, FindFilesResultEntry } from '../../../shared/ipcTypes';
 import { ChevronDownIcon, CloseIcon, CollapseAllIcon, FileTreeIcon, NewFileIcon, NewFolderIcon, RefreshIcon } from './AppIcons';
 import { FileIcon } from '../FileIcon';
+import { highlightTextMatches } from './QuickAccess';
 
 type TreeNodeState = {
   directory?: DirectoryListResult;
@@ -144,7 +145,7 @@ export function CurrentFolderTree({
     let query = filterQuery.trim();
     let targetLineNumber: number | undefined = undefined;
 
-    const match = query.match(/^(.*?):(\d+)$/);
+    const match = query.match(/^(.*?):(\d+)(?::(\d+))?$/);
     if (match) {
       query = match[1].trim();
       targetLineNumber = parseInt(match[2], 10);
@@ -847,7 +848,7 @@ export function CurrentFolderTree({
                     } else {
                       setActiveDirectoryPath(null);
                       let line: number | undefined = undefined;
-                      const match = filterQuery.trim().match(/^(.*?):(\d+)$/);
+                      const match = filterQuery.trim().match(/^(.*?):(\d+)(?::(\d+))?$/);
                       if (match) {
                         line = parseInt(match[2], 10);
                       }
@@ -859,9 +860,11 @@ export function CurrentFolderTree({
                   <span className="folder-tree-icon">
                     {getFileExtensionIcon(entry.name, entry.type)}
                   </span>
-                  <span className="folder-tree-name">{entry.name}</span>
+                  <span className="folder-tree-name">
+                    {highlightTextMatches(entry.name, filterQuery)}
+                  </span>
                   <span className="folder-tree-search-path" title={entry.relativeFilePath}>
-                    {entry.relativeFilePath.split(/[\\/]/).slice(0, -1).join('/') || '.'}
+                    {highlightTextMatches(entry.relativeFilePath.split(/[\\/]/).slice(0, -1).join('/') || '.', filterQuery)}
                   </span>
                 </button>
               );
