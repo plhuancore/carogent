@@ -1067,7 +1067,17 @@ app.whenReady().then(() => {
 
   ipcMain.handle('filesystem:list-directory', (_event, request: DirectoryListRequest) => listDirectory(request));
   ipcMain.handle('filesystem:get-image-preview', (_event, request: ImagePreviewRequest) => getImagePreview(request));
-  ipcMain.handle('filesystem:read-text-file', (_event, request: TextFileReadRequest) => readTextFile(request));
+  ipcMain.handle('filesystem:read-text-file', async (_event, request: TextFileReadRequest) => {
+    try {
+      return await readTextFile(request);
+    } catch (error: any) {
+      return {
+        path: request.path,
+        error: error.code || 'ERROR',
+        message: error.message || String(error)
+      };
+    }
+  });
   ipcMain.handle('filesystem:write-text-file', (_event, request: TextFileWriteRequest) => writeTextFile(request));
   ipcMain.handle('filesystem:create-entry', (_event, request: FileSystemCreateEntryRequest) => createFileSystemEntry(request));
   ipcMain.handle('filesystem:rename-entry', (_event, request: FileSystemRenameEntryRequest) => renameFileSystemEntry(request));

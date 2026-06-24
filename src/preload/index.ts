@@ -43,8 +43,13 @@ const terminal: TerminalApi = {
     ipcRenderer.invoke('filesystem:list-directory', request),
   getImagePreview: (request: { path: string }): Promise<ImagePreviewResult> =>
     ipcRenderer.invoke('filesystem:get-image-preview', request),
-  readTextFile: (request: { path: string }): Promise<TextFileReadResult> =>
-    ipcRenderer.invoke('filesystem:read-text-file', request),
+  readTextFile: async (request: { path: string }): Promise<TextFileReadResult> => {
+    const result = await ipcRenderer.invoke('filesystem:read-text-file', request);
+    if (result && result.error) {
+      throw new Error(result.message || result.error);
+    }
+    return result;
+  },
   writeTextFile: (request: { path: string; content: string }): Promise<TextFileWriteResult> =>
     ipcRenderer.invoke('filesystem:write-text-file', request),
   createFileSystemEntry: (request: FileSystemCreateEntryRequest): Promise<FileSystemCreateEntryResult> =>

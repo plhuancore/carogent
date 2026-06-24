@@ -82,6 +82,8 @@ export type TextFileReadResult = {
   path: string;
   content: string;
   modifiedAt: number;
+  error?: string;
+  message?: string;
 };
 
 export type TextFileWriteRequest = {

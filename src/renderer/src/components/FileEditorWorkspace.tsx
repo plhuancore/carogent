@@ -282,6 +282,81 @@ function findReExportPath(content: string, word: string): string | null {
   return null;
 }
 
+async function resolveAliasPath(importPath: string, rootPath: string): Promise<string[]> {
+  const aliasPrefixes = ['@/', '~/'];
+  let matchedPrefix = aliasPrefixes.find(p => importPath.startsWith(p));
+  if (!matchedPrefix) {
+    return [];
+  }
+
+  const subPath = importPath.slice(matchedPrefix.length);
+
+  try {
+    for (const configFile of ['tsconfig.json', 'jsconfig.json']) {
+      const configPath = rootPath.replace(/\\/g, '/') + '/' + configFile;
+      try {
+        const result = await window.terminalApi.readTextFile({ path: configPath });
+        if (result && result.content) {
+          const cleanJson = result.content.replace(/\/\*[\s\S]*?\*\/|([^\\:]|^)\/\/.*$/gm, '$1');
+          const config = JSON.parse(cleanJson);
+          const paths = config.compilerOptions?.paths;
+          if (paths) {
+            const key = matchedPrefix + '*';
+            const targets = paths[key];
+            if (Array.isArray(targets) && targets.length > 0) {
+              const candidates: string[] = [];
+              for (let target of targets) {
+                if (target.endsWith('*')) {
+                  target = target.slice(0, -1);
+                }
+                if (target.startsWith('./')) {
+                  target = target.slice(2);
+                }
+                candidates.push(rootPath.replace(/\\/g, '/').replace(/\/+$/, '') + '/' + target.replace(/\/+$/, '') + '/' + subPath);
+              }
+              return candidates;
+            }
+          }
+        }
+      } catch (e) {
+        // Try next config file
+      }
+    }
+  } catch (e) {
+    // Ignore
+  }
+
+  const srcPath = rootPath.replace(/\\/g, '/').replace(/\/+$/, '') + '/src/' + subPath;
+  const directPath = rootPath.replace(/\\/g, '/').replace(/\/+$/, '') + '/' + subPath;
+  return [srcPath, directPath];
+}
+
+function getImportPathAtColumn(lineText: string, column: number): { path: string; startColumn: number; endColumn: number } | null {
+  const regex = /['"]([^'"]+)['"]/g;
+  let match;
+  while ((match = regex.exec(lineText)) !== null) {
+    const startIdx = match.index;
+    const endIdx = match.index + match[0].length;
+    const clickIdx = column - 1;
+    if (clickIdx >= startIdx && clickIdx < endIdx) {
+      const pathValue = match[1];
+      const beforeString = lineText.substring(0, match.index).trim();
+      if (
+        beforeString.endsWith('from') ||
+        beforeString.startsWith('import') ||
+        beforeString.startsWith('export')
+      ) {
+        return {
+          path: pathValue,
+          startColumn: startIdx + 1,
+          endColumn: endIdx + 1
+        };
+      }
+    }
+  }
+  return null;
+}
+
 function findImportPath(content: string, word: string): string | null {
   const escapedWord = word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   const importRegex = /import\s+((?:(?!import)[\s\S])*?)\s+from\s+['"]([^'"]+)['"]/g;
@@ -303,8 +378,16 @@ async function resolveDefinition(
   currentFilePath: string,
   currentFileContent: string,
   word: string,
-  namespace?: string | null
-): Promise<{ path: string; lineNumber: number; columnNumber: number; wordLength: number; contentSnippet: string } | null> {
+  namespace?: string | null,
+  rootPath?: string
+): Promise<{
+  path: string;
+  lineNumber: number;
+  columnNumber: number;
+  wordLength: number;
+  contentSnippet: string;
+  originSelectionRange?: { startColumn: number; endColumn: number };
+} | null> {
   // CSS variable resolution
   if (word.startsWith('--')) {
     const lines = currentFileContent.split('\n');
@@ -329,8 +412,73 @@ async function resolveDefinition(
   // If there's a namespace (e.g. layout.splitPane -> namespace is 'layout', word is 'splitPane')
   if (namespace) {
     const importPath = findImportPath(currentFileContent, namespace);
-    if (importPath && importPath.startsWith('.')) {
-      let resolvedBase = resolveRelativePath(currentFilePath, importPath);
+    if (importPath) {
+      let resolvedBases: string[] = [];
+      if (importPath.startsWith('.')) {
+        resolvedBases = [resolveRelativePath(currentFilePath, importPath)];
+      } else if (rootPath && (importPath.startsWith('@/') || importPath.startsWith('~/'))) {
+        resolvedBases = await resolveAliasPath(importPath, rootPath);
+      }
+
+      for (const resolvedBase of resolvedBases) {
+        let targetFile = await tryReadImportFile(resolvedBase);
+
+        let depth = 0;
+        while (targetFile && depth < 5) {
+          const targetDef = findDefinitionInContent(targetFile.content, word);
+          if (targetDef) {
+            const lines = targetFile.content.split('\n');
+            const startLine = Math.max(0, targetDef.lineNumber - 3);
+            const endLine = Math.min(lines.length, targetDef.lineNumber + 3);
+            return {
+              path: targetFile.path,
+              lineNumber: targetDef.lineNumber,
+              columnNumber: targetDef.columnNumber,
+              wordLength,
+              contentSnippet: lines.slice(startLine, endLine).join('\n')
+            };
+          }
+
+          const nestedImport = findReExportPath(targetFile.content, word);
+          let nestedBases: string[] = [];
+          if (nestedImport) {
+            if (nestedImport.startsWith('.')) {
+              nestedBases = [resolveRelativePath(targetFile.path, nestedImport)];
+            } else if (rootPath && (nestedImport.startsWith('@/') || nestedImport.startsWith('~/'))) {
+              nestedBases = await resolveAliasPath(nestedImport, rootPath);
+            }
+          }
+
+          let nextTargetFile = null;
+          for (const nestedBase of nestedBases) {
+            nextTargetFile = await tryReadImportFile(nestedBase);
+            if (nextTargetFile) {
+              break;
+            }
+          }
+
+          if (nextTargetFile) {
+            targetFile = nextTargetFile;
+            depth++;
+          } else {
+            break;
+          }
+        }
+      }
+    }
+  }
+
+  // 1. Imports
+  const importPath = findImportPath(currentFileContent, word);
+  if (importPath) {
+    let resolvedBases: string[] = [];
+    if (importPath.startsWith('.')) {
+      resolvedBases = [resolveRelativePath(currentFilePath, importPath)];
+    } else if (rootPath && (importPath.startsWith('@/') || importPath.startsWith('~/'))) {
+      resolvedBases = await resolveAliasPath(importPath, rootPath);
+    }
+
+    for (const resolvedBase of resolvedBases) {
       let targetFile = await tryReadImportFile(resolvedBase);
 
       let depth = 0;
@@ -350,9 +498,25 @@ async function resolveDefinition(
         }
 
         const nestedImport = findReExportPath(targetFile.content, word);
-        if (nestedImport && nestedImport.startsWith('.')) {
-          resolvedBase = resolveRelativePath(targetFile.path, nestedImport);
-          targetFile = await tryReadImportFile(resolvedBase);
+        let nestedBases: string[] = [];
+        if (nestedImport) {
+          if (nestedImport.startsWith('.')) {
+            nestedBases = [resolveRelativePath(targetFile.path, nestedImport)];
+          } else if (rootPath && (nestedImport.startsWith('@/') || nestedImport.startsWith('~/'))) {
+            nestedBases = await resolveAliasPath(nestedImport, rootPath);
+          }
+        }
+
+        let nextTargetFile = null;
+        for (const nestedBase of nestedBases) {
+          nextTargetFile = await tryReadImportFile(nestedBase);
+          if (nextTargetFile) {
+            break;
+          }
+        }
+
+        if (nextTargetFile) {
+          targetFile = nextTargetFile;
           depth++;
         } else {
           break;
@@ -361,7 +525,7 @@ async function resolveDefinition(
     }
   }
 
-  // 1. Local definition
+  // 2. Local definition
   const localDef = findDefinitionInContent(currentFileContent, word);
   if (localDef) {
     const lines = currentFileContent.split('\n');
@@ -374,39 +538,6 @@ async function resolveDefinition(
       wordLength,
       contentSnippet: lines.slice(startLine, endLine).join('\n')
     };
-  }
-
-  // 2. Imports
-  const importPath = findImportPath(currentFileContent, word);
-  if (importPath && importPath.startsWith('.')) {
-    let resolvedBase = resolveRelativePath(currentFilePath, importPath);
-    let targetFile = await tryReadImportFile(resolvedBase);
-
-    let depth = 0;
-    while (targetFile && depth < 5) {
-      const targetDef = findDefinitionInContent(targetFile.content, word);
-      if (targetDef) {
-        const lines = targetFile.content.split('\n');
-        const startLine = Math.max(0, targetDef.lineNumber - 3);
-        const endLine = Math.min(lines.length, targetDef.lineNumber + 3);
-        return {
-          path: targetFile.path,
-          lineNumber: targetDef.lineNumber,
-          columnNumber: targetDef.columnNumber,
-          wordLength,
-          contentSnippet: lines.slice(startLine, endLine).join('\n')
-        };
-      }
-
-      const nestedImport = findReExportPath(targetFile.content, word);
-      if (nestedImport && nestedImport.startsWith('.')) {
-        resolvedBase = resolveRelativePath(targetFile.path, nestedImport);
-        targetFile = await tryReadImportFile(resolvedBase);
-        depth++;
-      } else {
-        break;
-      }
-    }
   }
 
   return null;
@@ -443,23 +574,26 @@ export function FileEditorWorkspace({
 
   const applyNavigation = useCallback((editor: any, pending: { path: string; line: number; column: number; wordLength: number }) => {
     const model = editor.getModel();
-    if (model && model.uri.path === pending.path) {
-      if (pending.line > 1 && model.getLineCount() < pending.line) {
-        return false;
+    if (model) {
+      const normalize = (p: string) => p.replace(/\\/g, '/').replace(/^\//, '').toLowerCase();
+      if (normalize(model.uri.path) === normalize(pending.path)) {
+        if (pending.line > 1 && model.getLineCount() < pending.line) {
+          return false;
+        }
+        editor.revealLineInCenter(pending.line);
+        if (pending.wordLength > 0) {
+          editor.setSelection({
+            startLineNumber: pending.line,
+            startColumn: pending.column,
+            endLineNumber: pending.line,
+            endColumn: pending.column + pending.wordLength
+          });
+        } else {
+          editor.setPosition({ lineNumber: pending.line, column: pending.column });
+        }
+        editor.focus();
+        return true;
       }
-      editor.revealLineInCenter(pending.line);
-      if (pending.wordLength > 0) {
-        editor.setSelection({
-          startLineNumber: pending.line,
-          startColumn: pending.column,
-          endLineNumber: pending.line,
-          endColumn: pending.column + pending.wordLength
-        });
-      } else {
-        editor.setPosition({ lineNumber: pending.line, column: pending.column });
-      }
-      editor.focus();
-      return true;
     }
     return false;
   }, []);
@@ -810,12 +944,30 @@ export function FileEditorWorkspace({
     setSelectedPath(normalizedPath);
     onActiveFileChange?.(normalizedPath);
 
-    if (editorRef.current) {
-      const applied = applyNavigation(editorRef.current, pendingNavigationRef.current);
-      if (applied) {
-        pendingNavigationRef.current = null;
+    let attempts = 0;
+    const checkAndApply = () => {
+      if (!pendingNavigationRef.current) return;
+
+      const normalize = (p: string) => p.replace(/\\/g, '/').replace(/^\//, '').toLowerCase();
+      if (normalize(pendingNavigationRef.current.path) !== normalize(normalizedPath)) {
+        return;
       }
-    }
+
+      if (editorRef.current) {
+        const applied = applyNavigation(editorRef.current, pendingNavigationRef.current);
+        if (applied) {
+          pendingNavigationRef.current = null;
+          return;
+        }
+      }
+
+      attempts++;
+      if (attempts < 20 && pendingNavigationRef.current) {
+        setTimeout(checkAndApply, 50);
+      }
+    };
+
+    setTimeout(checkAndApply, 0);
   }, [loadFile, onActiveFileChange, applyNavigation]);
 
   const registerMonacoProviders = (monaco: Monaco) => {
@@ -825,11 +977,39 @@ export function FileEditorWorkspace({
     (monaco as any).__providersRegistered = true;
 
     const resolveDef = async (model: any, position: any) => {
+      const lineText = model.getLineContent(position.lineNumber);
+
+      const importPathAtClick = getImportPathAtColumn(lineText, position.column);
+      if (importPathAtClick) {
+        let resolvedBases: string[] = [];
+        if (importPathAtClick.path.startsWith('.')) {
+          const filePath = model.uri.path;
+          resolvedBases = [resolveRelativePath(filePath, importPathAtClick.path)];
+        } else if (rootPath && (importPathAtClick.path.startsWith('@/') || importPathAtClick.path.startsWith('~/'))) {
+          resolvedBases = await resolveAliasPath(importPathAtClick.path, rootPath);
+        }
+
+        for (const resolvedBase of resolvedBases) {
+          const targetFile = await tryReadImportFile(resolvedBase);
+          if (targetFile) {
+            return {
+              path: targetFile.path,
+              lineNumber: 1,
+              columnNumber: 1,
+              wordLength: importPathAtClick.path.length,
+              contentSnippet: targetFile.content.split('\n').slice(0, 5).join('\n'),
+              originSelectionRange: {
+                startColumn: importPathAtClick.startColumn,
+                endColumn: importPathAtClick.endColumn
+              }
+            };
+          }
+        }
+      }
+
       let wordInfo = model.getWordAtPosition(position);
       if (!wordInfo) return null;
       let word = wordInfo.word;
-
-      const lineText = model.getLineContent(position.lineNumber);
       if (model.getLanguageId() === 'css' || model.getLanguageId() === 'scss') {
         const hoverIndex = position.column - 1;
         const beforeWord = lineText.substring(0, hoverIndex + word.length);
@@ -847,7 +1027,7 @@ export function FileEditorWorkspace({
       const nsMatch = beforeWord.match(/\b([a-zA-Z0-9_$]+)\s*\.\s*$/);
       const namespace = nsMatch ? nsMatch[1] : null;
 
-      return await resolveDefinition(filePath, fileContent, word, namespace);
+      return await resolveDefinition(filePath, fileContent, word, namespace, rootPath);
     };
 
     const languages = ['typescript', 'javascript', 'css'];
@@ -857,14 +1037,32 @@ export function FileEditorWorkspace({
           const def = await resolveDef(model, position);
           if (!def) return null;
 
+          const targetUri = monaco.Uri.file(def.path);
+          const targetRange = new monaco.Range(
+            def.lineNumber,
+            def.columnNumber || 1,
+            def.lineNumber,
+            (def.columnNumber || 1) + (def.wordLength || 0)
+          );
+
+          if (def.originSelectionRange) {
+            return [
+              {
+                uri: targetUri,
+                range: targetRange,
+                originSelectionRange: new monaco.Range(
+                  position.lineNumber,
+                  def.originSelectionRange.startColumn,
+                  position.lineNumber,
+                  def.originSelectionRange.endColumn
+                )
+              }
+            ] as any;
+          }
+
           return {
-            uri: monaco.Uri.file(def.path),
-            range: new monaco.Range(
-              def.lineNumber,
-              def.columnNumber || 1,
-              def.lineNumber,
-              (def.columnNumber || 1) + (def.wordLength || 0)
-            )
+            uri: targetUri,
+            range: targetRange
           };
         }
       });

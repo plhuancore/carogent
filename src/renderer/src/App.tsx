@@ -573,6 +573,7 @@ function App(): JSX.Element {
                 : workspace
             )
           );
+          setIsExplorerSidebarOpenState(false);
 
           const session = sessions.current.get(request.paneId);
           if (session) {
@@ -653,7 +654,7 @@ function App(): JSX.Element {
         complete({ error: error instanceof Error ? error.message : String(error) });
       }
     });
-  }, [activeWorkspaceId, getAgentDoneItem, updateActiveWorkspace]);
+  }, [activeWorkspaceId, getAgentDoneItem, updateActiveWorkspace, setIsExplorerSidebarOpenState]);
 
   useEffect(() => {
     const stopData = window.terminalApi.onData(({ id, data }) => {
@@ -1303,6 +1304,37 @@ function App(): JSX.Element {
           closeQuickAccess();
         }
       });
+
+      items.push({
+        id: 'insert-latest-image',
+        title: 'Pinned Folder: Insert Latest Image Path',
+        subtitle: pinnedDirectory || 'No folder pinned',
+        keywords: 'pinned folder insert latest image path filename shell terminal input picture photo png jpg jpeg gif webp bmp svg',
+        icon: 'folder',
+        run: async () => {
+          if (!pinnedDirectory) {
+            alert('Please pin a folder first in the sidebar.');
+            closeQuickAccess();
+            return;
+          }
+          try {
+            const result = await window.terminalApi.listDirectory({ path: pinnedDirectory });
+            const imageEntries = result.entries.filter(
+              (entry) => entry.type === 'file' && /\.(png|jpe?g|gif|webp|bmp|svg)$/i.test(entry.name)
+            );
+            if (imageEntries.length === 0) {
+              alert(`No images found in the pinned folder: ${pinnedDirectory}`);
+              closeQuickAccess();
+              return;
+            }
+            const latestImage = imageEntries[0];
+            handleInsertPath(latestImage.path);
+          } catch (err: any) {
+            alert('Failed to insert latest image: ' + (err?.message || err));
+          }
+          closeQuickAccess();
+        }
+      });
     }
 
     return items;
@@ -1324,7 +1356,9 @@ function App(): JSX.Element {
     activeWorkspace.maximizedPaneId,
     handleToggleMaximize,
     leftSidebarTab,
-    setLeftSidebarTab
+    setLeftSidebarTab,
+    pinnedDirectory,
+    handleInsertPath
   ]);
   const effectivePaletteMode: PaletteMode = quickAccessQuery.trimStart().startsWith('>')
     ? 'command'
@@ -1538,13 +1572,14 @@ function App(): JSX.Element {
       setWorkspaces((current) =>
         current.map((workspace) => (workspace.id === workspaceId ? { ...workspace, activePaneId: paneId } : workspace))
       );
+      setIsExplorerSidebarOpenState(false);
 
       const session = sessions.current.get(paneId);
       if (session) {
         window.setTimeout(() => session.terminal.focus(), 0);
       }
     });
-  }, []);
+  }, [setIsExplorerSidebarOpenState]);
 
   const renderSettingsMenu = (closeMenu: () => void) => (
     <div className="settings-menu" role="menu">
