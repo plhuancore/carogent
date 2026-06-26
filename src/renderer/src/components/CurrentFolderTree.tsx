@@ -112,6 +112,8 @@ function getFileExtensionIcon(name: string, type: 'file' | 'directory', isOpen?:
   return <FileIcon filename={name} isDirectory={type === 'directory'} isOpen={isOpen} />;
 }
 
+let globalCopiedPath: string | null = null;
+
 export function CurrentFolderTree({
   rootPath,
   onClose,
@@ -121,6 +123,14 @@ export function CurrentFolderTree({
   const [nodes, setNodes] = useState<Record<string, TreeNodeState>>({});
   const lastScrolledPathRef = useRef<string | null>(null);
   const directoryRequestIdsRef = useRef<Record<string, number>>({});
+
+  const [copiedPath, setCopiedPathState] = useState<string | null>(globalCopiedPath);
+  const panelRef = useRef<HTMLDivElement | null>(null);
+
+  const setCopiedPath = (path: string | null): void => {
+    globalCopiedPath = path;
+    setCopiedPathState(path);
+  };
 
   const [filterQuery, setFilterQuery] = useState('');
   const [filterResults, setFilterResults] = useState<FindFilesResultEntry[]>([]);
@@ -228,6 +238,78 @@ export function CurrentFolderTree({
       });
     }
   }, [renameDraft?.path]);
+
+  const handleCopySelected = (): void => {
+    const selected = activeDirectoryPath || activeFilePath;
+    if (selected) {
+      setCopiedPath(selected);
+    }
+  };
+
+  const handlePasteSelected = (): void => {
+    if (!copiedPath) return;
+
+    let destParentPath = rootPath;
+    if (activeDirectoryPath) {
+      destParentPath = activeDirectoryPath;
+    } else if (activeFilePath) {
+      destParentPath = getParentPath(activeFilePath);
+    }
+
+    if (!destParentPath) {
+      destParentPath = rootPath;
+    }
+
+    setCreateError(undefined);
+
+    window.terminalApi
+      .copyFileSystemEntry({ srcPath: copiedPath, destParentPath })
+      .then((entry) => {
+        return loadDirectory(destParentPath, true).then(() => {
+          if (entry.type === 'file') {
+            setActiveDirectoryPath(null);
+            onOpenFile(entry.path);
+          } else {
+            setActiveDirectoryPath(entry.path);
+          }
+        });
+      })
+      .catch((error: unknown) => {
+        setCreateError(error instanceof Error ? error.message : String(error));
+      });
+  };
+
+  const handlePasteTo = (targetEntry: DirectoryEntry): void => {
+    if (!copiedPath) return;
+
+    const isDir = targetEntry.type === 'directory';
+    const destParentPath = isDir ? targetEntry.path : getParentPath(targetEntry.path);
+
+    if (!destParentPath) {
+      setCreateError('Invalid paste target.');
+      return;
+    }
+
+    setCreateError(undefined);
+
+    window.terminalApi
+      .copyFileSystemEntry({ srcPath: copiedPath, destParentPath })
+      .then((entry) => {
+        return loadDirectory(destParentPath, true).then(() => {
+          if (entry.type === 'file') {
+            setActiveDirectoryPath(null);
+            onOpenFile(entry.path);
+          } else {
+            setActiveDirectoryPath(entry.path);
+          }
+        });
+      })
+      .catch((error: unknown) => {
+        setCreateError(error instanceof Error ? error.message : String(error));
+      });
+  };
+
+
 
   const activeRefCallback = useCallback(
     (node: HTMLButtonElement | null) => {
@@ -660,14 +742,16 @@ export function CurrentFolderTree({
     entry.type === 'directory' ? entry.path : getParentPath(entry.path)
   );
 
-  const deleteEntry = (entry: DirectoryEntry): void => {
+  const deleteEntry = (entry: DirectoryEntry, skipConfirm = false): void => {
     if (getPathKey(entry.path) === getPathKey(rootPath)) {
       return;
     }
 
-    const confirmed = window.confirm(`Delete ${entry.name}?`);
-    if (!confirmed) {
-      return;
+    if (!skipConfirm) {
+      const confirmed = window.confirm(`Delete ${entry.name}?`);
+      if (!confirmed) {
+        return;
+      }
     }
 
     const parentPath = getParentPath(entry.path);
@@ -697,6 +781,60 @@ export function CurrentFolderTree({
         setCreateError(error instanceof Error ? error.message : String(error));
       });
   };
+
+  const handleDeleteSelected = (skipConfirm = false): void => {
+    const selectedPath = activeDirectoryPath || activeFilePath;
+    if (!selectedPath) return;
+
+    const isDir = Boolean(activeDirectoryPath);
+    const entry: DirectoryEntry = {
+      name: getFolderName(selectedPath),
+      path: selectedPath,
+      type: isDir ? 'directory' : 'file'
+    };
+
+    deleteEntry(entry, skipConfirm);
+  };
+
+  useEffect(() => {
+    const handleGlobalKeyDown = (event: KeyboardEvent): void => {
+      const target = event.target as HTMLElement;
+      if (
+        target.tagName === 'INPUT' ||
+        target.tagName === 'TEXTAREA' ||
+        target.isContentEditable ||
+        target.closest('.monaco-editor') ||
+        target.closest('.terminal')
+      ) {
+        return;
+      }
+
+      const isExplorerFocused = document.activeElement && (
+        document.activeElement.closest('.folder-tree-panel') ||
+        document.activeElement.closest('.sidebar')
+      );
+
+      if (!isExplorerFocused) {
+        return;
+      }
+
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'c') {
+        event.preventDefault();
+        handleCopySelected();
+      } else if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'v') {
+        event.preventDefault();
+        handlePasteSelected();
+      } else if (event.key === 'Delete') {
+        event.preventDefault();
+        handleDeleteSelected(true);
+      }
+    };
+
+    window.addEventListener('keydown', handleGlobalKeyDown);
+    return () => {
+      window.removeEventListener('keydown', handleGlobalKeyDown);
+    };
+  }, [copiedPath, activeDirectoryPath, activeFilePath, rootPath]);
 
   const renderEntry = (entry: DirectoryEntry, depth: number): JSX.Element => {
     const isDirectory = entry.type === 'directory';
@@ -796,7 +934,16 @@ export function CurrentFolderTree({
   const hasExpandedNode = Object.values(nodes).some((node) => node.expanded);
 
   return (
-    <section className="folder-tree-panel">
+    <section
+      ref={panelRef}
+      className="folder-tree-panel"
+      tabIndex={-1}
+      onClick={(event) => {
+        if (event.target === event.currentTarget || (event.target as HTMLElement).classList.contains('explorer-panes-container')) {
+          panelRef.current?.focus();
+        }
+      }}
+    >
       <div className="explorer-viewlet-header">
         <span className="explorer-viewlet-title">Explorer</span>
       </div>
@@ -1014,6 +1161,26 @@ export function CurrentFolderTree({
             }}
           >
             New Folder
+          </button>
+          <div className="folder-tree-context-separator" />
+          <button
+            type="button"
+            onClick={() => {
+              setCopiedPath(contextMenu.entry.path);
+              setContextMenu(null);
+            }}
+          >
+            Copy
+          </button>
+          <button
+            type="button"
+            disabled={!copiedPath}
+            onClick={() => {
+              handlePasteTo(contextMenu.entry);
+              setContextMenu(null);
+            }}
+          >
+            Paste
           </button>
           <div className="folder-tree-context-separator" />
           <button

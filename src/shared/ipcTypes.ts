@@ -115,6 +115,13 @@ export type FileSystemDeleteEntryRequest = {
   path: string;
 };
 
+export type FileSystemCopyEntryRequest = {
+  srcPath: string;
+  destParentPath: string;
+};
+
+export type FileSystemCopyEntryResult = DirectoryEntry;
+
 export type FileSearchRequest = {
   rootPath: string;
   query: string;
@@ -305,6 +312,7 @@ export type TerminalApi = {
   createFileSystemEntry: (request: FileSystemCreateEntryRequest) => Promise<FileSystemCreateEntryResult>;
   renameFileSystemEntry: (request: FileSystemRenameEntryRequest) => Promise<FileSystemRenameEntryResult>;
   deleteFileSystemEntry: (request: FileSystemDeleteEntryRequest) => Promise<void>;
+  copyFileSystemEntry: (request: FileSystemCopyEntryRequest) => Promise<FileSystemCopyEntryResult>;
   searchFiles: (request: FileSearchRequest) => Promise<FileSearchResult>;
   findFiles: (request: FindFilesRequest) => Promise<FindFilesResult>;
   openInVSCode: (request: OpenVSCodeRequest) => Promise<void>;
@@ -360,4 +368,5 @@ export type TerminalApi = {
   gitCommitFileDiff: (request: { cwd: string; hash: string; filePath: string }) => Promise<GitDiffResult>;
   onGitChange: (callback: () => void) => () => void;
   onCloseTab: (callback: () => void) => () => void;
+  logToServer: (message: string) => Promise<void>;
 };

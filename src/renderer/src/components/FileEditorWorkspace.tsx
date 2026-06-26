@@ -24,6 +24,21 @@ function parseGitDiffUrl(urlStr: string): { filePath: string; searchParams: URLS
   return { filePath, searchParams };
 }
 
+const logMessage = (msg: string, ...args: any[]) => {
+  const formatted = `${msg} ${args.map(a => typeof a === 'object' ? JSON.stringify(a) : String(a)).join(' ')}`;
+  console.log(msg, ...args);
+  if (window.terminalApi && typeof window.terminalApi.logToServer === 'function') {
+    window.terminalApi.logToServer(formatted).catch(() => {});
+  }
+};
+
+const normalizePath = (p: string) => {
+  let cleaned = p.replace(/\\/g, '/').replace(/^\//, '');
+  cleaned = cleaned.replace(/^[a-zA-Z]:/, '');
+  cleaned = cleaned.replace(/^\//, '');
+  return cleaned.toLowerCase();
+};
+
 type EditorTab = {
   path: string;
   name: string;
@@ -44,7 +59,7 @@ type FileEditorWorkspaceProps = {
   activeLineNumber?: number;
   activeColumnNumber?: number;
   rootPath: string;
-  onActiveFileChange?: (path: string) => void;
+  onActiveFileChange?: (path: string, lineNumber?: number, columnNumber?: number) => void;
   onActiveFilePathChange?: (path: string) => void;
   globalSearchQuery?: string;
   globalSearchCaseSensitive?: boolean;
@@ -627,6 +642,7 @@ export function FileEditorWorkspace({
   const [activeDiff, setActiveDiff] = useState<EditorTab | null>(null);
 
   const editorRef = useRef<any>(null);
+  const diffEditorRef = useRef<any>(null);
   const monacoRef = useRef<Monaco | null>(null);
   const decorationsRef = useRef<string[]>([]);
   const pendingNavigationRef = useRef<{
@@ -638,29 +654,105 @@ export function FileEditorWorkspace({
 
   const applyNavigation = useCallback((editor: any, pending: { path: string; line: number; column: number; wordLength: number }) => {
     const model = editor.getModel();
+    logMessage('[applyNavigation] called with:', pending, 'hasModel:', !!model);
     if (model) {
-      const normalize = (p: string) => p.replace(/\\/g, '/').replace(/^\//, '').toLowerCase();
-      if (normalize(model.uri.path) === normalize(pending.path)) {
+      const modelUriPath = model.uri.path;
+      logMessage('[applyNavigation] comparing:', {
+        modelUriPath,
+        normalizedModelUriPath: normalizePath(modelUriPath),
+        pendingPath: pending.path,
+        normalizedPendingPath: normalizePath(pending.path)
+      });
+      if (normalizePath(modelUriPath) === normalizePath(pending.path)) {
         if (pending.line > 1 && model.getLineCount() < pending.line) {
+          logMessage('[applyNavigation] line requested is beyond line count:', model.getLineCount());
           return false;
         }
-        editor.revealLineInCenter(pending.line);
-        if (pending.wordLength > 0) {
-          editor.setSelection({
-            startLineNumber: pending.line,
-            startColumn: pending.column,
-            endLineNumber: pending.line,
-            endColumn: pending.column + pending.wordLength
-          });
-        } else {
-          editor.setPosition({ lineNumber: pending.line, column: pending.column });
-        }
-        editor.focus();
+
+        const apply = () => {
+          logMessage('[applyNavigation] applying line position:', pending.line, 'column:', pending.column);
+          if (pending.wordLength > 0) {
+            editor.setSelection({
+              startLineNumber: pending.line,
+              startColumn: pending.column,
+              endLineNumber: pending.line,
+              endColumn: pending.column + pending.wordLength
+            });
+            editor.revealRangeInCenter({
+              startLineNumber: pending.line,
+              startColumn: pending.column,
+              endLineNumber: pending.line,
+              endColumn: pending.column + pending.wordLength
+            });
+          } else {
+            editor.setPosition({ lineNumber: pending.line, column: pending.column });
+            editor.revealPositionInCenter({ lineNumber: pending.line, column: pending.column });
+          }
+          editor.focus();
+        };
+
+        // Apply immediately
+        apply();
+
+        // Schedule multiple staggered applies to override any asynchronous Monaco model/layout resets
+        const delays = [25, 75, 150, 300, 600, 1000];
+        delays.forEach((delay) => {
+          setTimeout(() => {
+            const currentModel = editor.getModel();
+            if (currentModel && normalizePath(currentModel.uri.path) === normalizePath(pending.path)) {
+              logMessage(`[applyNavigation] staggered apply running at ${delay}ms`);
+              apply();
+            }
+          }, delay);
+        });
+
         return true;
       }
     }
     return false;
   }, []);
+
+  const checkAndApplyNavigation = useCallback((editor: any, pending: any) => {
+    logMessage('[checkAndApplyNavigation] editor exists:', !!editor, 'pending:', pending);
+    if (!editor || !pending) return;
+
+    let attempts = 0;
+    const maxAttempts = 50;
+
+    const run = () => {
+      const currentPending = pendingNavigationRef.current;
+      if (!currentPending) {
+        logMessage('[checkAndApplyNavigation] currentPending is null');
+        return;
+      }
+
+      logMessage('[checkAndApplyNavigation] checking:', {
+        currentPendingPathNorm: normalizePath(currentPending.path),
+        pendingPathNorm: normalizePath(pending.path),
+        selectedPathRefNorm: normalizePath(selectedPathRef.current || '')
+      });
+      if (normalizePath(currentPending.path) !== normalizePath(pending.path) || normalizePath(currentPending.path) !== normalizePath(selectedPathRef.current)) {
+        logMessage('[checkAndApplyNavigation] path check failed. Canceling run.');
+        return;
+      }
+
+      const applied = applyNavigation(editor, currentPending);
+      logMessage('[checkAndApplyNavigation] applied result:', applied, 'attempts:', attempts);
+      if (applied) {
+        pendingNavigationRef.current = null;
+        return;
+      }
+
+      attempts++;
+      if (attempts < maxAttempts) {
+        setTimeout(run, 50);
+      } else {
+        logMessage('[checkAndApplyNavigation] max attempts reached');
+      }
+    };
+
+    setTimeout(run, 0);
+  }, [applyNavigation]);
 
   const [zoom, setZoom] = useState(1);
   const [pan, setPan] = useState({ x: 0, y: 0 });
@@ -686,6 +778,7 @@ export function FileEditorWorkspace({
   useEffect(() => {
     return () => {
       editorRef.current = null;
+      diffEditorRef.current = null;
       monacoRef.current = null;
     };
   }, []);
@@ -702,6 +795,7 @@ export function FileEditorWorkspace({
     }
 
     setSelectedPath(nextPath);
+    selectedPathRef.current = nextPath; // sync update so handleEditorDidMount sees the correct path
     const existingTab = tabsRef.current.find((tab) => tab.path === nextPath);
 
     if (existingTab && !forceReload && !existingTab.error) {
@@ -907,17 +1001,9 @@ export function FileEditorWorkspace({
   // Handle pending navigation to definitions once the file has loaded
   useEffect(() => {
     if (selectedTab && !selectedTab.loading && pendingNavigationRef.current) {
-      const pending = pendingNavigationRef.current;
-      if (pending.path === selectedTab.path) {
-        if (editorRef.current) {
-          const applied = applyNavigation(editorRef.current, pending);
-          if (applied) {
-            pendingNavigationRef.current = null;
-          }
-        }
-      }
+      checkAndApplyNavigation(editorRef.current, pendingNavigationRef.current);
     }
-  }, [selectedTab, selectedTab?.loading, applyNavigation]);
+  }, [selectedTab, selectedTab?.loading, selectedPath, applyNavigation, checkAndApplyNavigation]);
 
   const saveFile = useCallback((path = selectedPath): void => {
     const tab = tabs.find((item) => item.path === path);
@@ -1315,6 +1401,7 @@ export function FileEditorWorkspace({
   };
 
   const handleDiffEditorDidMount = (editor: any, monaco: Monaco) => {
+    diffEditorRef.current = editor;
     monacoRef.current = monaco;
     initializeMonaco(monaco);
     monaco.editor.setTheme(EDITOR_THEME);
@@ -1349,72 +1436,95 @@ export function FileEditorWorkspace({
 
     editor.onDidChangeModel(() => {
       if (pendingNavigationRef.current) {
-        window.requestAnimationFrame(() => {
-          if (pendingNavigationRef.current) {
-            const applied = applyNavigation(editor, pendingNavigationRef.current);
-            if (applied) {
-              pendingNavigationRef.current = null;
-            }
-          }
-        });
+        checkAndApplyNavigation(editor, pendingNavigationRef.current);
       }
     });
+
+    if (pendingNavigationRef.current) {
+      checkAndApplyNavigation(editor, pendingNavigationRef.current);
+    }
 
     // Apply search decorations immediately on mount
     updateSearchDecorations();
   };
-
   useEffect(() => {
     decorationsRef.current = [];
   }, [selectedPath]);
 
   // Handle activeLineNumber and activeColumnNumber changes with retry polling to handle tab loading/mounting races
   useEffect(() => {
+    logMessage('[activeLineNumber-effect] triggered. activeLineNumber:', activeLineNumber, 'activeColumnNumber:', activeColumnNumber, 'activeFilePath:', activeFilePath, 'selectedPath:', selectedPath);
     if (activeLineNumber && activeLineNumber > 0) {
       const column = activeColumnNumber && activeColumnNumber > 0 ? activeColumnNumber : 1;
+      // Use activeFilePath (not selectedPath) because selectedPath may still be the old
+      // gitdiff:// URL when switching from diff view to a real file
+      const targetPath = activeFilePath.startsWith('gitdiff://')
+        ? parseGitDiffUrl(activeFilePath).filePath
+        : activeFilePath;
       pendingNavigationRef.current = {
-        path: selectedPath,
+        path: targetPath,
         line: activeLineNumber,
         column,
         wordLength: 0
       };
-
-      let attempts = 0;
-      const checkAndApply = () => {
-        if (!pendingNavigationRef.current) return;
-        if (pendingNavigationRef.current.path !== selectedPath) {
-          return;
-        }
-
-        if (editorRef.current) {
-          const applied = applyNavigation(editorRef.current, pendingNavigationRef.current);
-          if (applied) {
-            pendingNavigationRef.current = null;
-            return;
-          }
-        }
-
-        attempts++;
-        if (attempts < 20 && pendingNavigationRef.current) {
-          setTimeout(checkAndApply, 50);
-        }
-      };
-
-      setTimeout(checkAndApply, 0);
+      logMessage('[activeLineNumber-effect] set pendingNavigation:', pendingNavigationRef.current);
+      checkAndApplyNavigation(editorRef.current, pendingNavigationRef.current);
     }
-  }, [activeLineNumber, activeColumnNumber, selectedPath, applyNavigation]);
+  }, [activeLineNumber, activeColumnNumber, activeFilePath, selectedPath, checkAndApplyNavigation]);
 
   // Handle global search highlight decorations
   useEffect(() => {
     updateSearchDecorations();
   }, [updateSearchDecorations]);
 
-  // Handle shortcuts: Ctrl/Cmd+S saving, Ctrl/Cmd+X close tab (when not focusing input/editor/terminal)
+  // Handle shortcuts: Ctrl/Cmd+S saving, Ctrl/Cmd+X close tab, Ctrl/Cmd+J navigate to file line from diff
   useEffect(() => {
     const handleGlobalKeyDown = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 's') {
         e.preventDefault();
         saveFile();
+      } else if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'j') {
+        if (selectedPath && selectedPath.startsWith('gitdiff://')) {
+          e.preventDefault();
+          e.stopPropagation();
+          
+          const diffEditor = diffEditorRef.current;
+          if (diffEditor) {
+            const modifiedEditor = diffEditor.getModifiedEditor();
+            const originalEditor = diffEditor.getOriginalEditor();
+            
+            let activeEditor = modifiedEditor;
+            if (originalEditor.hasTextFocus()) {
+              activeEditor = originalEditor;
+            } else if (modifiedEditor.hasTextFocus()) {
+              activeEditor = modifiedEditor;
+            } else {
+              activeEditor = modifiedEditor.getPosition() ? modifiedEditor : originalEditor;
+            }
+
+            const position = activeEditor.getPosition();
+            if (position) {
+              const line = position.lineNumber;
+              const column = position.column;
+              
+              const { filePath } = parseGitDiffUrl(selectedPath);
+              logMessage('[keydown Ctrl+J] detected. selectedPath:', selectedPath, 'filePath:', filePath, 'line:', line, 'column:', column);
+              if (filePath) {
+                pendingNavigationRef.current = {
+                  path: filePath,
+                  line,
+                  column,
+                  wordLength: 0
+                };
+                logMessage('[keydown Ctrl+J] set pendingNavigationRef.current:', pendingNavigationRef.current);
+                loadFile(filePath);
+                setSelectedPath(filePath);
+                onActiveFileChange?.(filePath, line, column);
+                checkAndApplyNavigation(editorRef.current, pendingNavigationRef.current);
+              }
+            }
+          }
+        }
       } else if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'x') {
         const activeElement = document.activeElement;
         const isInput = activeElement && (
@@ -1438,7 +1548,7 @@ export function FileEditorWorkspace({
     return () => {
       window.removeEventListener('keydown', handleGlobalKeyDown, true);
     };
-  }, [saveFile, selectedPath, closeTab]);
+  }, [saveFile, selectedPath, closeTab, onActiveFileChange, loadFile, checkAndApplyNavigation]);
 
   // Listen for the Cmd/Ctrl+W shortcut from main process to close the active tab
   useEffect(() => {

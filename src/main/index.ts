@@ -7,7 +7,7 @@ import { createServer } from 'node:http';
 import type { IncomingMessage, ServerResponse, Server } from 'node:http';
 import os from 'node:os';
 import * as pty from 'node-pty';
-import { createFileSystemEntry, deleteFileSystemEntry, getImagePreview, listDirectory, readTextFile, renameFileSystemEntry, writeTextFile, searchFiles, findFiles } from './filesystem';
+import { createFileSystemEntry, deleteFileSystemEntry, getImagePreview, listDirectory, readTextFile, renameFileSystemEntry, writeTextFile, searchFiles, findFiles, copyFileSystemEntry } from './filesystem';
 import { createBrowserBridge, DEFAULT_BROWSER_URL } from './browserBridge';
 import { registerGitIpcHandlers } from './git/registerGitIpcHandlers';
 import type {
@@ -33,6 +33,7 @@ import type {
   FileSystemCreateEntryRequest,
   FileSystemDeleteEntryRequest,
   FileSystemRenameEntryRequest,
+  FileSystemCopyEntryRequest,
   FileSearchRequest,
   FindFilesRequest,
   TerminalWriteRequest
@@ -1089,6 +1090,7 @@ app.whenReady().then(() => {
   ipcMain.handle('filesystem:create-entry', (_event, request: FileSystemCreateEntryRequest) => createFileSystemEntry(request));
   ipcMain.handle('filesystem:rename-entry', (_event, request: FileSystemRenameEntryRequest) => renameFileSystemEntry(request));
   ipcMain.handle('filesystem:delete-entry', (_event, request: FileSystemDeleteEntryRequest) => deleteFileSystemEntry(request));
+  ipcMain.handle('filesystem:copy-entry', (_event, request: FileSystemCopyEntryRequest) => copyFileSystemEntry(request));
   ipcMain.handle('filesystem:search-files', (_event, request: FileSearchRequest) => searchFiles(request));
   ipcMain.handle('filesystem:find-files', (_event, request: FindFilesRequest) => findFiles(request));
   ipcMain.handle('workspace:open-vscode', (_event, request: OpenVSCodeRequest = {}) => openVSCode(request));
@@ -1169,6 +1171,10 @@ app.whenReady().then(() => {
 
     mainWindow?.show();
     mainWindow?.focus();
+  });
+
+  ipcMain.handle('log-to-server', (_event, message: string) => {
+    console.log('[RendererLog]', message);
   });
 
   ipcMain.handle('terminal:create', (_event, request: TerminalCreateRequest = {}) => {

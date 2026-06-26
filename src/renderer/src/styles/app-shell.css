@@ -766,6 +766,17 @@
   color: var(--color-text-strong, #ffffff);
 }
 
+.folder-tree-context-menu button:disabled {
+  color: var(--color-text-muted, #64748b);
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.folder-tree-context-menu button:disabled:hover {
+  background: transparent;
+  color: var(--color-text-muted, #64748b);
+}
+
 .folder-tree-context-menu button.is-danger {
   color: var(--color-danger, #fb7185);
 }

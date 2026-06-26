@@ -1,5 +1,5 @@
-import { dirname, extname, isAbsolute, join, relative, resolve } from 'node:path';
-import { mkdir, readFile, readdir, rename as renamePath, rm, stat, writeFile } from 'node:fs/promises';
+import { basename, dirname, extname, isAbsolute, join, relative, resolve } from 'node:path';
+import { cp, mkdir, readFile, readdir, rename as renamePath, rm, stat, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
@@ -20,6 +20,8 @@ import type {
   FileSystemDeleteEntryRequest,
   FileSystemRenameEntryRequest,
   FileSystemRenameEntryResult,
+  FileSystemCopyEntryRequest,
+  FileSystemCopyEntryResult,
   FileSearchRequest,
   FileSearchResult,
   FileSearchResultEntry,
@@ -375,6 +377,97 @@ export async function deleteFileSystemEntry(request: FileSystemDeleteEntryReques
     recursive: targetStat.isDirectory(),
     force: false
   });
+}
+
+export async function copyFileSystemEntry(request: FileSystemCopyEntryRequest): Promise<FileSystemCopyEntryResult> {
+  const srcPath = expandHomePath(request.srcPath.trim());
+  const destParentPath = expandHomePath(request.destParentPath.trim());
+
+  if (!srcPath) {
+    throw new Error('Enter a source path.');
+  }
+
+  if (!destParentPath) {
+    throw new Error('Enter a destination parent folder path.');
+  }
+
+  const srcStat = await stat(srcPath);
+
+  if (!srcStat.isDirectory() && !srcStat.isFile()) {
+    throw new Error('Source path is not a file or folder.');
+  }
+
+  const parentStat = await stat(destParentPath);
+
+  if (!parentStat.isDirectory()) {
+    throw new Error('Destination parent path is not a folder.');
+  }
+
+  const resolvedSrc = resolve(srcPath);
+  const resolvedDest = resolve(destParentPath);
+
+  // Prevent copying a directory into itself or its subdirectories
+  if (srcStat.isDirectory()) {
+    if (resolvedDest === resolvedSrc || resolvedDest.startsWith(resolvedSrc + '/') || resolvedDest.startsWith(resolvedSrc + '\\')) {
+      throw new Error('Cannot copy a folder into itself or its subfolders.');
+    }
+  }
+
+  const baseName = basename(srcPath);
+  let targetName = baseName;
+  let targetPath = join(destParentPath, targetName);
+
+  const exists = async (p: string) => {
+    try {
+      await stat(p);
+      return true;
+    } catch {
+      return false;
+    }
+  };
+
+  if (await exists(targetPath)) {
+    if (srcStat.isDirectory()) {
+      let counter = 1;
+      let candidateName = `${baseName} - Copy`;
+      let candidatePath = join(destParentPath, candidateName);
+      while (await exists(candidatePath)) {
+        counter++;
+        candidateName = `${baseName} - Copy (${counter})`;
+        candidatePath = join(destParentPath, candidateName);
+      }
+      targetName = candidateName;
+      targetPath = candidatePath;
+    } else {
+      const ext = extname(baseName);
+      const nameWithoutExt = baseName.slice(0, baseName.length - ext.length);
+      let counter = 1;
+      let candidateName = `${nameWithoutExt} - Copy${ext}`;
+      let candidatePath = join(destParentPath, candidateName);
+      while (await exists(candidatePath)) {
+        counter++;
+        candidateName = `${nameWithoutExt} - Copy (${counter})${ext}`;
+        candidatePath = join(destParentPath, candidateName);
+      }
+      targetName = candidateName;
+      targetPath = candidatePath;
+    }
+  }
+
+  await cp(srcPath, targetPath, { recursive: true });
+
+  const nextStat = await stat(targetPath);
+  const ignoredPaths = await getIgnoredEntryPaths(destParentPath, [targetPath]);
+
+  return {
+    name: targetName,
+    path: targetPath,
+    type: nextStat.isDirectory() ? 'directory' : 'file',
+    ignored: ignoredPaths.has(resolve(targetPath)),
+    size: nextStat.size,
+    createdAt: nextStat.birthtimeMs,
+    modifiedAt: nextStat.mtimeMs
+  };
 }
 
 export async function searchFiles(request: FileSearchRequest): Promise<FileSearchResult> {

@@ -1325,11 +1325,6 @@ textarea:focus-visible {
 .git-changes-scroll-area {
   background: transparent;
   padding: 6px 6px 0;
-  max-height: calc(100% - 280px);
-}
-
-.git-history-container {
-  max-height: calc(100% - 210px);
 }
 
 .git-section-header {

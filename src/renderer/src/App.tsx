@@ -1998,10 +1998,10 @@ function App(): JSX.Element {
             activeLineNumber={activeEditorLineNumber}
             activeColumnNumber={activeEditorColumnNumber}
             rootPath={activePaneCwd}
-            onActiveFileChange={(path) => {
+            onActiveFileChange={(path, line, col) => {
               setActiveEditorFilePath(path);
-              setActiveEditorLineNumber(undefined);
-              setActiveEditorColumnNumber(undefined);
+              setActiveEditorLineNumber(line);
+              setActiveEditorColumnNumber(col);
             }}
             globalSearchQuery={globalSearchQuery}
             globalSearchCaseSensitive={globalSearchCaseSensitive}

@@ -12,6 +12,8 @@ import type {
   FileSystemDeleteEntryRequest,
   FileSystemRenameEntryRequest,
   FileSystemRenameEntryResult,
+  FileSystemCopyEntryRequest,
+  FileSystemCopyEntryResult,
   ImagePreviewResult,
   RevealInFinderRequest,
   TerminalApi,
@@ -58,6 +60,8 @@ const terminal: TerminalApi = {
     ipcRenderer.invoke('filesystem:rename-entry', request),
   deleteFileSystemEntry: (request: FileSystemDeleteEntryRequest): Promise<void> =>
     ipcRenderer.invoke('filesystem:delete-entry', request),
+  copyFileSystemEntry: (request: FileSystemCopyEntryRequest): Promise<FileSystemCopyEntryResult> =>
+    ipcRenderer.invoke('filesystem:copy-entry', request),
   searchFiles: (request: FileSearchRequest): Promise<FileSearchResult> =>
     ipcRenderer.invoke('filesystem:search-files', request),
   findFiles: (request: FindFilesRequest): Promise<FindFilesResult> =>
@@ -240,7 +244,9 @@ const terminal: TerminalApi = {
     return () => {
       ipcRenderer.removeListener('shortcut:close-tab', listener);
     };
-  }
+  },
+  logToServer: (message: string): Promise<void> =>
+    ipcRenderer.invoke('log-to-server', message)
 };
 
 contextBridge.exposeInMainWorld('terminalApi', terminal);
