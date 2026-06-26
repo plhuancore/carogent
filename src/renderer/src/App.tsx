@@ -292,7 +292,7 @@ function App(): JSX.Element {
     let latestWidth = leftSidebarWidth;
 
     const handlePointerMove = (moveEvent: PointerEvent) => {
-      const newWidth = moveEvent.clientX;
+      const newWidth = moveEvent.clientX - 46;
       const constrainedWidth = Math.max(160, Math.min(600, newWidth));
       latestWidth = constrainedWidth;
       setLeftSidebarWidth(constrainedWidth);

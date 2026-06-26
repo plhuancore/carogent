@@ -747,7 +747,7 @@ export const GitPanel: React.FC<GitPanelProps> = ({
     const handlePointerMove = (moveEvent: PointerEvent) => {
       const delta = onLeft ? (moveEvent.clientX - startX) : (startX - moveEvent.clientX);
       const newWidth = startWidth + delta;
-      const constrainedWidth = Math.max(280, Math.min(800, newWidth));
+      const constrainedWidth = Math.max(160, Math.min(600, newWidth));
       onResize(constrainedWidth);
     };
 
@@ -2013,6 +2013,36 @@ export const GitPanel: React.FC<GitPanelProps> = ({
                                   </td>
                                   <td colSpan={4} className="git-history-details-cell" style={{ padding: '8px 12px 12px 12px', background: '#0d1117', borderBottom: '1px solid #21262d' }}>
                                     <div className="git-commit-files-box" style={{ borderRadius: '6px', border: '1px solid #30363d', padding: '12px 16px', background: '#161b22', color: '#c9d1d9' }}>
+                                      {/* Commit Info Section */}
+                                      <div className="git-commit-info-section">
+                                        <div className="git-commit-info-header">
+                                          <div className="git-commit-info-hash-label">
+                                            <span className="git-commit-info-hash-label-title">Commit</span>
+                                            <span
+                                              className="git-commit-info-hash"
+                                              title="Click to copy full hash"
+                                              onClick={(e) => {
+                                                e.stopPropagation();
+                                                window.terminalApi.writeClipboardText(commit.hash);
+                                              }}
+                                            >
+                                              {commit.hash.substring(0, 8)}
+                                            </span>
+                                          </div>
+                                          <span className="git-commit-info-date">{commit.date}</span>
+                                        </div>
+                                        
+                                        <div className="git-commit-info-author">
+                                          <span className="git-commit-info-author-title">Author:</span>
+                                          <span className="git-commit-info-author-name">{commit.author}</span>
+                                        </div>
+
+                                        <div className="git-commit-info-message">
+                                          {commit.subject}
+                                        </div>
+                                      </div>
+
+                                      {/* Changed Files */}
                                       {commitFilesLoading ? (
                                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#8b949e' }}>
                                           <div className="git-spinner" style={{ width: '14px', height: '14px' }}></div>

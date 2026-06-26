@@ -24,14 +24,6 @@ function parseGitDiffUrl(urlStr: string): { filePath: string; searchParams: URLS
   return { filePath, searchParams };
 }
 
-const logMessage = (msg: string, ...args: any[]) => {
-  const formatted = `${msg} ${args.map(a => typeof a === 'object' ? JSON.stringify(a) : String(a)).join(' ')}`;
-  console.log(msg, ...args);
-  if (window.terminalApi && typeof window.terminalApi.logToServer === 'function') {
-    window.terminalApi.logToServer(formatted).catch(() => {});
-  }
-};
-
 const normalizePath = (p: string) => {
   let cleaned = p.replace(/\\/g, '/').replace(/^\//, '');
   cleaned = cleaned.replace(/^[a-zA-Z]:/, '');
@@ -654,23 +646,14 @@ export function FileEditorWorkspace({
 
   const applyNavigation = useCallback((editor: any, pending: { path: string; line: number; column: number; wordLength: number }) => {
     const model = editor.getModel();
-    logMessage('[applyNavigation] called with:', pending, 'hasModel:', !!model);
     if (model) {
       const modelUriPath = model.uri.path;
-      logMessage('[applyNavigation] comparing:', {
-        modelUriPath,
-        normalizedModelUriPath: normalizePath(modelUriPath),
-        pendingPath: pending.path,
-        normalizedPendingPath: normalizePath(pending.path)
-      });
       if (normalizePath(modelUriPath) === normalizePath(pending.path)) {
         if (pending.line > 1 && model.getLineCount() < pending.line) {
-          logMessage('[applyNavigation] line requested is beyond line count:', model.getLineCount());
           return false;
         }
 
         const apply = () => {
-          logMessage('[applyNavigation] applying line position:', pending.line, 'column:', pending.column);
           if (pending.wordLength > 0) {
             editor.setSelection({
               startLineNumber: pending.line,
@@ -700,7 +683,6 @@ export function FileEditorWorkspace({
           setTimeout(() => {
             const currentModel = editor.getModel();
             if (currentModel && normalizePath(currentModel.uri.path) === normalizePath(pending.path)) {
-              logMessage(`[applyNavigation] staggered apply running at ${delay}ms`);
               apply();
             }
           }, delay);
@@ -713,7 +695,6 @@ export function FileEditorWorkspace({
   }, []);
 
   const checkAndApplyNavigation = useCallback((editor: any, pending: any) => {
-    logMessage('[checkAndApplyNavigation] editor exists:', !!editor, 'pending:', pending);
     if (!editor || !pending) return;
 
     let attempts = 0;
@@ -722,22 +703,14 @@ export function FileEditorWorkspace({
     const run = () => {
       const currentPending = pendingNavigationRef.current;
       if (!currentPending) {
-        logMessage('[checkAndApplyNavigation] currentPending is null');
         return;
       }
 
-      logMessage('[checkAndApplyNavigation] checking:', {
-        currentPendingPathNorm: normalizePath(currentPending.path),
-        pendingPathNorm: normalizePath(pending.path),
-        selectedPathRefNorm: normalizePath(selectedPathRef.current || '')
-      });
       if (normalizePath(currentPending.path) !== normalizePath(pending.path) || normalizePath(currentPending.path) !== normalizePath(selectedPathRef.current)) {
-        logMessage('[checkAndApplyNavigation] path check failed. Canceling run.');
         return;
       }
 
       const applied = applyNavigation(editor, currentPending);
-      logMessage('[checkAndApplyNavigation] applied result:', applied, 'attempts:', attempts);
       if (applied) {
         pendingNavigationRef.current = null;
         return;
@@ -746,8 +719,6 @@ export function FileEditorWorkspace({
       attempts++;
       if (attempts < maxAttempts) {
         setTimeout(run, 50);
-      } else {
-        logMessage('[checkAndApplyNavigation] max attempts reached');
       }
     };
 
@@ -1453,7 +1424,6 @@ export function FileEditorWorkspace({
 
   // Handle activeLineNumber and activeColumnNumber changes with retry polling to handle tab loading/mounting races
   useEffect(() => {
-    logMessage('[activeLineNumber-effect] triggered. activeLineNumber:', activeLineNumber, 'activeColumnNumber:', activeColumnNumber, 'activeFilePath:', activeFilePath, 'selectedPath:', selectedPath);
     if (activeLineNumber && activeLineNumber > 0) {
       const column = activeColumnNumber && activeColumnNumber > 0 ? activeColumnNumber : 1;
       // Use activeFilePath (not selectedPath) because selectedPath may still be the old
@@ -1467,7 +1437,6 @@ export function FileEditorWorkspace({
         column,
         wordLength: 0
       };
-      logMessage('[activeLineNumber-effect] set pendingNavigation:', pendingNavigationRef.current);
       checkAndApplyNavigation(editorRef.current, pendingNavigationRef.current);
     }
   }, [activeLineNumber, activeColumnNumber, activeFilePath, selectedPath, checkAndApplyNavigation]);
@@ -1508,7 +1477,6 @@ export function FileEditorWorkspace({
               const column = position.column;
               
               const { filePath } = parseGitDiffUrl(selectedPath);
-              logMessage('[keydown Ctrl+J] detected. selectedPath:', selectedPath, 'filePath:', filePath, 'line:', line, 'column:', column);
               if (filePath) {
                 pendingNavigationRef.current = {
                   path: filePath,
@@ -1516,7 +1484,6 @@ export function FileEditorWorkspace({
                   column,
                   wordLength: 0
                 };
-                logMessage('[keydown Ctrl+J] set pendingNavigationRef.current:', pendingNavigationRef.current);
                 loadFile(filePath);
                 setSelectedPath(filePath);
                 onActiveFileChange?.(filePath, line, column);

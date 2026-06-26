@@ -564,3 +564,82 @@
   cursor: not-allowed;
   background: #161b22;
 }
+
+/* Commit Info Section inside expanded details */
+.git-commit-info-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid #30363d;
+  margin-bottom: 12px;
+}
+
+.git-commit-info-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  justify-content: space-between;
+}
+
+.git-commit-info-hash-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.git-commit-info-hash-label-title {
+  color: #8b949e;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.git-commit-info-hash {
+  font-family: monospace;
+  background: #21262d;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 11px;
+  color: #58a6ff;
+  border: 1px solid #30363d;
+  cursor: pointer;
+  transition: background-color 0.15s ease, border-color 0.15s ease;
+}
+
+.git-commit-info-hash:hover {
+  background: #30363d;
+  border-color: #8b949e;
+}
+
+.git-commit-info-date {
+  color: #8b949e;
+  font-size: 11px;
+}
+
+.git-commit-info-author {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: #c9d1d9;
+}
+
+.git-commit-info-author-title {
+  color: #8b949e;
+}
+
+.git-commit-info-author-name {
+  font-weight: 500;
+}
+
+.git-commit-info-message {
+  font-size: 13px;
+  color: #e6edf3;
+  font-weight: 500;
+  line-height: 1.4;
+  word-break: break-word;
+  margin-top: 4px;
+  white-space: pre-wrap;
+}
+
