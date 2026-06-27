@@ -1790,7 +1790,7 @@ export function FileEditorWorkspace({
                   renderSideBySide: diffMode === 'side-by-side',
                   minimap: { enabled: true },
                   fontSize: 13,
-                  fontFamily: 'Menlo, Monaco, "Courier New", monospace',
+                  fontFamily: '"Cascadia Mono", Consolas, Menlo, Monaco, "Courier New", monospace',
                   lineHeight: 20,
                   wordWrap: 'off',
                   automaticLayout: true,
@@ -1812,7 +1812,7 @@ export function FileEditorWorkspace({
                 options={{
                   minimap: { enabled: true },
                   fontSize: 13,
-                  fontFamily: 'Menlo, Monaco, "Courier New", monospace',
+                  fontFamily: '"Cascadia Mono", Consolas, Menlo, Monaco, "Courier New", monospace',
                   lineHeight: 20,
                   wordWrap: 'off',
                   automaticLayout: true,

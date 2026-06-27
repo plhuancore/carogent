@@ -48,6 +48,7 @@ import { PinnedFolderPanel } from './components/PinnedFolderPanel';
 import { QuickAccessManager, QuickAccessPalette } from './components/QuickAccess';
 import { NodeView } from './components/TerminalViews';
 import { WorkspaceItem } from './components/WorkspaceItem';
+import { KeyboardShortcutsModal, isEventMatchingKeybinding } from './components/KeyboardShortcutsModal';
 import { scorePaletteItemMatch, type CommandPaletteItem, type PaletteMode } from './commandPalette';
 import {
   clearTerminalFitTimers,
@@ -181,6 +182,23 @@ function GitCustomIcon(): JSX.Element {
   );
 }
 
+function KeyboardShortcutIcon(): JSX.Element {
+  return (
+    <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="2" y="4" width="20" height="16" rx="2" ry="2" />
+      <line x1="6" y1="8" x2="6.01" y2="8" />
+      <line x1="10" y1="8" x2="10.01" y2="8" />
+      <line x1="14" y1="8" x2="14.01" y2="8" />
+      <line x1="18" y1="8" x2="18.01" y2="8" />
+      <line x1="6" y1="12" x2="6.01" y2="12" />
+      <line x1="10" y1="12" x2="10.01" y2="12" />
+      <line x1="14" y1="12" x2="14.01" y2="12" />
+      <line x1="18" y1="12" x2="18.01" y2="12" />
+      <line x1="7" y1="16" x2="17" y2="16" />
+    </svg>
+  );
+}
+
 function App(): JSX.Element {
   const initialStore = useMemo(() => loadWorkspaceStore(), []);
   const [workspaces, setWorkspaces] = useState<WorkspaceState[]>(() => initialStore.workspaces);
@@ -204,6 +222,32 @@ function App(): JSX.Element {
   const [fileSearchResults, setFileSearchResults] = useState<CommandPaletteItem[]>([]);
   const [settingsMenuOpen, setSettingsMenuOpen] = useState(false);
   const [mcpSettingsOpen, setMcpSettingsOpen] = useState(false);
+  const [keybindings, setKeybindings] = useState<Record<string, string>>(() => {
+    const stored = localStorage.getItem('carogent-keybindings');
+    if (stored) {
+      try {
+        return JSON.parse(stored);
+      } catch (e) {
+        // use default
+      }
+    }
+    return {
+      fileSearch: 'Ctrl+P',
+      commandPalette: 'Ctrl+Shift+P',
+      toggleExplorer: 'Ctrl+Shift+E',
+      toggleSearch: 'Ctrl+Shift+F',
+      toggleGit: 'Ctrl+Shift+G',
+      toggleWorkspace: 'Ctrl+Shift+W',
+      terminalSearch: 'Ctrl+F'
+    };
+  });
+  const [keyboardShortcutsOpen, setKeyboardShortcutsOpen] = useState(false);
+
+  const handleSaveKeybindings = useCallback((newKeybindings: Record<string, string>) => {
+    localStorage.setItem('carogent-keybindings', JSON.stringify(newKeybindings));
+    setKeybindings(newKeybindings);
+  }, []);
+
   const [shellOptions, setShellOptions] = useState<TerminalShellOption[] | null>(null);
   const [shellOptionsError, setShellOptionsError] = useState<string | null>(null);
   const [defaultShell, setDefaultShell] = useState<string>(() => {
@@ -837,7 +881,7 @@ function App(): JSX.Element {
     sessions.current.delete(paneId);
   }, []);
 
-  const handleSplit = useCallback((paneId: string, direction: SplitDirection) => {
+  const handleSplit = useCallback((paneId: string, direction: SplitDirection, shell?: string) => {
     updateActiveWorkspace((workspace) => {
       const runtimeCwd = sessions.current.get(paneId)?.cwd;
       const layoutForSplit = runtimeCwd
@@ -846,7 +890,7 @@ function App(): JSX.Element {
             cwd: runtimeCwd
           }))
         : workspace.layout;
-      const result = splitPane(layoutForSplit, paneId, direction);
+      const result = splitPane(layoutForSplit, paneId, direction, shell);
 
       return {
         ...workspace,
@@ -1212,6 +1256,17 @@ function App(): JSX.Element {
         }
       },
       {
+        id: 'open-keyboard-shortcuts',
+        title: 'Preferences: Open Keyboard Shortcuts',
+        subtitle: 'Customize keyboard shortcuts and triggers',
+        keywords: 'keyboard shortcuts preferences keybindings settings configure triggers keys hotkeys open',
+        icon: 'quick-access',
+        run: () => {
+          setKeyboardShortcutsOpen(true);
+          closeQuickAccess();
+        }
+      },
+      {
         id: 'toggle-floating-bar',
         title: agentOverlayVisible ? 'Floating Bar: Hide Floating Bar' : 'Floating Bar: Show Floating Bar',
         subtitle: 'Toggle sticky overlay bar visibility',
@@ -1396,7 +1451,8 @@ function App(): JSX.Element {
     pinnedDirectory,
     handleInsertPath,
     openQuickAccess,
-    isExplorerSidebarOpen
+    isExplorerSidebarOpen,
+    setKeyboardShortcutsOpen
   ]);
   const effectivePaletteMode: PaletteMode = quickAccessQuery.trimStart().startsWith('>')
     ? 'command'
@@ -1555,42 +1611,63 @@ function App(): JSX.Element {
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent): void => {
-      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'p') {
+      const kbFileSearch = keybindings.fileSearch || 'Ctrl+P';
+      const kbCommandPalette = keybindings.commandPalette || 'Ctrl+Shift+P';
+      const kbToggleExplorer = keybindings.toggleExplorer || 'Ctrl+Shift+E';
+      const kbToggleSearch = keybindings.toggleSearch || 'Ctrl+Shift+F';
+      const kbToggleGit = keybindings.toggleGit || 'Ctrl+Shift+G';
+      const kbToggleWorkspace = keybindings.toggleWorkspace || 'Ctrl+Shift+W';
+      const kbNewCommandPrompt = keybindings.newCommandPrompt || 'Ctrl+Shift+1';
+      const kbNewPowerShell = keybindings.newPowerShell || 'Ctrl+Shift+2';
+
+      if (isEventMatchingKeybinding(event, kbFileSearch)) {
         event.preventDefault();
         event.stopPropagation();
         if (isExplorerSidebarOpen && activePaneCwd) {
           openQuickAccess('file');
         } else {
-          openQuickAccess(event.shiftKey ? 'command' : 'quick-access');
+          openQuickAccess('quick-access');
         }
-      }
-
-      // Sidebar Tab Shortcuts: Cmd/Ctrl + Shift + E/F/G/W
-      if ((event.metaKey || event.ctrlKey) && event.shiftKey) {
-        const key = event.key.toLowerCase();
-        if (key === 'e') {
-          event.preventDefault();
-          event.stopPropagation();
-          setLeftSidebarTab(curr => curr === 'explorer' ? null : 'explorer');
-        } else if (key === 'f') {
-          event.preventDefault();
-          event.stopPropagation();
-          setLeftSidebarTab(curr => curr === 'search' ? null : 'search');
-        } else if (key === 'g') {
-          event.preventDefault();
-          event.stopPropagation();
-          setLeftSidebarTab(curr => curr === 'git' ? null : 'git');
-        } else if (key === 'w') {
-          event.preventDefault();
-          event.stopPropagation();
-          setLeftSidebarTab(curr => {
-            if (curr === 'workspace') {
-              return null;
-            } else {
-              setIsExplorerSidebarOpenState(false);
-              return 'workspace';
-            }
-          });
+      } else if (isEventMatchingKeybinding(event, kbCommandPalette)) {
+        event.preventDefault();
+        event.stopPropagation();
+        openQuickAccess('command');
+      } else if (isEventMatchingKeybinding(event, kbToggleExplorer)) {
+        event.preventDefault();
+        event.stopPropagation();
+        setLeftSidebarTab(curr => curr === 'explorer' ? null : 'explorer');
+      } else if (isEventMatchingKeybinding(event, kbToggleSearch)) {
+        event.preventDefault();
+        event.stopPropagation();
+        setLeftSidebarTab(curr => curr === 'search' ? null : 'search');
+      } else if (isEventMatchingKeybinding(event, kbToggleGit)) {
+        event.preventDefault();
+        event.stopPropagation();
+        setLeftSidebarTab(curr => curr === 'git' ? null : 'git');
+      } else if (isEventMatchingKeybinding(event, kbToggleWorkspace)) {
+        event.preventDefault();
+        event.stopPropagation();
+        setLeftSidebarTab(curr => {
+          if (curr === 'workspace') {
+            return null;
+          } else {
+            setIsExplorerSidebarOpenState(false);
+            return 'workspace';
+          }
+        });
+      } else if (isEventMatchingKeybinding(event, kbNewCommandPrompt)) {
+        event.preventDefault();
+        event.stopPropagation();
+        if (activePaneId) {
+          const shell = shellOptions?.[0]?.shell;
+          handleSplit(activePaneId, 'row', shell);
+        }
+      } else if (isEventMatchingKeybinding(event, kbNewPowerShell)) {
+        event.preventDefault();
+        event.stopPropagation();
+        if (activePaneId) {
+          const shell = shellOptions?.[1]?.shell;
+          handleSplit(activePaneId, 'row', shell);
         }
       }
     };
@@ -1598,7 +1675,7 @@ function App(): JSX.Element {
     window.addEventListener('keydown', handleKeyDown, true);
 
     return () => window.removeEventListener('keydown', handleKeyDown, true);
-  }, [openQuickAccess, isExplorerSidebarOpen, activePaneCwd, setLeftSidebarTab, setIsExplorerSidebarOpenState]);
+  }, [openQuickAccess, isExplorerSidebarOpen, activePaneCwd, setLeftSidebarTab, setIsExplorerSidebarOpenState, keybindings, activePaneId, handleSplit, shellOptions]);
 
   useEffect(() => {
     if (!quickAccessOpen) {
@@ -1697,6 +1774,18 @@ function App(): JSX.Element {
       >
         <McpIcon />
         Carogent MCP
+      </button>
+      <button
+        className="settings-menu-item"
+        type="button"
+        role="menuitem"
+        onClick={() => {
+          closeMenu();
+          setKeyboardShortcutsOpen(true);
+        }}
+      >
+        <KeyboardShortcutIcon />
+        Keyboard Shortcuts
       </button>
       <div className="settings-menu-divider" style={{ height: '1px', background: '#2b3038', margin: '6px 0' }} />
       <div className="settings-menu-header" style={{ padding: '4px 10px', fontSize: '10px', color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Default Shell</div>
@@ -2037,6 +2126,7 @@ function App(): JSX.Element {
               draggingPaneId={draggingPaneId}
               onDragStart={setDraggingPaneId}
               onDragEnd={() => setDraggingPaneId(null)}
+              keybindings={keybindings}
             />
           </div>
         )}
@@ -2069,6 +2159,13 @@ function App(): JSX.Element {
       {mcpSettingsOpen && (
         <McpSettingsModal
           onClose={() => setMcpSettingsOpen(false)}
+        />
+      )}
+      {keyboardShortcutsOpen && (
+        <KeyboardShortcutsModal
+          keybindings={keybindings}
+          onSaveKeybindings={handleSaveKeybindings}
+          onClose={() => setKeyboardShortcutsOpen(false)}
         />
       )}
     </main>

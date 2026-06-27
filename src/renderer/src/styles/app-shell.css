@@ -1586,7 +1586,8 @@
   top: 34px;
   right: 0;
   z-index: 60;
-  width: 180px;
+  min-width: 180px;
+  width: max-content;
   border: 1px solid #2b3038;
   border-radius: 8px;
   background: #202020;
@@ -1609,6 +1610,7 @@
   padding: 0 10px;
   text-align: left;
   cursor: pointer;
+  white-space: nowrap;
 }
 
 .settings-menu-check {

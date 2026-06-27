@@ -23,6 +23,7 @@ import {
   scheduleTerminalScrollRestore,
   type TerminalSession
 } from '../terminalHelpers';
+import { isEventMatchingKeybinding } from './KeyboardShortcutsModal';
 
 const HEADER_COLOR_PRESETS = [
   '#191820',
@@ -123,6 +124,7 @@ type NodeViewProps = {
   onDragStart?: (paneId: string) => void;
   onDragEnd?: () => void;
   parentDirection?: SplitDirection;
+  keybindings?: Record<string, string>;
 };
 
 export function NodeView(props: NodeViewProps): JSX.Element {
@@ -154,6 +156,7 @@ export function NodeView(props: NodeViewProps): JSX.Element {
           onDragStart={props.onDragStart}
           onDragEnd={props.onDragEnd}
           parentDirection={props.parentDirection}
+          keybindings={props.keybindings}
         />
       );
     }
@@ -185,6 +188,7 @@ export function NodeView(props: NodeViewProps): JSX.Element {
         onDragStart={props.onDragStart}
         onDragEnd={props.onDragEnd}
         parentDirection={props.parentDirection}
+        keybindings={props.keybindings}
       />
     );
   }
@@ -225,7 +229,8 @@ function SplitView({
   onInsertBetween,
   draggingPaneId,
   onDragStart,
-  onDragEnd
+  onDragEnd,
+  keybindings
 }: SplitViewProps): JSX.Element {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const directionClass = node.direction === 'row' ? 'split-row' : 'split-column';
@@ -321,6 +326,7 @@ function SplitView({
           onDragStart={onDragStart}
           onDragEnd={onDragEnd}
           parentDirection={node.direction}
+          keybindings={keybindings}
         />
       </div>
       <div
@@ -360,6 +366,7 @@ function SplitView({
           onDragStart={onDragStart}
           onDragEnd={onDragEnd}
           parentDirection={node.direction}
+          keybindings={keybindings}
         />
       </div>
     </div>
@@ -402,6 +409,7 @@ type TerminalPaneProps = {
   onDragStart?: (paneId: string) => void;
   onDragEnd?: () => void;
   parentDirection?: SplitDirection;
+  keybindings?: Record<string, string>;
 };
 
 function getActiveZone(
@@ -487,7 +495,8 @@ function TerminalPane({
   draggingPaneId,
   onDragStart,
   onDragEnd,
-  parentDirection
+  parentDirection,
+  keybindings
 }: TerminalPaneProps): JSX.Element {
   const hostRef = useRef<HTMLDivElement | null>(null);
   const editorRef = useRef<HTMLDivElement | null>(null);
@@ -734,7 +743,8 @@ function TerminalPane({
     }
 
     const handleKeyDown = (event: KeyboardEvent): void => {
-      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'f') {
+      const kbTerminalSearch = keybindings?.terminalSearch || 'Ctrl+F';
+      if (isEventMatchingKeybinding(event, kbTerminalSearch)) {
         event.preventDefault();
         openSearch();
       }
@@ -743,7 +753,7 @@ function TerminalPane({
     window.addEventListener('keydown', handleKeyDown);
 
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [active, openSearch]);
+  }, [active, openSearch, keybindings]);
 
   useEffect(() => {
     if (!editorOpen) {

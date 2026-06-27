@@ -10,6 +10,8 @@
     "mcp": "node scripts/carogent-mcp.mjs",
     "postinstall": "node scripts/fix-node-pty-permissions.mjs",
     "preview": "electron-vite preview",
+    "build-preview": "npm run build && npm run preview",
+    "start": "npm run build && npm run preview",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

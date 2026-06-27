@@ -80,10 +80,11 @@ export function updatePane(
 export function splitPane(
   node: LayoutNode,
   paneId: string,
-  direction: SplitDirection
+  direction: SplitDirection,
+  shell?: string
 ): { layout: LayoutNode; newPaneId: string } {
   const sourcePane = findPane(node, paneId);
-  const newPane = createPane(sourcePane?.cwd, undefined, sourcePane?.browserUrl);
+  const newPane = createPane(sourcePane?.cwd, shell, sourcePane?.browserUrl);
 
   function visit(current: LayoutNode): LayoutNode {
     if (current.type === 'pane' && current.paneId === paneId) {
