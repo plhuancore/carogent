@@ -1,6 +1,6 @@
 {
   "name": "carogent-terminal",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "A split-pane Electron terminal workspace.",
   "main": "out/main/index.js",
   "type": "module",
